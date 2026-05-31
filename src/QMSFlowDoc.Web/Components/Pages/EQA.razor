@@ -14,6 +14,8 @@
 @inject IEquipmentService EquipmentService
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
+@inject QMSFlowDoc.Infrastructure.Persistence.QmsDbContext DbContext
+
 
 <PageTitle>Evaluación Externa de la Calidad (EQA) — QMSFlowDoc</PageTitle>
 
@@ -386,13 +388,105 @@
                 <!-- ROUND PROCESSOR -->
                 @if (selectedRound == null)
                 {
-                    <div class="card border-0 shadow-sm rounded-4 p-5 text-center text-muted">
-                        <i class="bi bi-calendar-check fs-1 mb-3 text-secondary opacity-50"></i>
-                        <h5>Seleccione una ronda en el Calendario o en las Inscripciones para iniciar su gestión</h5>
-                        <p class="small">El procesamiento de la ronda cumple con la exigencia de trazabilidad del flujo de trabajo habitual (ISO 15189 §7.3).</p>
-                        <button class="btn btn-primary rounded-pill px-4 mt-3" @onclick='() => ChangeTab("enrollments")'>
-                            Ir a Calendario
-                        </button>
+                    <div class="card border-0 shadow-sm rounded-4 p-4">
+                        <div class="d-flex justify-content-between align-items-center mb-4 border-bottom pb-3">
+                            <div>
+                                <h5 class="fw-bold mb-1 text-dark">
+                                    <i class="bi bi-mailbox2 text-primary me-2"></i>Bandeja de Trabajo: Rondas del Año @selectedYear
+                                </h5>
+                                <p class="text-muted small mb-0">Haga clic en una ronda para gestionar sus plazos, registrar muestras (FCS) o cargar los informes de resultados del organizador.</p>
+                            </div>
+                            <div class="d-flex gap-2">
+                                <select class="form-select form-select-premium py-1" style="width: auto;" @bind="selectedYear" @bind:after="LoadYearEnrollments">
+                                    <option value="2026">2026</option>
+                                    <option value="2025">2025</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="bg-light small fw-bold text-secondary">
+                                    <tr>
+                                        <th>Programa</th>
+                                        <th>Ronda / Código</th>
+                                        <th>Límite Envío</th>
+                                        <th>Fecha Envío Real</th>
+                                        <th>Resultado Global</th>
+                                        <th>Estado</th>
+                                        <th class="text-end">Acción</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="small">
+                                    @if (rounds == null)
+                                    {
+                                        <tr>
+                                            <td colspan="7" class="text-center py-4">Cargando rondas...</td>
+                                        </tr>
+                                    }
+                                    else
+                                    {
+                                        var activeYearRounds = rounds.Where(r => r.Year == selectedYear).OrderBy(r => r.Status == EQARoundStatus.CLOSED).ThenBy(r => r.SubmissionDeadline).ToList();
+                                        if (!activeYearRounds.Any())
+                                        {
+                                            <tr>
+                                                <td colspan="7" class="text-center py-4 text-muted">No hay rondas registradas para el año @selectedYear.</td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var round in activeYearRounds)
+                                            {
+                                                var prog = programs?.FirstOrDefault(p => p.Id == round.ProgramId);
+                                                var isOverdue = round.SubmissionDeadline < DateTime.UtcNow && round.Status != EQARoundStatus.CLOSED;
+                                                <tr>
+                                                    <td>
+                                                        <div class="fw-bold text-dark">@prog?.Name</div>
+                                                        <div class="text-muted small">@prog?.Provider</div>
+                                                    </td>
+                                                    <td>
+                                                        <span class="fw-bold">@round.ExternalCode</span>
+                                                        <span class="text-muted ms-1">(@round.RoundType)</span>
+                                                    </td>
+                                                    <td>
+                                                        <span class="@(isOverdue ? "text-danger fw-bold" : "text-dark")">
+                                                            @round.SubmissionDeadline?.ToString("dd/MM/yyyy")
+                                                            @if (isOverdue)
+                                                            {
+                                                                <span class="badge bg-danger ms-1">Vencido</span>
+                                                            }
+                                                        </span>
+                                                    </td>
+                                                    <td>@(round.RealSubmissionDate?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                                    <td>
+                                                        @if (round.Status == EQARoundStatus.CLOSED || round.GlobalOutcome != EQAPerformance.PENDING_REVIEW)
+                                                        {
+                                                            <span class="badge @(round.GlobalOutcome == EQAPerformance.SATISFACTORY ? "bg-success-subtle text-success" : "bg-danger-subtle text-danger")">
+                                                                @round.GlobalOutcome
+                                                            </span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="text-muted italic">Pendiente evaluación</span>
+                                                        }
+                                                    </td>
+                                                    <td>
+                                                        <span class="badge rounded-pill @GetRoundBadgeClass(round.Status)">
+                                                            @round.Status
+                                                        </span>
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <button class="btn btn-sm btn-primary rounded-pill px-3" @onclick="() => ProcessRound(round)">
+                                                            <i class="bi bi-gear-fill me-1"></i>Gestionar
+                                                        </button>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 }
                 else
@@ -467,7 +561,30 @@
 
                             <!-- Right: Muestras -->
                             <div class="col-md-6 border-start ps-4">
-                                <h5 class="fw-bold mb-3"><i class="bi bi-bezier2 text-primary me-2"></i>Procesamiento de Muestras / FCS</h5>
+                                @{
+                                    var expectedSamplesCount = prog?.ExpectedSamplesPerRound ?? 2;
+                                    var actualSamplesCount = selectedRound.Samples.Count;
+                                }
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h5 class="fw-bold mb-0"><i class="bi bi-bezier2 text-primary me-2"></i>Procesamiento de Muestras / FCS</h5>
+                                    <span class="badge @(actualSamplesCount == expectedSamplesCount ? "bg-success" : "bg-warning text-dark") fs-7 rounded-pill">
+                                        @actualSamplesCount / @expectedSamplesCount Muestras
+                                    </span>
+                                </div>
+
+                                @if (actualSamplesCount != expectedSamplesCount)
+                                {
+                                    <div class="alert alert-warning rounded-3 p-3 mb-3 d-flex align-items-center justify-content-between">
+                                        <div class="d-flex align-items-center me-2">
+                                            <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+                                            <span class="small">El número de muestras registradas (@actualSamplesCount) difiere del configurado en el programa (@expectedSamplesCount).</span>
+                                        </div>
+                                        <button class="btn btn-sm btn-primary rounded-pill text-nowrap px-3" @onclick="SyncRoundSamplesToExpected">
+                                            Ajustar Ronda
+                                        </button>
+                                    </div>
+                                }
+
                                 <div class="list-group">
                                     @foreach (var sample in selectedRound.Samples)
                                     {
@@ -692,6 +809,14 @@
                             <label class="form-label small text-secondary">Periodicidad</label>
                             <input type="text" class="form-control" @bind="editingProgram.Periodicity" />
                         </div>
+                        <div class="col-md-4">
+                            <label class="form-label small text-secondary">Rondas al Año</label>
+                            <input type="number" class="form-control" @bind="editingProgram.ExpectedRoundsPerYear" min="1" />
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small text-secondary">Muestras por Ronda</label>
+                            <input type="number" class="form-control" @bind="editingProgram.ExpectedSamplesPerRound" min="1" />
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer bg-light border-0">
@@ -835,6 +960,143 @@
     </div>
 }
 
+<!-- Program Technical Tests (Mappings) Modal -->
+@if (showMappingModal && selectedProgramForMapping != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-dialog-centered modal-lg">
+            <div class="modal-content rounded-4 border-0 shadow">
+                <div class="modal-header bg-light border-0">
+                    <h5 class="modal-title fw-bold text-dark">
+                        <i class="bi bi-link-45deg me-2 text-primary"></i>Configuración de Pruebas: @selectedProgramForMapping.Name
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="() => showMappingModal = false"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <!-- Current Mappings list -->
+                    <h6 class="fw-bold mb-3">Pruebas / Métodos Asignados</h6>
+                    <div class="table-responsive mb-4 border rounded-3 bg-white" style="max-height: 200px; overflow-y: auto;">
+                        <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="bg-light small fw-bold text-secondary">
+                                <tr>
+                                    <th>Prueba Interna</th>
+                                    <th>Panel</th>
+                                    <th>Método Relacionado</th>
+                                    <th>Tipo de Resultado</th>
+                                    <th>Acreditado</th>
+                                    <th class="text-end">Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody class="small">
+                                @if (activeMappings == null || !activeMappings.Any())
+                                {
+                                    <tr>
+                                        <td colspan="6" class="text-center py-3 text-muted">No hay pruebas configuradas para este programa.</td>
+                                    </tr>
+                                }
+                                else
+                                {
+                                    @foreach (var m in activeMappings)
+                                    {
+                                        var methodName = availableMethods?.FirstOrDefault(x => x.Id == m.MethodId)?.Name ?? "Sin vincular";
+                                        <tr>
+                                            <td class="fw-bold">@m.InternalTestName</td>
+                                            <td>@m.Panel</td>
+                                            <td>@methodName</td>
+                                            <td>@m.ResultType</td>
+                                            <td>
+                                                <span class="badge @(m.AlcanceAcreditado ? "bg-success" : "bg-secondary")">
+                                                    @(m.AlcanceAcreditado ? "Sí" : "No")
+                                                </span>
+                                            </td>
+                                            <td class="text-end">
+                                                <button class="btn btn-sm btn-outline-primary py-0 px-2 me-1" @onclick="() => EditMapping(m)">
+                                                    Editar
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger py-0 px-2" @onclick="() => DeleteMapping(m)">
+                                                    Eliminar
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Add / Edit Form -->
+                    <hr />
+                    <h6 class="fw-bold mb-3">@(editingMapping.Id == Guid.Empty ? "Agregar Nueva Prueba" : "Editar Prueba")</h6>
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary">Nombre de la Prueba Interna</label>
+                            <input type="text" class="form-control" @bind="editingMapping.InternalTestName" placeholder="Ej: Recuento CD34+" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary">Panel</label>
+                            <input type="text" class="form-control" @bind="editingMapping.Panel" placeholder="Ej: Células Madre" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary">Método de Ensayo (Laboratorio)</label>
+                            <select class="form-select" @bind="editingMapping.MethodId">
+                                <option value="">-- No vincular a un método específico --</option>
+                                @if (availableMethods != null)
+                                {
+                                    @foreach (var met in availableMethods)
+                                    {
+                                        <option value="@met.Id">@met.Code - @met.Name</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary">Tipo de Resultado</label>
+                            <select class="form-select" @bind="editingMapping.ResultType">
+                                @foreach (var val in Enum.GetValues<EQAResultType>())
+                                {
+                                    <option value="@val">@val</option>
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small text-secondary">Criticidad</label>
+                            <select class="form-select" @bind="editingMapping.Criticidad">
+                                <option value="Baja">Baja</option>
+                                <option value="Media">Media</option>
+                                <option value="Alta">Alta</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label small text-secondary">Nivel de Cobertura</label>
+                            <input type="text" class="form-control" @bind="editingMapping.CoverageLevel" placeholder="Ej: Completa" />
+                        </div>
+                        <div class="col-md-4 d-flex align-items-end pb-2">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" @bind="editingMapping.AlcanceAcreditado" id="chkAcred" />
+                                <label class="form-check-label small fw-bold" for="chkAcred">
+                                    Alcance Acreditado
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label small text-secondary">Notas / Observaciones</label>
+                            <textarea class="form-control" rows="2" @bind="editingMapping.Notes"></textarea>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-light border-0">
+                    @if (editingMapping.Id != Guid.Empty)
+                    {
+                        <button class="btn btn-outline-secondary rounded-pill px-3" @onclick="CancelMappingEdit">Cancelar Edición</button>
+                    }
+                    <button class="btn btn-outline-secondary rounded-pill px-3" @onclick="() => showMappingModal = false">Cerrar</button>
+                    <button class="btn btn-primary rounded-pill px-4" @onclick="SaveMapping">Guardar Prueba</button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
     .nav-tabs-premium .nav-link {
         border-radius: 0.5rem 0.5rem 0 0;
@@ -890,6 +1152,13 @@
     private bool showDeviationModal = false;
     private EQADeviation editingDeviation = new();
 
+    // Mappings Modal State
+    private bool showMappingModal = false;
+    private List<EQAMapping>? activeMappings;
+    private EQAProgram? selectedProgramForMapping;
+    private EQAMapping editingMapping = new();
+    private List<Method>? availableMethods;
+
     protected override async Task OnInitializedAsync()
     {
         // ISO 15189 EQA: restrict to admin, director, quality and clinical technicians
@@ -909,6 +1178,9 @@
         
         // Fetch equipments for select lists
         equipments = await EquipmentService.GetEquipmentsAsync();
+
+        // Fetch methods for mappings selection list
+        availableMethods = await DbContext.Methods.Where(m => m.Status == MethodStatus.ACTIVE).OrderBy(m => m.Name).ToListAsync();
 
         await LoadYearEnrollments();
         GenerateAlerts();
@@ -1036,9 +1308,84 @@
         await LoadData();
     }
 
-    private void ManageMappings(EQAProgram prog)
+    private async Task ManageMappings(EQAProgram prog)
     {
-        // For demonstration, map programs technical items
+        selectedProgramForMapping = prog;
+        activeMappings = await EQAService.GetMappingsAsync(prog.Id);
+        editingMapping = new EQAMapping { ProgramId = prog.Id, ResultType = EQAResultType.MIXED };
+        showMappingModal = true;
+    }
+
+    private void EditMapping(EQAMapping mapping)
+    {
+        editingMapping = new EQAMapping
+        {
+            Id = mapping.Id,
+            ProgramId = mapping.ProgramId,
+            MethodId = mapping.MethodId,
+            InternalTestName = mapping.InternalTestName,
+            Panel = mapping.Panel,
+            ResultType = mapping.ResultType,
+            CoverageLevel = mapping.CoverageLevel,
+            Criticidad = mapping.Criticidad,
+            AlcanceAcreditado = mapping.AlcanceAcreditado,
+            Notes = mapping.Notes
+        };
+    }
+
+    private void CancelMappingEdit()
+    {
+        if (selectedProgramForMapping != null)
+        {
+            editingMapping = new EQAMapping { ProgramId = selectedProgramForMapping.Id, ResultType = EQAResultType.MIXED };
+        }
+    }
+
+    private async Task SaveMapping()
+    {
+        if (string.IsNullOrWhiteSpace(editingMapping.InternalTestName))
+        {
+            await JS.InvokeVoidAsync("alert", "Error: El nombre de la prueba interna es obligatorio.");
+            return;
+        }
+
+        try
+        {
+            await EQAService.SaveMappingAsync(editingMapping);
+            if (selectedProgramForMapping != null)
+            {
+                activeMappings = await EQAService.GetMappingsAsync(selectedProgramForMapping.Id);
+                editingMapping = new EQAMapping { ProgramId = selectedProgramForMapping.Id, ResultType = EQAResultType.MIXED };
+            }
+            await LoadData();
+            await JS.InvokeVoidAsync("alert", "Prueba guardada correctamente.");
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error al guardar la prueba: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteMapping(EQAMapping mapping)
+    {
+        bool confirm = await JS.InvokeAsync<bool>("confirm", $"¿Está seguro de que desea eliminar la prueba '{mapping.InternalTestName}'?");
+        if (confirm)
+        {
+            try
+            {
+                await EQAService.DeleteMappingAsync(mapping.Id);
+                if (selectedProgramForMapping != null)
+                {
+                    activeMappings = await EQAService.GetMappingsAsync(selectedProgramForMapping.Id);
+                }
+                await LoadData();
+                await JS.InvokeVoidAsync("alert", "Prueba eliminada.");
+            }
+            catch (Exception ex)
+            {
+                await JS.InvokeVoidAsync("alert", $"Error al eliminar la prueba: {ex.Message}");
+            }
+        }
     }
 
     private void ManageEnrollment(EQAProgram prog, EQAEnrollment? enrollment)
@@ -1084,8 +1431,58 @@
     {
         if (selectedRound != null)
         {
-            await EQAService.UpdateRoundAsync(selectedRound);
-            await LoadData();
+            try
+            {
+                await EQAService.UpdateRoundAsync(selectedRound);
+                await LoadData();
+                // Refresh selectedRound reference from the newly loaded list to ensure database tracking is correct
+                selectedRound = rounds?.FirstOrDefault(r => r.Id == selectedRound.Id);
+                await JS.InvokeVoidAsync("alert", "Cambios de la ronda guardados correctamente.");
+            }
+            catch (Exception ex)
+            {
+                await JS.InvokeVoidAsync("alert", $"Error al guardar cambios de la ronda: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task SyncRoundSamplesToExpected()
+    {
+        if (selectedRound == null) return;
+        var prog = programs?.FirstOrDefault(p => p.Id == selectedRound.ProgramId);
+        if (prog == null) return;
+
+        var expectedCount = prog.ExpectedSamplesPerRound;
+        var currentCount = selectedRound.Samples.Count;
+
+        if (currentCount < expectedCount)
+        {
+            // Add missing samples
+            for (int s = currentCount + 1; s <= expectedCount; s++)
+            {
+                selectedRound.Samples.Add(new EQASample
+                {
+                    Id = Guid.NewGuid(),
+                    RoundId = selectedRound.Id,
+                    InternalCode = $"{selectedRound.ExternalCode}-M{s}",
+                    ExternalCode = $"{selectedRound.ExternalCode}-M{s}",
+                    SampleType = selectedRound.RoundType.ToString(),
+                    Integrity = EQAIntegrity.CORRECT,
+                    FollowedRoutineProcedure = true
+                });
+            }
+            await JS.InvokeVoidAsync("alert", $"Se han añadido {expectedCount - currentCount} plantilla(s) de muestra(s) para coincidir con el programa.");
+        }
+        else if (currentCount > expectedCount)
+        {
+            bool confirm = await JS.InvokeAsync<bool>("confirm", $"¿Está seguro de que desea reducir el número de muestras de {currentCount} a {expectedCount}? Se eliminarán las últimas muestras excedentes de la vista (debe hacer clic en Guardar Cambios para persistirlo).");
+            if (confirm)
+            {
+                while (selectedRound.Samples.Count > expectedCount)
+                {
+                    selectedRound.Samples.RemoveAt(selectedRound.Samples.Count - 1);
+                }
+            }
         }
     }
 
@@ -1103,16 +1500,31 @@
 
     private async Task SaveDeviation()
     {
-        if (editingDeviation.Id == Guid.Empty)
+        if (editingDeviation.RoundId == Guid.Empty)
         {
-            await EQAService.CreateDeviationAsync(editingDeviation);
+            await JS.InvokeVoidAsync("alert", "Error: Debe seleccionar una ronda válida para registrar la desviación.");
+            return;
         }
-        else
+
+        try
         {
-            await EQAService.UpdateDeviationAsync(editingDeviation);
+            if (editingDeviation.Id == Guid.Empty)
+            {
+                await EQAService.CreateDeviationAsync(editingDeviation);
+                await JS.InvokeVoidAsync("alert", "Desviación registrada correctamente.");
+            }
+            else
+            {
+                await EQAService.UpdateDeviationAsync(editingDeviation);
+                await JS.InvokeVoidAsync("alert", "Desviación actualizada correctamente.");
+            }
+            showDeviationModal = false;
+            await LoadData();
         }
-        showDeviationModal = false;
-        await LoadData();
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error al guardar la desviación: {ex.Message}");
+        }
     }
 
     // PDF files uploads
