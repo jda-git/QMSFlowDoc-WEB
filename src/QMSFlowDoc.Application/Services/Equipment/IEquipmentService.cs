@@ -23,10 +23,15 @@ public interface IEquipmentService
 
     // Preventive Maintenance
     Task<bool> RegisterMaintenanceAsync(RegisterMaintenanceRequest request);
+    Task<bool> RegisterMaintenancePlanAsync(RegisterMaintenancePlanRequest request);
+    Task<bool> UpdateMaintenancePlanAsync(Guid id, RegisterMaintenancePlanRequest request);
+    Task<bool> UpdateMaintenanceEventAsync(Guid id, RegisterMaintenanceRequest request);
 
     // Calibration & Metrology
     Task<bool> RegisterCalibrationPlanAsync(RegisterCalibrationPlanRequest request);
     Task<bool> RegisterCalibrationRecordAsync(RegisterCalibrationRecordRequest request);
+    Task<bool> UpdateCalibrationPlanAsync(Guid id, RegisterCalibrationPlanRequest request);
+    Task<bool> UpdateCalibrationRecordAsync(Guid id, RegisterCalibrationRecordRequest request);
 
     // Corrective & Repairs
     Task<bool> RegisterRepairAsync(RegisterRepairRequest request);

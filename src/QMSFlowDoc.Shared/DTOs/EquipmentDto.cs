@@ -398,6 +398,22 @@ public class RegisterCalibrationPlanRequest
     public string? Notes { get; set; }
 }
 
+public class RegisterMaintenancePlanRequest
+{
+    public Guid EquipmentId { get; set; }
+    public string PlanName { get; set; } = string.Empty;
+    public int FrequencyDays { get; set; }
+    public string ChecklistJson { get; set; } = "{}";
+    public bool IsActive { get; set; } = true;
+    
+    public DateTime? StartDate { get; set; }
+    public DateTime? NextDueDate { get; set; }
+    public int? ToleranceDays { get; set; }
+    public string? Responsible { get; set; }
+    public bool RequiresStop { get; set; }
+    public bool RequiresVerification { get; set; }
+}
+
 public class RegisterCalibrationRecordRequest
 {
     public Guid EquipmentId { get; set; }

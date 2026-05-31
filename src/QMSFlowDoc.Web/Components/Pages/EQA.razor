@@ -1,4 +1,5 @@
 @page "/eqa"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
 @rendermode InteractiveServer
 @using Microsoft.EntityFrameworkCore
 @using QMSFlowDoc.Domain.Entities
@@ -44,9 +45,12 @@
                 <button class="btn btn-outline-secondary rounded-pill px-3" @onclick="() => LoadData()">
                     <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
                 </button>
-                <button class="btn btn-primary rounded-pill px-4" @onclick="OpenCreateProgramModal">
-                    <i class="bi bi-plus-circle me-2"></i>Nuevo Programa
-                </button>
+                @if (canCreate)
+                {
+                    <button class="btn btn-primary rounded-pill px-4" @onclick="OpenCreateProgramModal">
+                        <i class="bi bi-plus-circle me-2"></i>Nuevo Programa
+                    </button>
+                }
             </div>
         </div>
 
@@ -259,12 +263,15 @@
                                                 </span>
                                             </td>
                                             <td class="text-end">
-                                                <button class="btn btn-outline-primary btn-sm rounded-pill me-1" @onclick="() => EditProgram(prog)">
-                                                    <i class="bi bi-pencil"></i>
-                                                </button>
-                                                <button class="btn btn-outline-info btn-sm rounded-pill" @onclick="() => ManageMappings(prog)">
-                                                    <i class="bi bi-link-45deg"></i> Pruebas
-                                                </button>
+                                                @if (canEdit)
+                                                {
+                                                    <button class="btn btn-outline-primary btn-sm rounded-pill me-1" @onclick="() => EditProgram(prog)">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-info btn-sm rounded-pill" @onclick="() => ManageMappings(prog)">
+                                                        <i class="bi bi-link-45deg"></i> Pruebas
+                                                    </button>
+                                                }
                                             </td>
                                         </tr>
                                     }
@@ -445,9 +452,25 @@
                                                         <div class="text-muted small">@prog?.Provider</div>
                                                     </td>
                                                     <td>
-                                                        <span class="fw-bold">@round.ExternalCode</span>
-                                                        <span class="text-muted ms-1">(@round.RoundType)</span>
-                                                    </td>
+                                                         <span class="fw-bold">@round.ExternalCode</span>
+                                                         <span class="text-muted ms-1">(@round.RoundType)</span>
+                                                         @if (!string.IsNullOrEmpty(round.ReportFileName))
+                                                         {
+                                                             <div class="mt-1">
+                                                                 <a href="/api/eqa/files/report/@round.Id" target="_blank" class="text-decoration-none text-danger small fw-semibold">
+                                                                     <i class="bi bi-file-earmark-pdf-fill me-1"></i>Informe
+                                                                 </a>
+                                                             </div>
+                                                         }
+                                                         @if (!string.IsNullOrEmpty(round.CertificateFileName))
+                                                         {
+                                                             <div class="mt-1">
+                                                                 <a href="/api/eqa/files/certificate/@round.Id" target="_blank" class="text-decoration-none text-success small fw-semibold">
+                                                                     <i class="bi bi-file-earmark-pdf-fill me-1"></i>Certificado
+                                                                 </a>
+                                                             </div>
+                                                         }
+                                                     </td>
                                                     <td>
                                                         <span class="@(isOverdue ? "text-danger fw-bold" : "text-dark")">
                                                             @round.SubmissionDeadline?.ToString("dd/MM/yyyy")
@@ -503,9 +526,12 @@
                                 <button class="btn btn-outline-secondary rounded-pill px-3" @onclick="() => selectedRound = null">
                                     <i class="bi bi-arrow-left me-1"></i>Atrás
                                 </button>
-                                <button class="btn btn-success rounded-pill px-4" @onclick="SaveActiveRoundDetails">
-                                    <i class="bi bi-save me-2"></i>Guardar Cambios
-                                </button>
+                                @if (canEdit)
+                                {
+                                    <button class="btn btn-success rounded-pill px-4" @onclick="SaveActiveRoundDetails">
+                                        <i class="bi bi-save me-2"></i>Guardar Cambios
+                                    </button>
+                                }
                             </div>
                         </div>
 
@@ -545,7 +571,12 @@
                                         <InputFile class="form-control" OnChange="UploadReportFile" />
                                         @if (!string.IsNullOrEmpty(selectedRound.ReportFileName))
                                         {
-                                            <div class="small text-success mt-1"><i class="bi bi-check-circle me-1"></i>@selectedRound.ReportFileName</div>
+                                            <div class="small text-success mt-1">
+                                                <i class="bi bi-check-circle me-1"></i>
+                                                <a href="/api/eqa/files/report/@selectedRound.Id" target="_blank" class="text-decoration-none text-success fw-semibold">
+                                                    <i class="bi bi-download ms-1 me-1"></i>@selectedRound.ReportFileName
+                                                </a>
+                                            </div>
                                         }
                                     </div>
                                     <div class="col-md-6">
@@ -553,7 +584,12 @@
                                         <InputFile class="form-control" OnChange="UploadCertificateFile" />
                                         @if (!string.IsNullOrEmpty(selectedRound.CertificateFileName))
                                         {
-                                            <div class="small text-success mt-1"><i class="bi bi-check-circle me-1"></i>@selectedRound.CertificateFileName</div>
+                                            <div class="small text-success mt-1">
+                                                <i class="bi bi-check-circle me-1"></i>
+                                                <a href="/api/eqa/files/certificate/@selectedRound.Id" target="_blank" class="text-decoration-none text-success fw-semibold">
+                                                    <i class="bi bi-download ms-1 me-1"></i>@selectedRound.CertificateFileName
+                                                </a>
+                                            </div>
                                         }
                                     </div>
                                 </div>
@@ -687,9 +723,12 @@
                 <div class="card border-0 shadow-sm rounded-4 p-4">
                     <div class="d-flex justify-content-between align-items-center mb-3">
                         <h5 class="fw-bold mb-0 text-dark"><i class="bi bi-shield-slash-fill text-danger me-2"></i>Desviaciones y Acciones Correctivas (CAPA)</h5>
-                        <button class="btn btn-danger btn-sm rounded-pill px-3" @onclick="OpenCreateDeviationModal">
-                            <i class="bi bi-plus-circle me-1"></i>Registrar Desviación
-                        </button>
+                        @if (canCreate)
+                        {
+                            <button class="btn btn-danger btn-sm rounded-pill px-3" @onclick="OpenCreateDeviationModal">
+                                <i class="bi bi-plus-circle me-1"></i>Registrar Desviación
+                            </button>
+                        }
                     </div>
 
                     <div class="table-responsive">
@@ -860,6 +899,15 @@
                         <div class="col-12">
                             <label class="form-label small text-secondary">Cargar Justificante Inscripción (PDF)</label>
                             <InputFile class="form-control" OnChange="UploadInscriptionFile" />
+                            @if (!string.IsNullOrEmpty(editingEnrollment.EvidenceFileName))
+                            {
+                                <div class="small text-success mt-1">
+                                    <i class="bi bi-check-circle me-1"></i>
+                                    <a href="/api/eqa/files/evidence/@editingEnrollment.Id" target="_blank" class="text-decoration-none text-success fw-semibold">
+                                        <i class="bi bi-download ms-1 me-1"></i>@editingEnrollment.EvidenceFileName
+                                    </a>
+                                </div>
+                            }
                         </div>
                         <div class="col-12">
                             <div class="form-check">
@@ -873,7 +921,10 @@
                 </div>
                 <div class="modal-footer bg-light border-0">
                     <button class="btn btn-outline-secondary rounded-pill px-4" @onclick="() => showEnrollmentModal = false">Cancelar</button>
-                    <button class="btn btn-primary rounded-pill px-4" @onclick="SaveEnrollment">Confirmar Inscripción</button>
+                    @if ((editingEnrollment.Id == Guid.Empty && canCreate) || (editingEnrollment.Id != Guid.Empty && canEdit))
+                    {
+                        <button class="btn btn-primary rounded-pill px-4" @onclick="SaveEnrollment">Confirmar Inscripción</button>
+                    }
                 </div>
             </div>
         </div>
@@ -953,7 +1004,10 @@
                 </div>
                 <div class="modal-footer bg-light border-0">
                     <button class="btn btn-outline-secondary rounded-pill px-4" @onclick="() => showDeviationModal = false">Cancelar</button>
-                    <button class="btn btn-primary rounded-pill px-4" @onclick="SaveDeviation">Guardar Desviación</button>
+                    @if ((editingDeviation.Id == Guid.Empty && canCreate) || (editingDeviation.Id != Guid.Empty && canEdit))
+                    {
+                        <button class="btn btn-primary rounded-pill px-4" @onclick="SaveDeviation">Guardar Desviación</button>
+                    }
                 </div>
             </div>
         </div>
@@ -1010,12 +1064,18 @@
                                                 </span>
                                             </td>
                                             <td class="text-end">
-                                                <button class="btn btn-sm btn-outline-primary py-0 px-2 me-1" @onclick="() => EditMapping(m)">
-                                                    Editar
-                                                </button>
-                                                <button class="btn btn-sm btn-outline-danger py-0 px-2" @onclick="() => DeleteMapping(m)">
-                                                    Eliminar
-                                                </button>
+                                                @if (canEdit)
+                                                {
+                                                    <button class="btn btn-sm btn-outline-primary py-0 px-2 me-1" @onclick="() => EditMapping(m)">
+                                                        Editar
+                                                    </button>
+                                                }
+                                                @if (canDelete)
+                                                {
+                                                    <button class="btn btn-sm btn-outline-danger py-0 px-2" @onclick="() => DeleteMapping(m)">
+                                                        Eliminar
+                                                    </button>
+                                                }
                                             </td>
                                         </tr>
                                     }
@@ -1090,7 +1150,10 @@
                         <button class="btn btn-outline-secondary rounded-pill px-3" @onclick="CancelMappingEdit">Cancelar Edición</button>
                     }
                     <button class="btn btn-outline-secondary rounded-pill px-3" @onclick="() => showMappingModal = false">Cerrar</button>
-                    <button class="btn btn-primary rounded-pill px-4" @onclick="SaveMapping">Guardar Prueba</button>
+                    @if ((editingMapping.Id == Guid.Empty && canCreate) || (editingMapping.Id != Guid.Empty && canEdit))
+                    {
+                        <button class="btn btn-primary rounded-pill px-4" @onclick="SaveMapping">Guardar Prueba</button>
+                    }
                 </div>
             </div>
         </div>
@@ -1159,10 +1222,39 @@
     private EQAMapping editingMapping = new();
     private List<Method>? availableMethods;
 
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+    private Guid? currentUserId;
+    private string? currentUserName;
+
+    private bool canRead = false;
+    private bool canCreate = false;
+    private bool canEdit = false;
+    private bool canDelete = false;
+    private bool canPrint = false;
+
     protected override async Task OnInitializedAsync()
     {
-        // ISO 15189 EQA: restrict to admin, director, quality and clinical technicians
-        isAuthorized = true; // Auto-bypass for standard workspace context access
+        isAuthorized = false;
+
+        if (AuthStateTask != null)
+        {
+            var authState = await AuthStateTask;
+            var user = authState.User;
+            currentUserName = user.Identity?.Name;
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var uId))
+                currentUserId = uId;
+
+            var perms = await PermissionService.GetPermissionsForUserAsync(user, "EQA");
+            canRead = perms.CanRead;
+            canCreate = perms.CanCreate;
+            canEdit = perms.CanEdit;
+            canDelete = perms.CanDelete;
+            canPrint = perms.CanPrint;
+
+            isAuthorized = canRead;
+        }
 
         if (isAuthorized)
         {
@@ -1298,11 +1390,21 @@
     {
         if (editingProgram.Id == Guid.Empty)
         {
-            await EQAService.CreateProgramAsync(editingProgram);
+            if (!canCreate)
+            {
+                await JS.InvokeVoidAsync("alert", "No tiene permisos para registrar nuevos programas.");
+                return;
+            }
+            await EQAService.CreateProgramAsync(editingProgram, currentUserId, currentUserName);
         }
         else
         {
-            await EQAService.UpdateProgramAsync(editingProgram);
+            if (!canEdit)
+            {
+                await JS.InvokeVoidAsync("alert", "No tiene permisos para modificar programas.");
+                return;
+            }
+            await EQAService.UpdateProgramAsync(editingProgram, currentUserId, currentUserName);
         }
         showProgramModal = false;
         await LoadData();
@@ -1349,9 +1451,15 @@
             return;
         }
 
+        if (!canEdit)
+        {
+            await JS.InvokeVoidAsync("alert", "No tiene permisos para modificar la configuración de pruebas.");
+            return;
+        }
+
         try
         {
-            await EQAService.SaveMappingAsync(editingMapping);
+            await EQAService.SaveMappingAsync(editingMapping, currentUserId, currentUserName);
             if (selectedProgramForMapping != null)
             {
                 activeMappings = await EQAService.GetMappingsAsync(selectedProgramForMapping.Id);
@@ -1368,12 +1476,18 @@
 
     private async Task DeleteMapping(EQAMapping mapping)
     {
+        if (!canDelete)
+        {
+            await JS.InvokeVoidAsync("alert", "No tiene permisos para eliminar pruebas del programa.");
+            return;
+        }
+
         bool confirm = await JS.InvokeAsync<bool>("confirm", $"¿Está seguro de que desea eliminar la prueba '{mapping.InternalTestName}'?");
         if (confirm)
         {
             try
             {
-                await EQAService.DeleteMappingAsync(mapping.Id);
+                await EQAService.DeleteMappingAsync(mapping.Id, currentUserId, currentUserName);
                 if (selectedProgramForMapping != null)
                 {
                     activeMappings = await EQAService.GetMappingsAsync(selectedProgramForMapping.Id);
@@ -1411,11 +1525,21 @@
     {
         if (editingEnrollment.Id == Guid.Empty)
         {
-            await EQAService.CreateEnrollmentAsync(editingEnrollment);
+            if (!canCreate)
+            {
+                await JS.InvokeVoidAsync("alert", "No tiene permisos para registrar inscripciones.");
+                return;
+            }
+            await EQAService.CreateEnrollmentAsync(editingEnrollment, currentUserId, currentUserName);
         }
         else
         {
-            await EQAService.UpdateEnrollmentAsync(editingEnrollment);
+            if (!canEdit)
+            {
+                await JS.InvokeVoidAsync("alert", "No tiene permisos para modificar inscripciones.");
+                return;
+            }
+            await EQAService.UpdateEnrollmentAsync(editingEnrollment, currentUserId, currentUserName);
         }
         showEnrollmentModal = false;
         await LoadData();
@@ -1429,11 +1553,17 @@
 
     private async Task SaveActiveRoundDetails()
     {
+        if (!canEdit)
+        {
+            await JS.InvokeVoidAsync("alert", "No tiene permisos para modificar detalles de la ronda.");
+            return;
+        }
+
         if (selectedRound != null)
         {
             try
             {
-                await EQAService.UpdateRoundAsync(selectedRound);
+                await EQAService.UpdateRoundAsync(selectedRound, currentUserId, currentUserName);
                 await LoadData();
                 // Refresh selectedRound reference from the newly loaded list to ensure database tracking is correct
                 selectedRound = rounds?.FirstOrDefault(r => r.Id == selectedRound.Id);
@@ -1510,12 +1640,22 @@
         {
             if (editingDeviation.Id == Guid.Empty)
             {
-                await EQAService.CreateDeviationAsync(editingDeviation);
+                if (!canCreate)
+                {
+                    await JS.InvokeVoidAsync("alert", "No tiene permisos para registrar desviaciones.");
+                    return;
+                }
+                await EQAService.CreateDeviationAsync(editingDeviation, currentUserId, currentUserName);
                 await JS.InvokeVoidAsync("alert", "Desviación registrada correctamente.");
             }
             else
             {
-                await EQAService.UpdateDeviationAsync(editingDeviation);
+                if (!canEdit)
+                {
+                    await JS.InvokeVoidAsync("alert", "No tiene permisos para modificar desviaciones.");
+                    return;
+                }
+                await EQAService.UpdateDeviationAsync(editingDeviation, currentUserId, currentUserName);
                 await JS.InvokeVoidAsync("alert", "Desviación actualizada correctamente.");
             }
             showDeviationModal = false;
@@ -1533,16 +1673,23 @@
         var file = e.File;
         if (file != null && selectedRound != null)
         {
-            var dirPath = Path.Combine(Env.WebRootPath, "uploads", "eqa");
+            if (Path.GetExtension(file.Name).ToLower() != ".pdf" || file.ContentType != "application/pdf")
+            {
+                await JS.InvokeVoidAsync("alert", "Error: Solo se permiten archivos PDF.");
+                return;
+            }
+
+            var dirPath = Path.Combine(Env.ContentRootPath, "App_Data", "uploads", "eqa");
             if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath);
 
-            var path = Path.Combine(dirPath, file.Name);
+            var secureFileName = Guid.NewGuid().ToString() + ".pdf";
+            var path = Path.Combine(dirPath, secureFileName);
             await using var stream = file.OpenReadStream(1024 * 1024 * 10); // 10MB limit
             await using var fs = new FileStream(path, FileMode.Create);
             await stream.CopyToAsync(fs);
 
             selectedRound.ReportFileName = file.Name;
-            selectedRound.ReportFilePath = $"/uploads/eqa/{file.Name}";
+            selectedRound.ReportFilePath = secureFileName;
         }
     }
 
@@ -1551,16 +1698,23 @@
         var file = e.File;
         if (file != null && selectedRound != null)
         {
-            var dirPath = Path.Combine(Env.WebRootPath, "uploads", "eqa");
+            if (Path.GetExtension(file.Name).ToLower() != ".pdf" || file.ContentType != "application/pdf")
+            {
+                await JS.InvokeVoidAsync("alert", "Error: Solo se permiten archivos PDF.");
+                return;
+            }
+
+            var dirPath = Path.Combine(Env.ContentRootPath, "App_Data", "uploads", "eqa");
             if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath);
 
-            var path = Path.Combine(dirPath, file.Name);
+            var secureFileName = Guid.NewGuid().ToString() + ".pdf";
+            var path = Path.Combine(dirPath, secureFileName);
             await using var stream = file.OpenReadStream(1024 * 1024 * 10);
             await using var fs = new FileStream(path, FileMode.Create);
             await stream.CopyToAsync(fs);
 
             selectedRound.CertificateFileName = file.Name;
-            selectedRound.CertificateFilePath = $"/uploads/eqa/{file.Name}";
+            selectedRound.CertificateFilePath = secureFileName;
         }
     }
 
@@ -1569,16 +1723,23 @@
         var file = e.File;
         if (file != null)
         {
-            var dirPath = Path.Combine(Env.WebRootPath, "uploads", "eqa");
+            if (Path.GetExtension(file.Name).ToLower() != ".pdf" || file.ContentType != "application/pdf")
+            {
+                await JS.InvokeVoidAsync("alert", "Error: Solo se permiten archivos PDF.");
+                return;
+            }
+
+            var dirPath = Path.Combine(Env.ContentRootPath, "App_Data", "uploads", "eqa");
             if (!Directory.Exists(dirPath)) Directory.CreateDirectory(dirPath);
 
-            var path = Path.Combine(dirPath, file.Name);
+            var secureFileName = Guid.NewGuid().ToString() + ".pdf";
+            var path = Path.Combine(dirPath, secureFileName);
             await using var stream = file.OpenReadStream(1024 * 1024 * 10);
             await using var fs = new FileStream(path, FileMode.Create);
             await stream.CopyToAsync(fs);
 
             editingEnrollment.EvidenceFileName = file.Name;
-            editingEnrollment.EvidenceFilePath = $"/uploads/eqa/{file.Name}";
+            editingEnrollment.EvidenceFilePath = secureFileName;
         }
     }
 

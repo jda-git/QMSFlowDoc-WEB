@@ -933,6 +933,102 @@ public class EquipmentService : IEquipmentService
         return true;
     }
 
+    public async Task<bool> RegisterMaintenancePlanAsync(RegisterMaintenancePlanRequest request)
+    {
+        var plan = new DomainEntities.MaintenancePlan
+        {
+            Id = Guid.NewGuid(),
+            EquipmentId = request.EquipmentId,
+            PlanName = request.PlanName,
+            FrequencyDays = request.FrequencyDays,
+            ChecklistJson = request.ChecklistJson ?? "{}",
+            IsActive = request.IsActive,
+            StartDate = request.StartDate,
+            NextDueDate = request.NextDueDate ?? (request.StartDate.HasValue ? request.StartDate.Value.AddDays(request.FrequencyDays) : null),
+            ToleranceDays = request.ToleranceDays,
+            Responsible = request.Responsible,
+            RequiresStop = request.RequiresStop,
+            RequiresVerification = request.RequiresVerification
+        };
+
+        _context.MaintenancePlans.Add(plan);
+        await LogHistoryAsync(request.EquipmentId, Guid.Empty, "MAINTENANCE_PLAN",
+            $"Nuevo plan de mantenimiento preventivo creado: {plan.PlanName}");
+        await _context.SaveChangesAsync();
+        await RecalculateAlertsForEquipmentAsync(request.EquipmentId);
+        return true;
+    }
+
+    public async Task<bool> UpdateMaintenancePlanAsync(Guid id, RegisterMaintenancePlanRequest request)
+    {
+        var plan = await _context.MaintenancePlans.FindAsync(id);
+        if (plan == null) return false;
+
+        plan.PlanName = request.PlanName;
+        plan.FrequencyDays = request.FrequencyDays;
+        plan.ChecklistJson = request.ChecklistJson ?? "{}";
+        plan.IsActive = request.IsActive;
+        plan.StartDate = request.StartDate;
+        plan.NextDueDate = request.NextDueDate ?? (request.StartDate.HasValue ? request.StartDate.Value.AddDays(request.FrequencyDays) : null);
+        plan.ToleranceDays = request.ToleranceDays;
+        plan.Responsible = request.Responsible;
+        plan.RequiresStop = request.RequiresStop;
+        plan.RequiresVerification = request.RequiresVerification;
+
+        await LogHistoryAsync(request.EquipmentId, Guid.Empty, "MAINTENANCE_PLAN_UPDATE",
+            $"Plan de mantenimiento preventivo modificado: {plan.PlanName}");
+        await _context.SaveChangesAsync();
+        await RecalculateAlertsForEquipmentAsync(request.EquipmentId);
+        return true;
+    }
+
+    public async Task<bool> UpdateMaintenanceEventAsync(Guid id, RegisterMaintenanceRequest request)
+    {
+        var evt = await _context.MaintenanceEvents.FindAsync(id);
+        if (evt == null) return false;
+
+        evt.PlanId = request.PlanId;
+        evt.PlanName = request.PlanName ?? evt.PlanName;
+        evt.ScheduledDate = request.ScheduledDate;
+        evt.PerformedAt = request.PerformedAt ?? DateTime.UtcNow;
+        evt.PerformedByUserId = request.UserId;
+        evt.PerformedByUserName = (await _context.Users.FindAsync(request.UserId ?? Guid.Empty))?.FullName ?? evt.PerformedByUserName;
+        evt.EventType = (DomainEntities.MaintenanceEventType)request.EventType;
+        evt.IsInternal = request.IsInternal;
+        evt.ActivitiesPerformed = request.ActivitiesPerformed;
+        evt.Outcome = request.Outcome;
+        evt.HasDeviation = request.HasDeviation;
+        evt.DeviationReason = request.DeviationReason;
+        evt.RequiresAdditionalAction = request.RequiresAdditionalAction;
+        evt.RequiresVerification = request.RequiresVerification;
+        evt.VerificationPerformed = request.VerificationPerformed;
+        if (request.EndStatus.HasValue)
+        {
+            evt.EndStatus = (DomainEntities.EquipmentStatus?)request.EndStatus.Value;
+        }
+        evt.Notes = request.Notes;
+        evt.CertificatePath = request.CertificatePath;
+        evt.Cost = request.Cost;
+        evt.IsEfficiencyCheck = request.IsEfficiencyCheck;
+        evt.HasIssues = request.Outcome == "No conforme";
+
+        if (request.PlanId.HasValue)
+        {
+            var plan = await _context.MaintenancePlans.FindAsync(request.PlanId.Value);
+            if (plan != null && plan.IsActive)
+            {
+                plan.StartDate = request.PerformedAt ?? DateTime.UtcNow;
+                plan.NextDueDate = (request.PerformedAt ?? DateTime.UtcNow).AddDays(plan.FrequencyDays);
+            }
+        }
+
+        await LogHistoryAsync(request.EquipmentId, request.UserId ?? Guid.Empty, "MAINTENANCE_UPDATE",
+            $"Registro de mantenimiento modificado ({evt.PlanName}). Resultado: {evt.Outcome}");
+        await _context.SaveChangesAsync();
+        await RecalculateAlertsForEquipmentAsync(request.EquipmentId);
+        return true;
+    }
+
     // ── Calibration & Metrology ──
     public async Task<bool> RegisterCalibrationPlanAsync(RegisterCalibrationPlanRequest request)
     {
@@ -1031,6 +1127,101 @@ public class EquipmentService : IEquipmentService
 
         await LogHistoryAsync(e.Id, request.UserId ?? Guid.Empty, "CALIBRATION",
             $"Registro de calibración metrológica ({rec.Type}). Resultado: {rec.Outcome}",
+            oldStatus.ToString(), e.Status.ToString(), request.Notes, request.CertificatePath);
+
+        await _context.SaveChangesAsync();
+        await RecalculateAlertsForEquipmentAsync(e.Id);
+        return true;
+    }
+
+    public async Task<bool> UpdateCalibrationPlanAsync(Guid id, RegisterCalibrationPlanRequest request)
+    {
+        var plan = await _context.EquipmentCalibrationPlans.FindAsync(id);
+        if (plan == null) return false;
+
+        plan.ControlledMagnitude = request.ControlledMagnitude;
+        plan.FrequencyMonths = request.FrequencyMonths;
+        plan.Tolerance = request.Tolerance;
+        plan.ProviderOrMethod = request.ProviderOrMethod;
+        plan.RequiresCertificate = request.RequiresCertificate;
+        plan.Notes = request.Notes;
+
+        await LogHistoryAsync(request.EquipmentId, Guid.Empty, "CALIBRATION_PLAN_UPDATE",
+            $"Plan de calibración metrológica modificado para magnitud: {plan.ControlledMagnitude}");
+        await _context.SaveChangesAsync();
+        await RecalculateAlertsForEquipmentAsync(request.EquipmentId);
+        return true;
+    }
+
+    public async Task<bool> UpdateCalibrationRecordAsync(Guid id, RegisterCalibrationRecordRequest request)
+    {
+        var rec = await _context.EquipmentCalibrationRecords.FindAsync(id);
+        if (rec == null) return false;
+
+        var e = await _context.Equipments.FindAsync(request.EquipmentId);
+        if (e == null) return false;
+
+        rec.PlanId = request.PlanId;
+        rec.PerformedAt = request.PerformedAt;
+        rec.PerformedByUserId = request.UserId ?? Guid.Empty;
+        rec.PerformedByUserName = (await _context.Users.FindAsync(request.UserId ?? Guid.Empty))?.FullName ?? rec.PerformedByUserName;
+        rec.Type = request.Type;
+        rec.Magnitude = request.Magnitude;
+        rec.Outcome = (DomainEntities.CalibrationOutcome)request.Outcome;
+        rec.ObservedError = request.ObservedError;
+        rec.MaxPermissibleError = request.MaxPermissibleError;
+        rec.Uncertainty = request.Uncertainty;
+        rec.CertificatePath = request.CertificatePath;
+        rec.NextDueDate = request.NextDueDate;
+        rec.Restrictions = request.Restrictions;
+        rec.ImpactAssessmentRequired = request.ImpactAssessmentRequired;
+        rec.Notes = request.Notes;
+        
+        rec.VolumeNominal = request.VolumeNominal;
+        rec.VolumeTested = request.VolumeTested;
+        rec.SystematicError = request.SystematicError;
+        rec.RandomError = request.RandomError;
+        rec.AcceptableLimit = request.AcceptableLimit;
+        rec.PointsResultsJson = request.PointsResultsJson;
+
+        if (request.PlanId.HasValue)
+        {
+            var plan = await _context.EquipmentCalibrationPlans.FindAsync(request.PlanId.Value);
+            if (plan != null)
+            {
+                plan.LastCalibrationDate = request.PerformedAt;
+                plan.NextCalibrationDate = request.NextDueDate ?? request.PerformedAt.AddMonths(plan.FrequencyMonths);
+            }
+        }
+
+        e.LastCalibration = request.PerformedAt;
+        e.NextCalibration = request.NextDueDate;
+        
+        var oldStatus = e.Status;
+        if (rec.Outcome == DomainEntities.CalibrationOutcome.NO_APTO)
+        {
+            e.Status = DomainEntities.EquipmentStatus.QC_NON_CONFORMING;
+            e.Aptitude = DomainEntities.EquipmentAptitude.NO_APTO;
+            e.Restrictions = $"Calibración metrológica NO CONFORME para magnitud {request.Magnitude}";
+        }
+        else if (rec.Outcome == DomainEntities.CalibrationOutcome.APTO_CON_RESTRICCIONES)
+        {
+            e.Status = DomainEntities.EquipmentStatus.IN_SERVICE_WITH_RESTRICTIONS;
+            e.Aptitude = DomainEntities.EquipmentAptitude.CON_RESTRICCIONES;
+            e.Restrictions = request.Restrictions ?? $"Calibración conforme con restricciones.";
+        }
+        else
+        {
+            if (e.Status == DomainEntities.EquipmentStatus.QC_NON_CONFORMING)
+            {
+                e.Status = DomainEntities.EquipmentStatus.IN_SERVICE;
+                e.Aptitude = DomainEntities.EquipmentAptitude.APTO;
+                e.Restrictions = null;
+            }
+        }
+
+        await LogHistoryAsync(e.Id, request.UserId ?? Guid.Empty, "CALIBRATION_UPDATE",
+            $"Registro de calibración metrológica modificado ({rec.Type}). Resultado: {rec.Outcome}",
             oldStatus.ToString(), e.Status.ToString(), request.Notes, request.CertificatePath);
 
         await _context.SaveChangesAsync();
@@ -1437,6 +1628,7 @@ public class EquipmentService : IEquipmentService
     private async Task RecalculateAlertsForEquipmentAsync(Guid equipmentId)
     {
         var e = await _context.Equipments
+            .AsNoTracking()
             .Include(eq => eq.MaintenancePlans)
             .Include(eq => eq.MaintenanceEvents)
             .FirstOrDefaultAsync(eq => eq.Id == equipmentId);
@@ -1641,5 +1833,7 @@ public class EquipmentService : IEquipmentService
                 IsActive = true
             });
         }
+
+        await _context.SaveChangesAsync();
     }
 }

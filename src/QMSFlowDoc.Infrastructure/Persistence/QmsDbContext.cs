@@ -661,6 +661,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
             {
                 e.ToTable("EQAPrograms");
                 e.HasKey(p => p.Id);
+                e.HasIndex(p => p.InternalCode).IsUnique().HasFilter("IsDeleted = 0");
                 e.Property(p => p.InternalCode).HasMaxLength(50);
                 e.Property(p => p.Name).HasMaxLength(300);
                 e.Property(p => p.Provider).HasMaxLength(300);
@@ -679,6 +680,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
             {
                 e.ToTable("EQAEnrollments");
                 e.HasKey(en => en.Id);
+                e.HasIndex(en => new { en.ProgramId, en.Year }).IsUnique().HasFilter("IsDeleted = 0");
                 e.Property(en => en.Status).HasConversion<int>();
                 e.Property(en => en.ParticipantCode).HasMaxLength(100);
                 e.Property(en => en.ExternalPlatformUrl).HasMaxLength(500);
@@ -692,6 +694,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
             {
                 e.ToTable("EQAMappings");
                 e.HasKey(m => m.Id);
+                e.HasIndex(m => new { m.ProgramId, m.InternalTestName }).IsUnique().HasFilter("IsDeleted = 0");
                 e.Property(m => m.InternalTestName).HasMaxLength(200);
                 e.Property(m => m.Panel).HasMaxLength(150);
                 e.Property(m => m.ResultType).HasConversion<int>();
@@ -703,6 +706,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
             {
                 e.ToTable("EQARounds");
                 e.HasKey(r => r.Id);
+                e.HasIndex(r => new { r.ProgramId, r.Year, r.RoundNumber }).IsUnique().HasFilter("IsDeleted = 0");
                 e.Property(r => r.ExternalCode).HasMaxLength(100);
                 e.Property(r => r.Status).HasConversion<int>();
                 e.Property(r => r.RoundType).HasConversion<int>();
@@ -844,6 +848,70 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                         }
                     }
                 }
+            }
+        }
+
+        public override int SaveChanges(bool acceptAllChangesOnSuccess)
+        {
+            ApplyAuditHashChaining();
+            return base.SaveChanges(acceptAllChangesOnSuccess);
+        }
+
+        public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+        {
+            await ApplyAuditHashChainingAsync();
+            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+
+        private void ApplyAuditHashChaining()
+        {
+            var newLogs = ChangeTracker.Entries<AuditLog>()
+                .Where(e => e.State == EntityState.Added)
+                .Select(e => e.Entity)
+                .OrderBy(l => l.Timestamp)
+                .ToList();
+
+            if (!newLogs.Any()) return;
+
+            var lastLog = AuditLogs.OrderByDescending(l => l.Timestamp).ThenByDescending(l => l.Id).FirstOrDefault();
+            string lastHash = lastLog?.IntegrityHash ?? string.Empty;
+
+            foreach (var log in newLogs)
+            {
+                var payload = $"{lastHash}|{log.Id}|{log.Timestamp:o}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}";
+                using (var sha256 = System.Security.Cryptography.SHA256.Create())
+                {
+                    var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
+                    var hashBytes = sha256.ComputeHash(bytes);
+                    log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                }
+                lastHash = log.IntegrityHash;
+            }
+        }
+
+        private async Task ApplyAuditHashChainingAsync()
+        {
+            var newLogs = ChangeTracker.Entries<AuditLog>()
+                .Where(e => e.State == EntityState.Added)
+                .Select(e => e.Entity)
+                .OrderBy(l => l.Timestamp)
+                .ToList();
+
+            if (!newLogs.Any()) return;
+
+            var lastLog = await AuditLogs.OrderByDescending(l => l.Timestamp).ThenByDescending(l => l.Id).FirstOrDefaultAsync();
+            string lastHash = lastLog?.IntegrityHash ?? string.Empty;
+
+            foreach (var log in newLogs)
+            {
+                var payload = $"{lastHash}|{log.Id}|{log.Timestamp:o}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}";
+                using (var sha256 = System.Security.Cryptography.SHA256.Create())
+                {
+                    var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
+                    var hashBytes = sha256.ComputeHash(bytes);
+                    log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                }
+                lastHash = log.IntegrityHash;
             }
         }
     }

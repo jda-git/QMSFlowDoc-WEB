@@ -124,6 +124,9 @@ public class EQAProgram
     public Guid? ResponsibleUserId { get; set; }
     public EQAStatus Status { get; set; } = EQAStatus.ACTIVE;
     public string? Notes { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedByUserId { get; set; }
 
     public List<EQAEnrollment> Enrollments { get; set; } = new();
     public List<EQAMapping> TestMappings { get; set; } = new();
@@ -147,6 +150,9 @@ public class EQAEnrollment
     public string? EvidenceFileName { get; set; }
     public string? EvidenceFilePath { get; set; }
     public string? Notes { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedByUserId { get; set; }
 }
 
 public class EQAMapping
@@ -161,6 +167,9 @@ public class EQAMapping
     public string Criticidad { get; set; } = "Media";
     public bool AlcanceAcreditado { get; set; }
     public string? Notes { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedByUserId { get; set; }
 }
 
 public class EQARound
@@ -192,7 +201,10 @@ public class EQARound
     public bool RequiresAction { get; set; }
     public DateTime? InternalEvaluationDate { get; set; }
     public Guid? EvaluatedByUserId { get; set; }
-
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedByUserId { get; set; }
+    
     public List<EQASample> Samples { get; set; } = new();
     public List<EQADeviation> Deviations { get; set; } = new();
 }
@@ -260,4 +272,7 @@ public class EQADeviation
     public string? EffectivenessOutcome { get; set; } // Eficaz, Parcial, No eficaz
     public DateTime? EffectivenessEvaluationDate { get; set; }
     public string? EffectivenessEvidencePath { get; set; }
+    public bool IsDeleted { get; set; }
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedByUserId { get; set; }
 }

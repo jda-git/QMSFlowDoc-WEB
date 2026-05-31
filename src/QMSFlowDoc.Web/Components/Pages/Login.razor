@@ -1,7 +1,11 @@
 @page "/login"
 @using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using QMSFlowDoc.Infrastructure.Persistence
 @attribute [AllowAnonymous]
 @inject NavigationManager nav
+@inject QmsDbContext DbContext
+
 
 <PageTitle>Iniciar Sesión - QMSFlowDoc</PageTitle>
 
@@ -121,6 +125,14 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Check if there are any users in the database. If not, redirect to Setup
+        int userCount = await DbContext.Users.CountAsync();
+        if (userCount == 0)
+        {
+            nav.NavigateTo("/setup");
+            return;
+        }
+
         if (AuthStateTask != null)
         {
             var user = (await AuthStateTask).User;

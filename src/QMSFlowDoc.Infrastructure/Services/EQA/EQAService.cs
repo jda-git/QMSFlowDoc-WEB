@@ -23,8 +23,9 @@ public class EQAService : IEQAService
     public async Task<List<EQAProgram>> GetProgramsAsync()
     {
         return await _context.EQAPrograms
-            .Include(p => p.Enrollments)
-            .Include(p => p.TestMappings)
+            .Where(p => !p.IsDeleted)
+            .Include(p => p.Enrollments.Where(e => !e.IsDeleted))
+            .Include(p => p.TestMappings.Where(m => !m.IsDeleted))
             .OrderBy(p => p.InternalCode)
             .ToListAsync();
     }
@@ -32,44 +33,74 @@ public class EQAService : IEQAService
     public async Task<EQAProgram?> GetProgramByIdAsync(Guid id)
     {
         return await _context.EQAPrograms
-            .Include(p => p.Enrollments)
-            .Include(p => p.TestMappings)
-            .Include(p => p.Rounds)
+            .Include(p => p.Enrollments.Where(e => !e.IsDeleted))
+            .Include(p => p.TestMappings.Where(m => !m.IsDeleted))
+            .Include(p => p.Rounds.Where(r => !r.IsDeleted))
                 .ThenInclude(r => r.Samples)
-            .Include(p => p.Rounds)
-                .ThenInclude(r => r.Deviations)
-            .FirstOrDefaultAsync(p => p.Id == id);
+            .Include(p => p.Rounds.Where(r => !r.IsDeleted))
+                .ThenInclude(r => r.Deviations.Where(d => !d.IsDeleted))
+            .FirstOrDefaultAsync(p => p.Id == id && !p.IsDeleted);
     }
 
-    public async Task<Guid> CreateProgramAsync(EQAProgram program, string? userName = null)
+    public async Task<Guid> CreateProgramAsync(EQAProgram program, Guid? userId = null, string? userName = null)
     {
         if (program.Id == Guid.Empty) program.Id = Guid.NewGuid();
+        program.IsDeleted = false;
+        
         _context.EQAPrograms.Add(program);
         await _context.SaveChangesAsync();
 
-        await LogAuditAsync("CREATE", "EQAProgram", program.Id, $"Programa EQA '{program.Name}' ({program.InternalCode}) creado", userName);
+        await LogAuditAsync("CREATE", "EQAProgram", program.Id, $"Programa EQA '{program.Name}' ({program.InternalCode}) creado", userId, userName);
         await _context.SaveChangesAsync();
 
         return program.Id;
     }
 
-    public async Task<bool> UpdateProgramAsync(EQAProgram program, string? userName = null)
+    public async Task<bool> UpdateProgramAsync(EQAProgram program, Guid? userId = null, string? userName = null)
     {
-        var existing = await _context.EQAPrograms.FindAsync(program.Id);
+        var existing = await _context.EQAPrograms.FirstOrDefaultAsync(p => p.Id == program.Id && !p.IsDeleted);
         if (existing == null) return false;
 
         _context.Entry(existing).CurrentValues.SetValues(program);
-        await LogAuditAsync("EDIT", "EQAProgram", program.Id, $"Programa EQA '{program.Name}' modificado", userName);
+        await LogAuditAsync("EDIT", "EQAProgram", program.Id, $"Programa EQA '{program.Name}' modificado", userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 
-    public async Task<bool> DeleteProgramAsync(Guid id, string? userName = null)
+    public async Task<bool> DeleteProgramAsync(Guid id, Guid? userId = null, string? userName = null)
     {
         var program = await _context.EQAPrograms.FindAsync(id);
-        if (program == null) return false;
+        if (program == null || program.IsDeleted) return false;
 
-        _context.EQAPrograms.Remove(program);
-        await LogAuditAsync("DELETE", "EQAProgram", id, $"Programa EQA '{program.Name}' eliminado de forma permanente", userName);
+        program.IsDeleted = true;
+        program.DeletedAt = DateTime.UtcNow;
+        program.DeletedByUserId = userId;
+
+        // Cascade soft delete to associated enrollments, rounds, mappings
+        var enrollments = await _context.EQAEnrollments.Where(e => e.ProgramId == id && !e.IsDeleted).ToListAsync();
+        foreach (var e in enrollments)
+        {
+            e.IsDeleted = true;
+            e.DeletedAt = DateTime.UtcNow;
+            e.DeletedByUserId = userId;
+        }
+
+        var mappings = await _context.EQAMappings.Where(m => m.ProgramId == id && !m.IsDeleted).ToListAsync();
+        foreach (var m in mappings)
+        {
+            m.IsDeleted = true;
+            m.DeletedAt = DateTime.UtcNow;
+            m.DeletedByUserId = userId;
+        }
+
+        var rounds = await _context.EQARounds.Where(r => r.ProgramId == id && !r.IsDeleted).ToListAsync();
+        foreach (var r in rounds)
+        {
+            r.IsDeleted = true;
+            r.DeletedAt = DateTime.UtcNow;
+            r.DeletedByUserId = userId;
+        }
+
+        await LogAuditAsync("DELETE", "EQAProgram", id, $"Programa EQA '{program.Name}' eliminado lógicamente", userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 
@@ -77,43 +108,53 @@ public class EQAService : IEQAService
 
     public async Task<List<EQAEnrollment>> GetEnrollmentsAsync(int? year = null)
     {
-        var query = _context.EQAEnrollments.AsQueryable();
+        var query = _context.EQAEnrollments.Where(e => !e.IsDeleted);
         if (year.HasValue)
         {
             query = query.Where(e => e.Year == year.Value);
         }
         return await query.ToListAsync();
     }
+    
+    public async Task<EQAEnrollment?> GetEnrollmentByIdAsync(Guid id)
+    {
+        return await _context.EQAEnrollments.FirstOrDefaultAsync(e => e.Id == id && !e.IsDeleted);
+    }
 
-    public async Task<Guid> CreateEnrollmentAsync(EQAEnrollment enrollment, string? userName = null)
+    public async Task<Guid> CreateEnrollmentAsync(EQAEnrollment enrollment, Guid? userId = null, string? userName = null)
     {
         if (enrollment.Id == Guid.Empty) enrollment.Id = Guid.NewGuid();
+        enrollment.IsDeleted = false;
+
         _context.EQAEnrollments.Add(enrollment);
         await _context.SaveChangesAsync();
 
-        await LogAuditAsync("CREATE", "EQAEnrollment", enrollment.Id, $"Inscripción EQA para el año {enrollment.Year}", userName);
+        await LogAuditAsync("CREATE", "EQAEnrollment", enrollment.Id, $"Inscripción EQA para el año {enrollment.Year}", userId, userName);
         await _context.SaveChangesAsync();
 
         return enrollment.Id;
     }
 
-    public async Task<bool> UpdateEnrollmentAsync(EQAEnrollment enrollment, string? userName = null)
+    public async Task<bool> UpdateEnrollmentAsync(EQAEnrollment enrollment, Guid? userId = null, string? userName = null)
     {
-        var existing = await _context.EQAEnrollments.FindAsync(enrollment.Id);
+        var existing = await _context.EQAEnrollments.FirstOrDefaultAsync(e => e.Id == enrollment.Id && !e.IsDeleted);
         if (existing == null) return false;
 
         _context.Entry(existing).CurrentValues.SetValues(enrollment);
-        await LogAuditAsync("EDIT", "EQAEnrollment", enrollment.Id, $"Inscripción EQA para el año {enrollment.Year} modificada", userName);
+        await LogAuditAsync("EDIT", "EQAEnrollment", enrollment.Id, $"Inscripción EQA para el año {enrollment.Year} modificada", userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 
-    public async Task<bool> DeleteEnrollmentAsync(Guid id, string? userName = null)
+    public async Task<bool> DeleteEnrollmentAsync(Guid id, Guid? userId = null, string? userName = null)
     {
         var enrollment = await _context.EQAEnrollments.FindAsync(id);
-        if (enrollment == null) return false;
+        if (enrollment == null || enrollment.IsDeleted) return false;
 
-        _context.EQAEnrollments.Remove(enrollment);
-        await LogAuditAsync("DELETE", "EQAEnrollment", id, $"Inscripción EQA del año {enrollment.Year} eliminada", userName);
+        enrollment.IsDeleted = true;
+        enrollment.DeletedAt = DateTime.UtcNow;
+        enrollment.DeletedByUserId = userId;
+
+        await LogAuditAsync("DELETE", "EQAEnrollment", id, $"Inscripción EQA del año {enrollment.Year} eliminada lógicamente", userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 
@@ -122,37 +163,42 @@ public class EQAService : IEQAService
     public async Task<List<EQAMapping>> GetMappingsAsync(Guid programId)
     {
         return await _context.EQAMappings
-            .Where(m => m.ProgramId == programId)
+            .Where(m => m.ProgramId == programId && !m.IsDeleted)
             .ToListAsync();
     }
 
-    public async Task<Guid> SaveMappingAsync(EQAMapping mapping, string? userName = null)
+    public async Task<Guid> SaveMappingAsync(EQAMapping mapping, Guid? userId = null, string? userName = null)
     {
         if (mapping.Id == Guid.Empty) mapping.Id = Guid.NewGuid();
-        var existing = await _context.EQAMappings.FindAsync(mapping.Id);
+        mapping.IsDeleted = false;
+
+        var existing = await _context.EQAMappings.FirstOrDefaultAsync(m => m.Id == mapping.Id && !m.IsDeleted);
         
         if (existing == null)
         {
             _context.EQAMappings.Add(mapping);
-            await LogAuditAsync("CREATE", "EQAMapping", mapping.Id, $"Mapeo programa-prueba creado para '{mapping.InternalTestName}'", userName);
+            await LogAuditAsync("CREATE", "EQAMapping", mapping.Id, $"Mapeo programa-prueba creado para '{mapping.InternalTestName}'", userId, userName);
         }
         else
         {
             _context.Entry(existing).CurrentValues.SetValues(mapping);
-            await LogAuditAsync("EDIT", "EQAMapping", mapping.Id, $"Mapeo programa-prueba actualizado para '{mapping.InternalTestName}'", userName);
+            await LogAuditAsync("EDIT", "EQAMapping", mapping.Id, $"Mapeo programa-prueba actualizado para '{mapping.InternalTestName}'", userId, userName);
         }
 
         await _context.SaveChangesAsync();
         return mapping.Id;
     }
 
-    public async Task<bool> DeleteMappingAsync(Guid id, string? userName = null)
+    public async Task<bool> DeleteMappingAsync(Guid id, Guid? userId = null, string? userName = null)
     {
         var mapping = await _context.EQAMappings.FindAsync(id);
-        if (mapping == null) return false;
+        if (mapping == null || mapping.IsDeleted) return false;
 
-        _context.EQAMappings.Remove(mapping);
-        await LogAuditAsync("DELETE", "EQAMapping", id, $"Mapeo de la prueba '{mapping.InternalTestName}' eliminado", userName);
+        mapping.IsDeleted = true;
+        mapping.DeletedAt = DateTime.UtcNow;
+        mapping.DeletedByUserId = userId;
+
+        await LogAuditAsync("DELETE", "EQAMapping", id, $"Mapeo de la prueba '{mapping.InternalTestName}' eliminado lógicamente", userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 
@@ -161,8 +207,9 @@ public class EQAService : IEQAService
     public async Task<List<EQARound>> GetRoundsAsync(int? year = null)
     {
         var query = _context.EQARounds
+            .Where(r => !r.IsDeleted)
             .Include(r => r.Samples)
-            .Include(r => r.Deviations)
+            .Include(r => r.Deviations.Where(d => !d.IsDeleted))
             .AsQueryable();
 
         if (year.HasValue)
@@ -177,13 +224,14 @@ public class EQAService : IEQAService
     {
         return await _context.EQARounds
             .Include(r => r.Samples)
-            .Include(r => r.Deviations)
-            .FirstOrDefaultAsync(r => r.Id == id);
+            .Include(r => r.Deviations.Where(d => !d.IsDeleted))
+            .FirstOrDefaultAsync(r => r.Id == id && !r.IsDeleted);
     }
 
-    public async Task<Guid> CreateRoundAsync(EQARound round, string? userName = null)
+    public async Task<Guid> CreateRoundAsync(EQARound round, Guid? userId = null, string? userName = null)
     {
         if (round.Id == Guid.Empty) round.Id = Guid.NewGuid();
+        round.IsDeleted = false;
         
         // Also ensure sample IDs are initialized
         foreach (var sample in round.Samples)
@@ -195,22 +243,21 @@ public class EQAService : IEQAService
         _context.EQARounds.Add(round);
         await _context.SaveChangesAsync();
 
-        await LogAuditAsync("CREATE", "EQARound", round.Id, $"Ronda EQA '{round.ExternalCode}' creada", userName);
+        await LogAuditAsync("CREATE", "EQARound", round.Id, $"Ronda EQA '{round.ExternalCode}' creada", userId, userName);
         await _context.SaveChangesAsync();
 
         return round.Id;
     }
 
-    public async Task<bool> UpdateRoundAsync(EQARound round, string? userName = null)
+    public async Task<bool> UpdateRoundAsync(EQARound round, Guid? userId = null, string? userName = null)
     {
         var existing = await _context.EQARounds
             .Include(r => r.Samples)
             .Include(r => r.Deviations)
-            .FirstOrDefaultAsync(r => r.Id == round.Id);
+            .FirstOrDefaultAsync(r => r.Id == round.Id && !r.IsDeleted);
 
         if (existing == null) return false;
 
-        // Capture audit log for specific changes
         var detailsMsg = $"Ronda EQA '{round.ExternalCode}' modificada (Estado: {round.Status})";
         
         // Update scalar values
@@ -248,6 +295,7 @@ public class EQAService : IEQAService
             {
                 if (deviation.Id == Guid.Empty) deviation.Id = Guid.NewGuid();
                 deviation.RoundId = round.Id;
+                deviation.IsDeleted = false;
                 existing.Deviations.Add(deviation);
             }
             else
@@ -260,20 +308,35 @@ public class EQAService : IEQAService
         var devsToRemove = existing.Deviations.Where(d => !devIds.Contains(d.Id)).ToList();
         foreach (var dev in devsToRemove)
         {
-            existing.Deviations.Remove(dev);
+            // Soft delete removed deviations
+            dev.IsDeleted = true;
+            dev.DeletedAt = DateTime.UtcNow;
+            dev.DeletedByUserId = userId;
         }
 
-        await LogAuditAsync("EDIT", "EQARound", round.Id, detailsMsg, userName);
+        await LogAuditAsync("EDIT", "EQARound", round.Id, detailsMsg, userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 
-    public async Task<bool> DeleteRoundAsync(Guid id, string? userName = null)
+    public async Task<bool> DeleteRoundAsync(Guid id, Guid? userId = null, string? userName = null)
     {
         var round = await _context.EQARounds.FindAsync(id);
-        if (round == null) return false;
+        if (round == null || round.IsDeleted) return false;
 
-        _context.EQARounds.Remove(round);
-        await LogAuditAsync("DELETE", "EQARound", id, $"Ronda EQA '{round.ExternalCode}' eliminada", userName);
+        round.IsDeleted = true;
+        round.DeletedAt = DateTime.UtcNow;
+        round.DeletedByUserId = userId;
+
+        // Cascade soft delete deviations in this round
+        var devs = await _context.EQADeviations.Where(d => d.RoundId == id && !d.IsDeleted).ToListAsync();
+        foreach (var d in devs)
+        {
+            d.IsDeleted = true;
+            d.DeletedAt = DateTime.UtcNow;
+            d.DeletedByUserId = userId;
+        }
+
+        await LogAuditAsync("DELETE", "EQARound", id, $"Ronda EQA '{round.ExternalCode}' eliminada lógicamente", userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 
@@ -284,13 +347,13 @@ public class EQAService : IEQAService
         return await _context.EQASamples.FindAsync(id);
     }
 
-    public async Task<bool> UpdateSampleAsync(EQASample sample, string? userName = null)
+    public async Task<bool> UpdateSampleAsync(EQASample sample, Guid? userId = null, string? userName = null)
     {
         var existing = await _context.EQASamples.FindAsync(sample.Id);
         if (existing == null) return false;
 
         _context.Entry(existing).CurrentValues.SetValues(sample);
-        await LogAuditAsync("EDIT", "EQASample", sample.Id, $"Muestra EQA '{sample.InternalCode}' (Procesamiento/Resultados) actualizada", userName);
+        await LogAuditAsync("EDIT", "EQASample", sample.Id, $"Muestra EQA '{sample.InternalCode}' (Procesamiento/Resultados) actualizada", userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 
@@ -299,35 +362,38 @@ public class EQAService : IEQAService
     public async Task<List<EQADeviation>> GetDeviationsAsync()
     {
         return await _context.EQADeviations
+            .Where(d => !d.IsDeleted)
             .OrderByDescending(d => d.Id)
             .ToListAsync();
     }
 
-    public async Task<Guid> CreateDeviationAsync(EQADeviation deviation, string? userName = null)
+    public async Task<Guid> CreateDeviationAsync(EQADeviation deviation, Guid? userId = null, string? userName = null)
     {
         if (deviation.Id == Guid.Empty) deviation.Id = Guid.NewGuid();
+        deviation.IsDeleted = false;
+
         _context.EQADeviations.Add(deviation);
         await _context.SaveChangesAsync();
 
-        await LogAuditAsync("CREATE", "EQADeviation", deviation.Id, $"Desviación EQA registrada (Tipo: {deviation.DeviationType})", userName);
+        await LogAuditAsync("CREATE", "EQADeviation", deviation.Id, $"Desviación EQA registrada (Tipo: {deviation.DeviationType})", userId, userName);
         await _context.SaveChangesAsync();
 
         return deviation.Id;
     }
 
-    public async Task<bool> UpdateDeviationAsync(EQADeviation deviation, string? userName = null)
+    public async Task<bool> UpdateDeviationAsync(EQADeviation deviation, Guid? userId = null, string? userName = null)
     {
-        var existing = await _context.EQADeviations.FindAsync(deviation.Id);
+        var existing = await _context.EQADeviations.FirstOrDefaultAsync(d => d.Id == deviation.Id && !d.IsDeleted);
         if (existing == null) return false;
 
         _context.Entry(existing).CurrentValues.SetValues(deviation);
-        await LogAuditAsync("EDIT", "EQADeviation", deviation.Id, $"Desviación EQA '{deviation.Id}' actualizada (Estado: {deviation.Status})", userName);
+        await LogAuditAsync("EDIT", "EQADeviation", deviation.Id, $"Desviación EQA '{deviation.Id}' actualizada (Estado: {deviation.Status})", userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 
     // ── Audit Logging Helper ──────────────────────────────────────────
 
-    private async Task LogAuditAsync(string action, string entityType, Guid? entityId, string details, string? username)
+    private async Task LogAuditAsync(string action, string entityType, Guid? entityId, string details, Guid? userId, string? username)
     {
         var audit = new AuditLog
         {
@@ -336,7 +402,7 @@ public class EQAService : IEQAService
             EntityType = entityType,
             EntityId = entityId,
             Details = details,
-            UserId = Guid.Empty, // System or default action
+            UserId = userId ?? Guid.Empty,
             UserName = username ?? "Sistema",
             Timestamp = DateTime.UtcNow,
             MachineName = Environment.MachineName,

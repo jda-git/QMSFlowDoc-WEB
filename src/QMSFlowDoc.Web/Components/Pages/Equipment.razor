@@ -623,8 +623,42 @@ else
                                         <div>
                                             <div class="d-flex justify-content-between align-items-center border-bottom pb-1">
                                                 <h6 class="fw-bold text-dark mb-0"><i class="bi bi-calendar-check me-2 text-success"></i>Planes y Eventos de Mantenimiento</h6>
-                                                <button class="btn btn-outline-success btn-xs no-print" @onclick="OpenRegisterMaintModal"><i class="bi bi-plus-circle"></i> Reg. Evento</button>
+                                                <div class="d-flex gap-1 no-print">
+                                                    <button class="btn btn-outline-success btn-xs" @onclick="OpenAddMaintPlanModal"><i class="bi bi-plus-circle"></i> Nuevo Plan</button>
+                                                    <button class="btn btn-outline-success btn-xs" @onclick="OpenRegisterMaintModal"><i class="bi bi-plus-circle"></i> Reg. Evento</button>
+                                                </div>
                                             </div>
+
+                                            @if (details.MaintenancePlans != null && details.MaintenancePlans.Any())
+                                            {
+                                                <div class="bg-light p-2 rounded-3 small mt-2 mb-2">
+                                                    <strong>Planes Activos:</strong>
+                                                    @foreach (var mp in details.MaintenancePlans)
+                                                    {
+                                                        <div class="mt-1 d-flex justify-content-between align-items-center border-bottom pb-1">
+                                                            <span>
+                                                                <i class="bi bi-pin-angle-fill me-1 text-success"></i>
+                                                                <strong>@mp.PlanName</strong> (Frecuencia: @(mp.FrequencyDays)d)
+                                                                @if (!string.IsNullOrEmpty(mp.Responsible))
+                                                                {
+                                                                    <span class="text-muted"> - Resp: @mp.Responsible</span>
+                                                                }
+                                                            </span>
+                                                            <span class="text-muted small">
+                                                                Próximo: @(mp.NextDueDate?.ToString("dd/MM/yyyy") ?? "-")
+                                                                @if (mp.RequiresStop)
+                                                                {
+                                                                    <span class="badge bg-danger ms-1 text-white" style="font-size: 0.7rem;">Parada</span>
+                                                                }
+                                                                @if (canEdit)
+                                                                {
+                                                                    <button class="btn btn-link text-primary p-0 ms-2" @onclick="() => OpenEditMaintPlanModal(mp)" title="Editar Plan"><i class="bi bi-pencil-fill"></i></button>
+                                                                }
+                                                            </span>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            }
                                             @if (details.MaintenanceEvents == null || !details.MaintenanceEvents.Any())
                                             {
                                                 <p class="text-muted small mt-2">No se han registrado eventos de mantenimiento preventivo o correctivo.</p>
@@ -639,6 +673,10 @@ else
                                                                 <th>Tipo</th>
                                                                 <th>Resultado</th>
                                                                 <th>Técnico</th>
+                                                                @if (canEdit)
+                                                                {
+                                                                    <th class="no-print text-end" style="width: 50px;">Acciones</th>
+                                                                }
                                                             </tr>
                                                         </thead>
                                                         <tbody>
@@ -649,6 +687,12 @@ else
                                                                     <td>@ev.EventType.ToString()</td>
                                                                     <td><span class="badge @(ev.Outcome == "Pass" || ev.Outcome == "Exitoso" ? "bg-success" : "bg-danger")">@ev.Outcome</span></td>
                                                                     <td>@ev.PerformedByUserName</td>
+                                                                    @if (canEdit)
+                                                                    {
+                                                                        <td class="no-print text-end">
+                                                                            <button class="btn btn-link text-primary p-0" @onclick="() => OpenEditMaintEventModal(ev)" title="Editar Evento"><i class="bi bi-pencil-fill"></i></button>
+                                                                        </td>
+                                                                    }
                                                                 </tr>
                                                             }
                                                         </tbody>
@@ -677,9 +721,15 @@ else
                                                     <strong>Planes Activos:</strong>
                                                     @foreach (var cp in details.CalibrationPlans)
                                                     {
-                                                        <div class="mt-1 d-flex justify-content-between">
+                                                        <div class="mt-1 d-flex justify-content-between align-items-center border-bottom pb-1">
                                                             <span><i class="bi bi-pin-angle-fill me-1 text-warning"></i>@cp.ControlledMagnitude (frecuencia: @(cp.FrequencyMonths)m)</span>
-                                                            <span class="text-muted">tolerancia: @cp.Tolerance</span>
+                                                            <span class="text-muted small">
+                                                                tolerancia: @cp.Tolerance
+                                                                @if (canEdit)
+                                                                {
+                                                                    <button class="btn btn-link text-primary p-0 ms-2" @onclick="() => OpenEditCalPlanModal(cp)" title="Editar Plan"><i class="bi bi-pencil-fill"></i></button>
+                                                                }
+                                                            </span>
                                                         </div>
                                                     }
                                                 </div>
@@ -699,6 +749,10 @@ else
                                                                 <th>Magnitud</th>
                                                                 <th>Error</th>
                                                                 <th>Estado</th>
+                                                                @if (canEdit)
+                                                                {
+                                                                    <th class="no-print text-end" style="width: 50px;">Acciones</th>
+                                                                }
                                                             </tr>
                                                         </thead>
                                                         <tbody>
@@ -709,6 +763,12 @@ else
                                                                     <td>@cal.Magnitude</td>
                                                                     <td>@cal.ObservedError</td>
                                                                     <td><span class="badge @(cal.Outcome == CalibrationOutcome.APTO ? "bg-success" : "bg-danger")">@cal.Outcome.ToString()</span></td>
+                                                                    @if (canEdit)
+                                                                    {
+                                                                        <td class="no-print text-end">
+                                                                            <button class="btn btn-link text-primary p-0" @onclick="() => OpenEditCalRecordModal(cal)" title="Editar Registro"><i class="bi bi-pencil-fill"></i></button>
+                                                                        </td>
+                                                                    }
                                                                 </tr>
                                                             }
                                                         </tbody>
@@ -1262,8 +1322,8 @@ else
             <div class="modal-dialog modal-lg" role="document">
                 <div class="modal-content rounded-4 border-0">
                     <div class="modal-header bg-light border-0">
-                        <h5 class="modal-title fw-bold text-dark">Registrar Evento de Mantenimiento</h5>
-                        <button type="button" class="btn-close" @onclick="() => showRegisterMaintModal = false"></button>
+                        <h5 class="modal-title fw-bold text-dark">@(editingMaintEventId.HasValue ? "Editar" : "Registrar") Evento de Mantenimiento</h5>
+                        <button type="button" class="btn-close" @onclick="() => { showRegisterMaintModal = false; editingMaintEventId = null; }"></button>
                     </div>
                     <div class="modal-body p-4">
                         <EditForm Model="@maintModel" OnValidSubmit="SaveMaintenance">
@@ -1305,8 +1365,8 @@ else
                                 <textarea class="form-control" rows="3" @bind="maintModel.ActivitiesPerformed" required></textarea>
                             </div>
                             <div class="modal-footer border-0 p-0 mt-4">
-                                <button type="button" class="btn btn-outline-secondary" @onclick="() => showRegisterMaintModal = false">Cancelar</button>
-                                <button type="submit" class="btn btn-primary">Registrar Mantenimiento</button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="() => { showRegisterMaintModal = false; editingMaintEventId = null; }">Cancelar</button>
+                                <button type="submit" class="btn btn-primary">@(editingMaintEventId.HasValue ? "Guardar Cambios" : "Registrar Mantenimiento")</button>
                             </div>
                         </EditForm>
                     </div>
@@ -1322,8 +1382,8 @@ else
             <div class="modal-dialog" role="document">
                 <div class="modal-content rounded-4 border-0">
                     <div class="modal-header bg-light border-0">
-                        <h5 class="modal-title fw-bold text-dark">Definir Plan de Calibración / Verificación</h5>
-                        <button type="button" class="btn-close" @onclick="() => showAddCalPlanModal = false"></button>
+                        <h5 class="modal-title fw-bold text-dark">@(editingCalPlanId.HasValue ? "Editar" : "Definir") Plan de Calibración / Verificación</h5>
+                        <button type="button" class="btn-close" @onclick="() => { showAddCalPlanModal = false; editingCalPlanId = null; }"></button>
                     </div>
                     <div class="modal-body p-4">
                         <EditForm Model="@calPlanModel" OnValidSubmit="SaveCalPlan">
@@ -1346,8 +1406,73 @@ else
                                 <input type="text" class="form-control" @bind="calPlanModel.ProviderOrMethod" placeholder="Ej: Laboratorio acreditado ENAC" />
                             </div>
                             <div class="modal-footer border-0 p-0 mt-4">
-                                <button type="button" class="btn btn-outline-secondary" @onclick="() => showAddCalPlanModal = false">Cancelar</button>
-                                <button type="submit" class="btn btn-primary">Guardar Plan</button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="() => { showAddCalPlanModal = false; editingCalPlanId = null; }">Cancelar</button>
+                                <button type="submit" class="btn btn-primary">@(editingCalPlanId.HasValue ? "Guardar Cambios" : "Guardar Plan")</button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
+
+    <!-- MODAL 6.5: Add Maintenance Plan -->
+    @if (showAddMaintPlanModal)
+    {
+        <div class="modal fade show d-block bg-dark bg-opacity-50 no-print" tabindex="-1" role="dialog">
+            <div class="modal-dialog" role="document">
+                <div class="modal-content rounded-4 border-0">
+                    <div class="modal-header bg-light border-0">
+                        <h5 class="modal-title fw-bold text-dark">@(editingMaintPlanId.HasValue ? "Editar" : "Definir") Plan de Mantenimiento Preventivo</h5>
+                        <button type="button" class="btn-close" @onclick="() => { showAddMaintPlanModal = false; editingMaintPlanId = null; }"></button>
+                    </div>
+                    <div class="modal-body p-4">
+                        <EditForm Model="@maintPlanModel" OnValidSubmit="SaveMaintPlan">
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold">Nombre del Plan (Ej: Mantenimiento Trimestral)</label>
+                                <input type="text" class="form-control" @bind="maintPlanModel.PlanName" placeholder="Ej: Preventivo semestral oficial" required />
+                            </div>
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Frecuencia (Días)</label>
+                                    <input type="number" class="form-control" @bind="maintPlanModel.FrequencyDays" required />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Tolerancia (Días)</label>
+                                    <input type="number" class="form-control" @bind="maintPlanModel.ToleranceDays" placeholder="Ej: 7" />
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label small fw-semibold">Responsable / Proveedor</label>
+                                <input type="text" class="form-control" @bind="maintPlanModel.Responsible" placeholder="Ej: Técnico Interno / SAT Externo Beckman" />
+                            </div>
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Fecha de Inicio</label>
+                                    <input type="date" class="form-control" @bind="maintPlanModel.StartDate" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Próximo Vencimiento</label>
+                                    <input type="date" class="form-control" @bind="maintPlanModel.NextDueDate" />
+                                </div>
+                            </div>
+                            <div class="row mt-3 mb-3">
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="mpreqstop" @bind="maintPlanModel.RequiresStop" />
+                                        <label class="form-check-label small" for="mpreqstop">Requiere Parada del Equipo</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="mpreqver" @bind="maintPlanModel.RequiresVerification" />
+                                        <label class="form-check-label small" for="mpreqver">Requiere Verificación Posterior</label>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer border-0 p-0 mt-4">
+                                <button type="button" class="btn btn-outline-secondary" @onclick="() => { showAddMaintPlanModal = false; editingMaintPlanId = null; }">Cancelar</button>
+                                <button type="submit" class="btn btn-primary">@(editingMaintPlanId.HasValue ? "Guardar Cambios" : "Guardar Plan")</button>
                             </div>
                         </EditForm>
                     </div>
@@ -1363,8 +1488,8 @@ else
             <div class="modal-dialog modal-lg" role="document">
                 <div class="modal-content rounded-4 border-0">
                     <div class="modal-header bg-light border-0">
-                        <h5 class="modal-title fw-bold text-dark">Registrar Certificado de Calibración / Metrología</h5>
-                        <button type="button" class="btn-close" @onclick="() => showAddCalRecordModal = false"></button>
+                        <h5 class="modal-title fw-bold text-dark">@(editingCalRecordId.HasValue ? "Editar" : "Registrar") Certificado de Calibración / Metrología</h5>
+                        <button type="button" class="btn-close" @onclick="() => { showAddCalRecordModal = false; editingCalRecordId = null; }"></button>
                     </div>
                     <div class="modal-body p-4">
                         <EditForm Model="@calRecordModel" OnValidSubmit="SaveCalRecord">
@@ -1411,8 +1536,8 @@ else
                                 <input type="text" class="form-control" @bind="calRecordModel.CertificatePath" placeholder="http://servidor/certificados/cal-123.pdf" />
                             </div>
                             <div class="modal-footer border-0 p-0 mt-4">
-                                <button type="button" class="btn btn-outline-secondary" @onclick="() => showAddCalRecordModal = false">Cancelar</button>
-                                <button type="submit" class="btn btn-primary">Registrar Calibración</button>
+                                <button type="button" class="btn btn-outline-secondary" @onclick="() => { showAddCalRecordModal = false; editingCalRecordId = null; }">Cancelar</button>
+                                <button type="submit" class="btn btn-primary">@(editingCalRecordId.HasValue ? "Guardar Cambios" : "Registrar Calibración")</button>
                             </div>
                         </EditForm>
                     </div>
@@ -1800,12 +1925,19 @@ else
     private bool showRegisterRepairModal = false;
     private bool showImpactModal = false;
     private bool showDecommissionModal = false;
+    private bool showAddMaintPlanModal = false;
+
+    private Guid? editingMaintPlanId = null;
+    private Guid? editingMaintEventId = null;
+    private Guid? editingCalPlanId = null;
+    private Guid? editingCalRecordId = null;
 
     // Form Models
     private CreateEquipmentRequest formModel = new();
     private RegisterAcceptanceRequest acceptanceModel = new();
     private CreateDailyQCRequest qcModel = new();
     private RegisterMaintenanceRequest maintModel = new();
+    private RegisterMaintenancePlanRequest maintPlanModel = new();
     private RegisterCalibrationPlanRequest calPlanModel = new();
     private RegisterCalibrationRecordRequest calRecordModel = new();
     private RegisterIncidentRequest incidentModel = new();
@@ -2139,6 +2271,7 @@ else
     private void OpenRegisterMaintModal()
     {
         if (details == null) return;
+        editingMaintEventId = null;
         maintModel = new RegisterMaintenanceRequest
         {
             EquipmentId = details.Equipment.Id,
@@ -2152,14 +2285,115 @@ else
         showRegisterMaintModal = true;
     }
 
+    private void OpenEditMaintEventModal(QMSFlowDoc.Shared.Models.MaintenanceEvent ev)
+    {
+        editingMaintEventId = ev.Id;
+        maintModel = new RegisterMaintenanceRequest
+        {
+            EquipmentId = ev.EquipmentId,
+            PlanId = ev.PlanId,
+            PlanName = ev.PlanName,
+            ScheduledDate = ev.ScheduledDate,
+            PerformedAt = ev.PerformedAt,
+            EventType = (MaintenanceEventType)ev.EventType,
+            IsInternal = ev.IsInternal,
+            ActivitiesPerformed = ev.ActivitiesPerformed,
+            Outcome = ev.Outcome,
+            HasDeviation = ev.HasDeviation,
+            DeviationReason = ev.DeviationReason,
+            RequiresAdditionalAction = ev.RequiresAdditionalAction,
+            RequiresVerification = ev.RequiresVerification,
+            VerificationPerformed = ev.VerificationPerformed,
+            EndStatus = ev.EndStatus.HasValue ? (EquipmentStatus)ev.EndStatus.Value : null,
+            Notes = ev.Notes,
+            CertificatePath = ev.CertificatePath,
+            Cost = ev.Cost,
+            IsEfficiencyCheck = ev.IsEfficiencyCheck,
+            UserId = ev.PerformedByUserId,
+            HasIssues = ev.HasIssues
+        };
+        showRegisterMaintModal = true;
+    }
+
     private async Task SaveMaintenance()
     {
         try
         {
-            var ok = await EquipmentService.RegisterMaintenanceAsync(maintModel);
+            bool ok;
+            if (editingMaintEventId.HasValue)
+            {
+                ok = await EquipmentService.UpdateMaintenanceEventAsync(editingMaintEventId.Value, maintModel);
+            }
+            else
+            {
+                ok = await EquipmentService.RegisterMaintenanceAsync(maintModel);
+            }
             if (ok)
             {
                 showRegisterMaintModal = false;
+                editingMaintEventId = null;
+                await LoadData();
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+    }
+
+    private void OpenAddMaintPlanModal()
+    {
+        if (details == null) return;
+        editingMaintPlanId = null;
+        maintPlanModel = new RegisterMaintenancePlanRequest
+        {
+            EquipmentId = details.Equipment.Id,
+            PlanName = "",
+            FrequencyDays = 180,
+            ToleranceDays = 15,
+            StartDate = DateTime.Today,
+            IsActive = true
+        };
+        showAddMaintPlanModal = true;
+    }
+
+    private void OpenEditMaintPlanModal(QMSFlowDoc.Shared.Models.MaintenancePlan plan)
+    {
+        editingMaintPlanId = plan.Id;
+        maintPlanModel = new RegisterMaintenancePlanRequest
+        {
+            EquipmentId = plan.EquipmentId,
+            PlanName = plan.PlanName,
+            FrequencyDays = plan.FrequencyDays,
+            ToleranceDays = plan.ToleranceDays,
+            StartDate = plan.StartDate,
+            NextDueDate = plan.NextDueDate,
+            Responsible = plan.Responsible,
+            RequiresStop = plan.RequiresStop,
+            RequiresVerification = plan.RequiresVerification,
+            IsActive = plan.IsActive,
+            ChecklistJson = plan.ChecklistJson
+        };
+        showAddMaintPlanModal = true;
+    }
+
+    private async Task SaveMaintPlan()
+    {
+        try
+        {
+            bool ok;
+            if (editingMaintPlanId.HasValue)
+            {
+                ok = await EquipmentService.UpdateMaintenancePlanAsync(editingMaintPlanId.Value, maintPlanModel);
+            }
+            else
+            {
+                ok = await EquipmentService.RegisterMaintenancePlanAsync(maintPlanModel);
+            }
+            if (ok)
+            {
+                showAddMaintPlanModal = false;
+                editingMaintPlanId = null;
                 await LoadData();
             }
         }
@@ -2172,6 +2406,7 @@ else
     private void OpenAddCalPlanModal()
     {
         if (details == null) return;
+        editingCalPlanId = null;
         calPlanModel = new RegisterCalibrationPlanRequest
         {
             EquipmentId = details.Equipment.Id,
@@ -2183,14 +2418,39 @@ else
         showAddCalPlanModal = true;
     }
 
+    private void OpenEditCalPlanModal(QMSFlowDoc.Shared.Models.EquipmentCalibrationPlan plan)
+    {
+        editingCalPlanId = plan.Id;
+        calPlanModel = new RegisterCalibrationPlanRequest
+        {
+            EquipmentId = plan.EquipmentId,
+            ControlledMagnitude = plan.ControlledMagnitude,
+            FrequencyMonths = plan.FrequencyMonths,
+            Tolerance = plan.Tolerance,
+            ProviderOrMethod = plan.ProviderOrMethod,
+            RequiresCertificate = plan.RequiresCertificate,
+            Notes = plan.Notes
+        };
+        showAddCalPlanModal = true;
+    }
+
     private async Task SaveCalPlan()
     {
         try
         {
-            var ok = await EquipmentService.RegisterCalibrationPlanAsync(calPlanModel);
+            bool ok;
+            if (editingCalPlanId.HasValue)
+            {
+                ok = await EquipmentService.UpdateCalibrationPlanAsync(editingCalPlanId.Value, calPlanModel);
+            }
+            else
+            {
+                ok = await EquipmentService.RegisterCalibrationPlanAsync(calPlanModel);
+            }
             if (ok)
             {
                 showAddCalPlanModal = false;
+                editingCalPlanId = null;
                 await LoadData();
             }
         }
@@ -2203,6 +2463,7 @@ else
     private void OpenAddCalRecordModal()
     {
         if (details == null) return;
+        editingCalRecordId = null;
         calRecordModel = new RegisterCalibrationRecordRequest
         {
             EquipmentId = details.Equipment.Id,
@@ -2218,14 +2479,53 @@ else
         showAddCalRecordModal = true;
     }
 
+    private void OpenEditCalRecordModal(QMSFlowDoc.Shared.Models.EquipmentCalibrationRecord rec)
+    {
+        editingCalRecordId = rec.Id;
+        calRecordModel = new RegisterCalibrationRecordRequest
+        {
+            EquipmentId = rec.EquipmentId,
+            PlanId = rec.PlanId,
+            PerformedAt = rec.PerformedAt,
+            Type = rec.Type,
+            Magnitude = rec.Magnitude,
+            Outcome = rec.Outcome,
+            ObservedError = rec.ObservedError,
+            MaxPermissibleError = rec.MaxPermissibleError,
+            Uncertainty = rec.Uncertainty,
+            CertificatePath = rec.CertificatePath,
+            NextDueDate = rec.NextDueDate,
+            Restrictions = rec.Restrictions,
+            ImpactAssessmentRequired = rec.ImpactAssessmentRequired,
+            Notes = rec.Notes,
+            VolumeNominal = rec.VolumeNominal,
+            VolumeTested = rec.VolumeTested,
+            SystematicError = rec.SystematicError,
+            RandomError = rec.RandomError,
+            AcceptableLimit = rec.AcceptableLimit,
+            PointsResultsJson = rec.PointsResultsJson,
+            UserId = rec.PerformedByUserId
+        };
+        showAddCalRecordModal = true;
+    }
+
     private async Task SaveCalRecord()
     {
         try
         {
-            var ok = await EquipmentService.RegisterCalibrationRecordAsync(calRecordModel);
+            bool ok;
+            if (editingCalRecordId.HasValue)
+            {
+                ok = await EquipmentService.UpdateCalibrationRecordAsync(editingCalRecordId.Value, calRecordModel);
+            }
+            else
+            {
+                ok = await EquipmentService.RegisterCalibrationRecordAsync(calRecordModel);
+            }
             if (ok)
             {
                 showAddCalRecordModal = false;
+                editingCalRecordId = null;
                 await LoadData();
             }
         }

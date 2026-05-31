@@ -133,7 +133,7 @@ namespace QMSFlowDoc.Infrastructure.Services.Identity
             if (result.Succeeded)
             {
                 // Seed default empty permissions for this new role so they can be customized
-                var sections = new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment" };
+                var sections = new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment", "EQA", "Audit" };
                 foreach (var section in sections)
                 {
                     var rp = new RolePermission

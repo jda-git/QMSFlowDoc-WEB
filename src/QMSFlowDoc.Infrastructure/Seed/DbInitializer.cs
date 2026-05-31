@@ -317,11 +317,30 @@ namespace QMSFlowDoc.Infrastructure.Seed
                     IsActive = true
                 };
 
-                var createAdminResult = await userManager.CreateAsync(admin, "Qms@Dm1n2026!");
-                if (createAdminResult.Succeeded)
+                var config = serviceProvider.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
+                var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
+                var adminPassword = config["DefaultAdminPassword"];
+
+                if (string.IsNullOrEmpty(adminPassword))
                 {
-                    await userManager.AddToRoleAsync(admin, "Administrador");
-                    Console.WriteLine("⚠ SEGURIDAD: Usuario admin creado con contraseña por defecto. Cambie la contraseña inmediatamente en producción.");
+                    if (envName.Equals("Production", StringComparison.OrdinalIgnoreCase))
+                    {
+                        throw new InvalidOperationException("⚠ ERROR DE SEGURIDAD: La contraseña de administrador por defecto ('DefaultAdminPassword') debe estar configurada en la configuración (IConfiguration) en entornos de producción.");
+                    }
+                    Console.WriteLine("⚠ CONFIGURACIÓN: No se ha detectado 'DefaultAdminPassword'. El seed omitirá la creación del administrador inicial para usar el asistente interactivo en /setup.");
+                }
+                else
+                {
+                    var createAdminResult = await userManager.CreateAsync(admin, adminPassword);
+                    if (createAdminResult.Succeeded)
+                    {
+                        await userManager.AddToRoleAsync(admin, "Administrador");
+                        Console.WriteLine("✔ Administrador inicial creado a partir de la configuración.");
+                    }
+                    else
+                    {
+                        Console.WriteLine($"❌ Error al crear el administrador inicial por seed: {string.Join(", ", createAdminResult.Errors.Select(e => e.Description))}");
+                    }
                 }
             }
 
@@ -334,7 +353,7 @@ namespace QMSFlowDoc.Infrastructure.Seed
 
         private static async Task SeedDefaultRolePermissionsAsync(QmsDbContext context, RoleManager<ApplicationRole> roleManager)
         {
-            var sections = new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment", "EQA" };
+            var sections = new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment", "EQA", "Audit" };
             
             var roles = await roleManager.Roles.ToListAsync();
             foreach (var role in roles)

@@ -1,0 +1,217 @@
+@page "/setup"
+@using Microsoft.AspNetCore.Identity
+@using Microsoft.EntityFrameworkCore
+@using QMSFlowDoc.Domain.Identity
+@using QMSFlowDoc.Infrastructure.Persistence
+@attribute [AllowAnonymous]
+@inject NavigationManager nav
+@inject UserManager<ApplicationUser> userManager
+@inject RoleManager<ApplicationRole> roleManager
+@inject QmsDbContext context
+@inject IJSRuntime JS
+
+<PageTitle>Configuración Inicial del Administrador - QMSFlowDoc</PageTitle>
+
+<div class="setup-wrapper">
+    <div class="setup-card p-5">
+        <div class="brand-section text-center mb-4">
+            <div class="logo-outer mx-auto mb-3">
+                <div class="logo-inner bg-gradient-premium">
+                    <i class="bi bi-shield-lock-fill text-white"></i>
+                </div>
+            </div>
+            <h2 class="fw-bold text-dark mb-1">QMSFlowDoc Setup</h2>
+            <p class="text-muted small">Configuración del primer usuario administrador del sistema (ISO 15189)</p>
+        </div>
+
+        @if (!string.IsNullOrEmpty(errorMessage))
+        {
+            <div class="alert alert-danger d-flex align-items-center rounded-3 mb-3" role="alert">
+                <i class="bi bi-exclamation-triangle-fill me-2 fs-5"></i>
+                <div class="small">@errorMessage</div>
+            </div>
+        }
+
+        @if (setupCompleted)
+        {
+            <div class="alert alert-success d-flex align-items-center rounded-3 mb-4" role="alert">
+                <i class="bi bi-check-circle-fill me-2 fs-5"></i>
+                <div class="small">El administrador ha sido creado correctamente. Redirigiendo al login...</div>
+            </div>
+        }
+        else
+        {
+            <EditForm Model="setupModel" OnValidSubmit="HandleSetup" FormName="setupForm">
+                <DataAnnotationsValidator />
+                
+                <div class="mb-3">
+                    <label for="fullName" class="form-label fw-semibold text-secondary small mb-1">Nombre Completo</label>
+                    <input type="text" @bind="setupModel.FullName" id="fullName" class="form-control form-control-premium" placeholder="Ej. Dr. Alejandro Gómez" required />
+                </div>
+
+                <div class="mb-3">
+                    <label for="email" class="form-label fw-semibold text-secondary small mb-1">Correo Electrónico</label>
+                    <input type="email" @bind="setupModel.Email" id="email" class="form-control form-control-premium" placeholder="admin@qmsflowdoc.com" required />
+                </div>
+
+                <div class="mb-3">
+                    <label for="username" class="form-label fw-semibold text-secondary small mb-1">Nombre de Usuario</label>
+                    <input type="text" @bind="setupModel.Username" id="username" class="form-control form-control-premium" placeholder="Ej. admin" required />
+                </div>
+
+                <div class="mb-3">
+                    <label for="password" class="form-label fw-semibold text-secondary small mb-1">Contraseña Administrador</label>
+                    <input type="password" @bind="setupModel.Password" id="password" class="form-control form-control-premium" placeholder="••••••••" required />
+                </div>
+
+                <div class="mb-4">
+                    <label for="confirmPassword" class="form-label fw-semibold text-secondary small mb-1">Confirmar Contraseña</label>
+                    <input type="password" @bind="setupModel.ConfirmPassword" id="confirmPassword" class="form-control form-control-premium" placeholder="••••••••" required />
+                </div>
+
+                <button type="submit" class="btn btn-premium w-100 py-2.5">
+                    <i class="bi bi-person-plus-fill me-2"></i>Crear Cuenta Administrador
+                </button>
+            </EditForm>
+        }
+    </div>
+</div>
+
+<style>
+    .setup-wrapper {
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: radial-gradient(circle at 10% 20%, rgba(248, 250, 252, 1) 0%, rgba(226, 232, 240, 1) 100%);
+        padding: 1.5rem;
+    }
+    
+    .setup-card {
+        width: 100%;
+        max-width: 480px;
+        background-color: #ffffff;
+        border-radius: 24px;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.05), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        border: 1px solid rgba(226, 232, 240, 0.8);
+    }
+
+    .logo-outer {
+        width: 60px;
+        height: 60px;
+        padding: 5px;
+        background-color: rgba(79, 70, 229, 0.08);
+        border-radius: 50%;
+    }
+
+    .logo-inner {
+        width: 100%;
+        height: 100%;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+
+    .bg-gradient-premium {
+        background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    }
+
+    .logo-inner i {
+        font-size: 1.6rem;
+    }
+
+    .form-control-premium {
+        border-radius: 0.55rem;
+        border: 1px solid #e2e8f0;
+        padding: 0.55rem 0.8rem;
+    }
+
+    .form-control-premium:focus {
+        border-color: #4f46e5;
+        box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.15);
+    }
+</style>
+
+@code {
+    private SetupFormModel setupModel = new();
+    private string? errorMessage;
+    private bool setupCompleted = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // 1. If users already exist in the database, redirect to login page
+        int userCount = await context.Users.CountAsync();
+        if (userCount > 0)
+        {
+            nav.NavigateTo("/login");
+        }
+    }
+
+    private async Task HandleSetup()
+    {
+        errorMessage = null;
+
+        // 2. Validate passwords match
+        if (setupModel.Password != setupModel.ConfirmPassword)
+        {
+            errorMessage = "Las contraseñas no coinciden.";
+            return;
+        }
+
+        // 3. Double check user count in case of race condition
+        int userCount = await context.Users.CountAsync();
+        if (userCount > 0)
+        {
+            errorMessage = "El sistema ya cuenta con usuarios configurados.";
+            nav.NavigateTo("/login");
+            return;
+        }
+
+        // 4. Create first Admin user
+        var admin = new ApplicationUser
+        {
+            Id = Guid.NewGuid(),
+            UserName = setupModel.Username,
+            Email = setupModel.Email,
+            FullName = setupModel.FullName,
+            EmailConfirmed = true,
+            IsActive = true,
+            CreatedAt = DateTime.UtcNow
+        };
+
+        var result = await userManager.CreateAsync(admin, setupModel.Password);
+        if (result.Succeeded)
+        {
+            // 5. Ensure "Administrador" role exists and associate the user
+            if (!await roleManager.RoleExistsAsync("Administrador"))
+            {
+                await roleManager.CreateAsync(new ApplicationRole("Administrador")
+                {
+                    Description = "Administrador del Sistema"
+                });
+            }
+
+            await userManager.AddToRoleAsync(admin, "Administrador");
+
+            // 6. Complete and redirect
+            setupCompleted = true;
+            StateHasChanged();
+            await Task.Delay(2000);
+            nav.NavigateTo("/login");
+        }
+        else
+        {
+            errorMessage = string.Join(" ", result.Errors.Select(e => e.Description));
+        }
+    }
+
+    public class SetupFormModel
+    {
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Username { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string ConfirmPassword { get; set; } = string.Empty;
+    }
+}
