@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\QMSFlowDoc.Domain\QMSFlowDoc.Domain.csproj" />
+    <ProjectReference Include="..\QMSFlowDoc.Shared\QMSFlowDoc.Shared.csproj" />
     <ProjectReference Include="..\QMSFlowDoc.Application\QMSFlowDoc.Application.csproj" />
     <ProjectReference Include="..\QMSFlowDoc.Infrastructure\QMSFlowDoc.Infrastructure.csproj" />
   </ItemGroup>

@@ -19,15 +19,21 @@ public static class PasswordPolicy
         
         if (!password.Any(char.IsUpper))
             return (false, "La contraseña debe contener al menos una letra mayúscula.");
+
+        if (!password.Any(char.IsLower))
+            return (false, "La contraseña debe contener al menos una letra minúscula.");
         
         if (!password.Any(char.IsDigit))
             return (false, "La contraseña debe contener al menos un número.");
+
+        if (!password.Any(ch => !char.IsLetterOrDigit(ch)))
+            return (false, "La contraseña debe contener al menos un carácter especial.");
 
         return (true, null);
     }
 
     public static string GetPolicyDescription()
     {
-        return $"Mínimo {MinLength} caracteres, al menos 1 mayúscula y 1 número.";
+        return $"Mínimo {MinLength} caracteres, al menos 1 mayúscula, 1 minúscula, 1 número y 1 carácter especial.";
     }
 }

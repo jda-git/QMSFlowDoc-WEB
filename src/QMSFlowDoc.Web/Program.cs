@@ -1,11 +1,16 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using QMSFlowDoc.Domain.Identity;
 using QMSFlowDoc.Infrastructure.Persistence;
 using QMSFlowDoc.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Logging.ClearProviders();
+builder.Logging.AddConsole();
+builder.Logging.AddDebug();
 
 // Add services to the container.
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
@@ -36,6 +41,12 @@ builder.Services.AddScoped<IPasswordHasher<ApplicationUser>, QMSFlowDoc.Web.Secu
 // Document Storage and Document Management Services
 var documentStorageConfig = builder.Configuration.GetSection("DocumentStorage");
 var rootPath = documentStorageConfig["RootPath"] ?? throw new InvalidOperationException("DocumentStorage:RootPath not configured.");
+var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"]
+    ?? Path.Combine(rootPath, "DataProtection-Keys");
+
+Directory.CreateDirectory(dataProtectionKeysPath);
+builder.Services.AddDataProtection()
+    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
 
 builder.Services.AddSingleton<QMSFlowDoc.DocumentStorage.IDocumentStorageService>(sp =>
     new QMSFlowDoc.DocumentStorage.CentralDocumentStorageService(rootPath, sp.GetRequiredService<ILogger<QMSFlowDoc.DocumentStorage.CentralDocumentStorageService>>()));

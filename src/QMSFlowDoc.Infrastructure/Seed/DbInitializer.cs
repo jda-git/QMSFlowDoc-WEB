@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Configuration;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using QMSFlowDoc.Domain.Identity;
@@ -38,6 +39,7 @@ namespace QMSFlowDoc.Infrastructure.Seed
 
             var roleManager = serviceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
             var userManager = serviceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+            var config = serviceProvider.GetRequiredService<IConfiguration>();
 
             // 1. Seed Default Roles (needed if no legacy DB, or as fallback)
             string[] roleNames = { "Administrador", "Facultativo", "Técnico", "Responsable calidad", "Auditor" };
@@ -94,9 +96,9 @@ namespace QMSFlowDoc.Infrastructure.Seed
             await context.SaveChangesAsync();
 
             // 3. Check for automatic legacy database migration
-            const string legacyDbPath = @"C:\Users\josea\Documents\Antigravity\QMSFlowDoc V2\QMS\Base_datos\qmsflowdoc.db";
+            var legacyDbPath = config["LegacyMigration:SourceDbPath"];
             
-            if (File.Exists(legacyDbPath))
+            if (!string.IsNullOrWhiteSpace(legacyDbPath) && File.Exists(legacyDbPath))
             {
                 int currentUsersCount = await context.Users.CountAsync();
                 
@@ -284,6 +286,10 @@ namespace QMSFlowDoc.Infrastructure.Seed
                     }
                 }
             }
+            else if (!string.IsNullOrWhiteSpace(legacyDbPath))
+            {
+                Console.WriteLine($"⚠ Legacy migration source not found. Skipping migration: {legacyDbPath}");
+            }
             // 3.5 Seed Default Training Types if empty
             if (await context.TrainingTypeCatalogs.CountAsync() == 0)
             {
@@ -317,7 +323,6 @@ namespace QMSFlowDoc.Infrastructure.Seed
                     IsActive = true
                 };
 
-                var config = serviceProvider.GetRequiredService<Microsoft.Extensions.Configuration.IConfiguration>();
                 var envName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Development";
                 var adminPassword = config["DefaultAdminPassword"];
 

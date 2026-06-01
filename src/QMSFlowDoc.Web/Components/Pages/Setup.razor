@@ -3,6 +3,8 @@
 @using Microsoft.EntityFrameworkCore
 @using QMSFlowDoc.Domain.Identity
 @using QMSFlowDoc.Infrastructure.Persistence
+@using QMSFlowDoc.Shared.Validation
+@rendermode InteractiveServer
 @attribute [AllowAnonymous]
 @inject NavigationManager nav
 @inject UserManager<ApplicationUser> userManager
@@ -62,6 +64,7 @@
                 <div class="mb-3">
                     <label for="password" class="form-label fw-semibold text-secondary small mb-1">Contraseña Administrador</label>
                     <input type="password" @bind="setupModel.Password" id="password" class="form-control form-control-premium" placeholder="••••••••" required />
+                    <div class="form-text small">@PasswordPolicy.GetPolicyDescription()</div>
                 </div>
 
                 <div class="mb-4">
@@ -156,6 +159,13 @@
         if (setupModel.Password != setupModel.ConfirmPassword)
         {
             errorMessage = "Las contraseñas no coinciden.";
+            return;
+        }
+
+        var passwordPolicy = PasswordPolicy.Validate(setupModel.Password);
+        if (!passwordPolicy.IsValid)
+        {
+            errorMessage = passwordPolicy.ErrorMessage;
             return;
         }
 
