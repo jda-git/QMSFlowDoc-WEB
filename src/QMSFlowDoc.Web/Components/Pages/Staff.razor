@@ -368,7 +368,6 @@ else
                             <th>Descripción</th>
                             <th>Requiere Competencia</th>
                             <th>Ámbito de Rol</th>
-                            <th>Valoración Habilidades</th>
                             <th class="text-end pe-3">Acciones</th>
                         </tr>
                     </thead>
@@ -391,17 +390,6 @@ else
                                     }
                                 </td>
                                 <td><span class="badge bg-light text-info border">@auth.RoleScope</span></td>
-                                <td>
-                                    @if (!string.IsNullOrEmpty(auth.AssessmentMethod))
-                                    {
-                                        <div class="small text-dark fw-medium">
-                                            <i class="bi bi-eye-fill text-primary me-1"></i>@auth.AssessmentMethod
-                                        </div>
-                                    }
-                                    <div class="small text-muted mt-1" style="font-size: 0.75rem;">
-                                        <i class="bi bi-person-check-fill text-success me-1"></i>Validado por: @auth.CreatedByUserName
-                                    </div>
-                                </td>
                                 <td class="text-end pe-3">
                                     @if (canEdit)
                                     {
@@ -512,9 +500,23 @@ else
                         <div class="card border-0 bg-light p-3 rounded-3 mb-3">
                             <div class="d-flex justify-content-between align-items-center mb-1">
                                 <span class="fw-bold text-success small">@ev.Area</span>
-                                <span class="badge rounded-pill @(ev.Outcome == "COMPETENTE" || ev.Outcome == "PASS" ? "bg-success text-white" : "bg-danger text-white")">
-                                    @ev.Outcome
-                                </span>
+                                <div class="d-flex align-items-center gap-2">
+                                    <span class="badge rounded-pill @(ev.Outcome == "COMPETENTE" || ev.Outcome == "PASS" ? "bg-success text-white" : "bg-danger text-white")">
+                                        @ev.Outcome
+                                    </span>
+                                    @if (canEdit)
+                                    {
+                                        <button class="btn btn-sm btn-outline-secondary p-0.5 border-0" @onclick="() => OpenEditEvaluationModal(ev)" title="Editar">
+                                            <i class="bi bi-pencil-square" style="font-size: 0.85rem;"></i>
+                                        </button>
+                                    }
+                                    @if (canDelete)
+                                    {
+                                        <button class="btn btn-sm btn-outline-danger p-0.5 border-0" @onclick="() => ConfirmDeleteEvaluation(ev.Id)" title="Eliminar">
+                                            <i class="bi bi-trash" style="font-size: 0.85rem;"></i>
+                                        </button>
+                                    }
+                                </div>
                             </div>
                             <h6 class="fw-semibold text-dark">@ev.CompetencyName</h6>
                             <p class="text-muted small mb-2">@ev.Evidence</p>
@@ -548,8 +550,28 @@ else
                         <div class="card border-0 bg-light p-3 rounded-3 mb-3">
                             <div class="d-flex justify-content-between align-items-center mb-1">
                                 <span class="badge bg-success rounded-pill">@auth.Status</span>
+                                <div class="d-flex align-items-center gap-2">
+                                    @if (canEdit)
+                                    {
+                                        <button class="btn btn-sm btn-outline-secondary p-0.5 border-0" @onclick="() => OpenEditAuthorizationModal(auth)" title="Editar">
+                                            <i class="bi bi-pencil-square" style="font-size: 0.85rem;"></i>
+                                        </button>
+                                    }
+                                    @if (canDelete)
+                                    {
+                                        <button class="btn btn-sm btn-outline-danger p-0.5 border-0" @onclick="() => ConfirmDeleteAuthorization(auth.Id)" title="Eliminar">
+                                            <i class="bi bi-trash" style="font-size: 0.85rem;"></i>
+                                        </button>
+                                    }
+                                </div>
                             </div>
                             <h6 class="fw-semibold text-dark">@auth.AuthorizationName</h6>
+                            @if (!string.IsNullOrEmpty(auth.AssessmentMethod))
+                            {
+                                <div class="small text-dark fw-medium mb-1">
+                                    <i class="bi bi-eye-fill text-primary me-1"></i>Valoración: @auth.AssessmentMethod
+                                </div>
+                            }
                             <div class="d-flex justify-content-between align-items-center mt-2 small text-muted">
                                 <span>Autorizó: @auth.GrantedByName</span>
                                 <span>Vence: @auth.ValidUntil?.ToString("dd/MM/yyyy")</span>
@@ -757,7 +779,7 @@ else
     </div>
 }
 
-<!-- MODAL: REGISTRAR EVALUACIÓN DE COMPETENCIA -->
+<!-- MODAL: REGISTRAR/EDITAR EVALUACIÓN DE COMPETENCIA -->
 @if (showEvaluationModal)
 {
     <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
@@ -765,7 +787,7 @@ else
             <div class="modal-content card shadow border-0 rounded-4 w-100">
                 <div class="card-header bg-success text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
                     <h5 class="mb-0 fw-bold">
-                        <i class="bi bi-shield-check me-2"></i>Evaluar Competencia Técnica
+                        <i class="bi bi-shield-check me-2"></i>@(isEditingEvaluation ? "Editar Evaluación de Competencia" : "Evaluar Competencia Técnica")
                     </h5>
                     <button type="button" class="btn-close btn-close-white" @onclick="() => showEvaluationModal = false"></button>
                 </div>
@@ -812,7 +834,7 @@ else
 
                         <div class="d-flex gap-2 justify-content-end mt-4">
                             <button type="button" class="btn btn-light" @onclick="() => showEvaluationModal = false">Cancelar</button>
-                            <button type="submit" class="btn btn-success px-4">Registrar Evaluación</button>
+                            <button type="submit" class="btn btn-success px-4">@(isEditingEvaluation ? "Guardar Cambios" : "Registrar Evaluación")</button>
                         </div>
                     </EditForm>
                 </div>
@@ -821,7 +843,7 @@ else
     </div>
 }
 
-<!-- MODAL: CONCEDER AUTORIZACIÓN CLÍNICA -->
+<!-- MODAL: CONCEDER/EDITAR AUTORIZACIÓN CLÍNICA -->
 @if (showAuthorizationModal)
 {
     <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
@@ -829,7 +851,7 @@ else
             <div class="modal-content card shadow border-0 rounded-4 w-100">
                 <div class="card-header bg-warning text-dark py-3 border-0 rounded-top-4 d-flex justify-content-between">
                     <h5 class="mb-0 fw-bold">
-                        <i class="bi bi-key me-2"></i>Conceder Autorización de Firma/Proceso
+                        <i class="bi bi-key me-2"></i>@(isEditingAuthorization ? "Editar Autorización" : "Conceder Autorización de Firma/Proceso")
                     </h5>
                     <button type="button" class="btn-close" @onclick="() => showAuthorizationModal = false"></button>
                 </div>
@@ -847,6 +869,26 @@ else
                                     }
                                 </InputSelect>
                             </div>
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Otorgado Por (Usuario)</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="grantModel.GrantedByUserId">
+                                    <option value="">-- Seleccionar Usuario --</option>
+                                    @foreach (var u in usersLookup)
+                                    {
+                                        <option value="@u.Id">@u.FullName</option>
+                                    }
+                                </InputSelect>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Método de Valoración de Habilidades</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="grantModel.AssessmentMethod">
+                                    <option value="">-- Seleccionar método de valoración --</option>
+                                    @foreach (var method in assessmentMethodsList)
+                                    {
+                                        <option value="@method">@method</option>
+                                    }
+                                </InputSelect>
+                            </div>
                             <div class="col-6">
                                 <label class="form-label fw-medium text-secondary small">Vigente Desde</label>
                                 <InputDate class="form-control form-control-premium" @bind-Value="grantModel.ValidFrom" />
@@ -859,7 +901,7 @@ else
 
                         <div class="d-flex gap-2 justify-content-end mt-4">
                             <button type="button" class="btn btn-light" @onclick="() => showAuthorizationModal = false">Cancelar</button>
-                            <button type="submit" class="btn btn-warning text-dark px-4 fw-medium">Conceder Autorización</button>
+                            <button type="submit" class="btn btn-warning text-dark px-4 fw-medium">@(isEditingAuthorization ? "Guardar Cambios" : "Conceder Autorización")</button>
                         </div>
                     </EditForm>
                 </div>
@@ -971,16 +1013,6 @@ else
                                 <InputNumber class="form-control form-control-premium" @bind-Value="authorizationCatalogModel.ValidityMonths" min="1" placeholder="Ej. 12" />
                             </div>
                             <div class="col-12">
-                                <label class="form-label fw-medium text-secondary small">Método de Valoración de Habilidades</label>
-                                <InputSelect class="form-select form-select-premium" @bind-Value="authorizationCatalogModel.AssessmentMethod">
-                                    <option value="">-- Seleccionar método de valoración --</option>
-                                    @foreach (var method in assessmentMethodsList)
-                                    {
-                                        <option value="@method">@method</option>
-                                    }
-                                </InputSelect>
-                            </div>
-                            <div class="col-12">
                                 <div class="form-check form-switch pt-2">
                                     <InputCheckbox class="form-check-input" id="authRequiresCompetency" @bind-Value="authorizationCatalogModel.RequiresCompetency" />
                                     <label class="form-check-label text-muted small" for="authRequiresCompetency">¿Requiere competencia previa aprobada?</label>
@@ -1055,6 +1087,52 @@ else
                     <div class="d-flex gap-2 justify-content-end">
                         <button type="button" class="btn btn-light btn-sm" @onclick="() => showDeleteAuthorizationCatalogConfirm = false">Cancelar</button>
                         <button type="button" class="btn btn-danger btn-sm px-3 text-white" @onclick="DeleteAuthorizationCatalog">Eliminar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL DE CONFIRMACIÓN DE ELIMINACIÓN DE EVALUACIÓN DE COMPETENCIA DE USUARIO -->
+@if (showDeleteEvaluationConfirm)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content card shadow border-0 rounded-4">
+                <div class="card-header bg-danger text-white py-3 border-0 rounded-top-4">
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>¿Eliminar Evaluación?</h6>
+                </div>
+                <div class="card-body p-3">
+                    <p class="small text-secondary mb-3">
+                        ¿Está seguro de que desea eliminar esta evaluación de competencia del expediente de este usuario? Esta acción es irreversible.
+                    </p>
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button type="button" class="btn btn-light btn-sm" @onclick="() => showDeleteEvaluationConfirm = false">Cancelar</button>
+                        <button type="button" class="btn btn-danger btn-sm px-3 text-white" @onclick="DeleteEvaluation">Eliminar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL DE CONFIRMACIÓN DE ELIMINACIÓN DE AUTORIZACIÓN DE USUARIO -->
+@if (showDeleteAuthorizationConfirm)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content card shadow border-0 rounded-4">
+                <div class="card-header bg-danger text-white py-3 border-0 rounded-top-4">
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>¿Eliminar Autorización?</h6>
+                </div>
+                <div class="card-body p-3">
+                    <p class="small text-secondary mb-3">
+                        ¿Está seguro de que desea eliminar esta autorización concedida a este usuario? Esta acción es irreversible.
+                    </p>
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button type="button" class="btn btn-light btn-sm" @onclick="() => showDeleteAuthorizationConfirm = false">Cancelar</button>
+                        <button type="button" class="btn btn-danger btn-sm px-3 text-white" @onclick="DeleteAuthorization">Eliminar</button>
                     </div>
                 </div>
             </div>
@@ -1177,6 +1255,16 @@ else
     private bool isEditingStaff = false;
     private bool isEditingCompetencyCatalog = false;
     private bool isEditingAuthorizationCatalog = false;
+
+    private bool isEditingEvaluation = false;
+    private Guid? editingEvaluationId;
+    private bool showDeleteEvaluationConfirm = false;
+    private Guid? deletingEvaluationId;
+
+    private bool isEditingAuthorization = false;
+    private Guid? editingAuthorizationId;
+    private bool showDeleteAuthorizationConfirm = false;
+    private Guid? deletingAuthorizationId;
 
     private CompetencyCatalogDto? deletingCompetencyCatalog;
     private AuthorizationCatalogDto? deletingAuthorizationCatalog;
@@ -1393,7 +1481,44 @@ else
             EvaluationDate = DateTime.Today,
             Outcome = "COMPETENTE"
         };
+        isEditingEvaluation = false;
+        editingEvaluationId = null;
         showEvaluationModal = true;
+    }
+
+    private void OpenEditEvaluationModal(CompetencyEvaluationDto ev)
+    {
+        evaluationModel = new EvaluationModel
+        {
+            StaffId = ev.StaffId,
+            CompetencyId = ev.CompetencyId ?? Guid.Empty,
+            EvaluationDate = ev.EvaluationDate,
+            EvaluatorStaffId = ev.EvaluatorStaffId ?? Guid.Empty,
+            Outcome = ev.Outcome == "PASS" || ev.Outcome == "APTO" || ev.Outcome == "COMPETENTE" ? "COMPETENTE" : "NO_COMPETENTE",
+            Findings = ev.Evidence
+        };
+        isEditingEvaluation = true;
+        editingEvaluationId = ev.Id;
+        showEvaluationModal = true;
+    }
+
+    private void ConfirmDeleteEvaluation(Guid id)
+    {
+        deletingEvaluationId = id;
+        showDeleteEvaluationConfirm = true;
+    }
+
+    private async Task DeleteEvaluation()
+    {
+        if (!canDelete || !deletingEvaluationId.HasValue) return;
+        await StaffService.DeleteCompetencyEvaluationAsync(deletingEvaluationId.Value);
+        showDeleteEvaluationConfirm = false;
+        deletingEvaluationId = null;
+        if (selectedStaffDetail != null)
+        {
+            await SelectStaff(selectedStaffDetail.Id);
+        }
+        await LoadData();
     }
 
     private async Task SaveCompetencyEvaluation()
@@ -1415,7 +1540,15 @@ else
             evaluationModel.EvaluatorStaffId
         );
 
-        await StaffService.RecordCompetencyEvaluationAsync(req);
+        if (isEditingEvaluation && editingEvaluationId.HasValue)
+        {
+            await StaffService.UpdateCompetencyEvaluationAsync(editingEvaluationId.Value, req);
+        }
+        else
+        {
+            await StaffService.RecordCompetencyEvaluationAsync(req);
+        }
+
         showEvaluationModal = false;
         if (selectedStaffDetail != null)
         {
@@ -1432,7 +1565,44 @@ else
             StaffId = selectedStaffDetail.Id,
             ValidFrom = DateTime.Today
         };
+        isEditingAuthorization = false;
+        editingAuthorizationId = null;
         showAuthorizationModal = true;
+    }
+
+    private void OpenEditAuthorizationModal(StaffAuthorizationDto auth)
+    {
+        grantModel = new GrantModel
+        {
+            StaffId = selectedStaffDetail?.Id ?? Guid.Empty,
+            AuthorizationId = auth.AuthorizationId,
+            ValidFrom = auth.ValidFrom,
+            ValidUntil = auth.ValidUntil,
+            GrantedByUserId = auth.GrantedByUserId,
+            AssessmentMethod = auth.AssessmentMethod
+        };
+        isEditingAuthorization = true;
+        editingAuthorizationId = auth.Id;
+        showAuthorizationModal = true;
+    }
+
+    private void ConfirmDeleteAuthorization(Guid id)
+    {
+        deletingAuthorizationId = id;
+        showDeleteAuthorizationConfirm = true;
+    }
+
+    private async Task DeleteAuthorization()
+    {
+        if (!canDelete || !deletingAuthorizationId.HasValue) return;
+        await StaffService.DeleteStaffAuthorizationAsync(deletingAuthorizationId.Value);
+        showDeleteAuthorizationConfirm = false;
+        deletingAuthorizationId = null;
+        if (selectedStaffDetail != null)
+        {
+            await SelectStaff(selectedStaffDetail.Id);
+        }
+        await LoadData();
     }
 
     private async Task SaveAuthorization()
@@ -1441,7 +1611,7 @@ else
         if (grantModel.AuthorizationId == Guid.Empty) return;
 
         var auth = authorizationsCatalog.First(a => a.Id == grantModel.AuthorizationId);
-        Guid grantedBy = currentUserId ?? usersLookup.FirstOrDefault()?.Id ?? Guid.Empty;
+        Guid grantedBy = grantModel.GrantedByUserId ?? currentUserId ?? usersLookup.FirstOrDefault()?.Id ?? Guid.Empty;
 
         var req = new GrantAuthorizationRequest(
             grantModel.StaffId,
@@ -1451,10 +1621,19 @@ else
             grantModel.ValidUntil,
             grantedBy,
             null,
-            null
+            null,
+            grantModel.AssessmentMethod
         );
 
-        await StaffService.GrantAuthorizationAsync(req);
+        if (isEditingAuthorization && editingAuthorizationId.HasValue)
+        {
+            await StaffService.UpdateStaffAuthorizationAsync(editingAuthorizationId.Value, req);
+        }
+        else
+        {
+            await StaffService.GrantAuthorizationAsync(req);
+        }
+
         showAuthorizationModal = false;
         if (selectedStaffDetail != null)
         {
@@ -1545,8 +1724,7 @@ else
         {
             RoleScope = "AMBOS",
             RequiresCompetency = false,
-            RequiredCompetencyId = null,
-            AssessmentMethod = ""
+            RequiredCompetencyId = null
         };
         isEditingAuthorizationCatalog = false;
         showAuthorizationCatalogModal = true;
@@ -1564,8 +1742,7 @@ else
             RoleScope = auth.RoleScope,
             RequiresCompetency = auth.RequiresCompetency,
             ValidityMonths = auth.ValidityMonths,
-            RequiredCompetencyId = auth.RequiredCompetencyId,
-            AssessmentMethod = auth.AssessmentMethod
+            RequiredCompetencyId = auth.RequiredCompetencyId
         };
         isEditingAuthorizationCatalog = true;
         showAuthorizationCatalogModal = true;
@@ -1575,11 +1752,6 @@ else
     {
         if (isEditingAuthorizationCatalog && !canEdit) return;
         if (!isEditingAuthorizationCatalog && !canCreate) return;
-        if (string.IsNullOrEmpty(authorizationCatalogModel.AssessmentMethod))
-        {
-            catalogErrorMessage = "Debe seleccionar un método de valoración de habilidades.";
-            return;
-        }
 
         if (authorizationCatalogModel.RequiresCompetency && 
             (!authorizationCatalogModel.RequiredCompetencyId.HasValue || authorizationCatalogModel.RequiredCompetencyId.Value == Guid.Empty))
@@ -1598,8 +1770,7 @@ else
             authorizationCatalogModel.RequiresCompetency,
             authorizationCatalogModel.ValidityMonths,
             authorizationCatalogModel.RequiresCompetency ? authorizationCatalogModel.RequiredCompetencyId : null,
-            currentUserId,
-            authorizationCatalogModel.AssessmentMethod
+            currentUserId
         );
 
         if (isEditingAuthorizationCatalog && authorizationCatalogModel.Id.HasValue)
@@ -1687,6 +1858,8 @@ else
         public Guid AuthorizationId { get; set; }
         public DateTime ValidFrom { get; set; }
         public DateTime? ValidUntil { get; set; }
+        public Guid? GrantedByUserId { get; set; }
+        public string? AssessmentMethod { get; set; }
     }
 
     public class CompetencyCatalogModel
@@ -1711,6 +1884,5 @@ else
         public bool RequiresCompetency { get; set; }
         public int? ValidityMonths { get; set; }
         public Guid? RequiredCompetencyId { get; set; }
-        public string? AssessmentMethod { get; set; }
     }
 }

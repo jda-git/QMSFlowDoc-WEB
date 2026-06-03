@@ -109,7 +109,8 @@ public class StaffService : IStaffService
                 ValidUntil = ev.ValidUntil,
                 Outcome = ev.Outcome,
                 Evidence = ev.Findings,
-                EvaluatorName = (ev.EvaluatorStaffId.HasValue && evaluatorNames.TryGetValue(ev.EvaluatorStaffId.Value, out var evalName)) ? evalName : "Evaluador"
+                EvaluatorName = (ev.EvaluatorStaffId.HasValue && evaluatorNames.TryGetValue(ev.EvaluatorStaffId.Value, out var evalName)) ? evalName : "Evaluador",
+                EvaluatorStaffId = ev.EvaluatorStaffId
             }).ToList();
 
         var statuses = staff.CompetencyStatuses
@@ -134,7 +135,9 @@ public class StaffService : IStaffService
                 a.ValidUntil,
                 a.GrantedAt,
                 a.Status,
-                systemUserNames.TryGetValue(a.GrantedByUserId ?? Guid.Empty, out var granterName) ? granterName : "Responsable"
+                systemUserNames.TryGetValue(a.GrantedByUserId ?? Guid.Empty, out var granterName) ? granterName : "Responsable",
+                a.GrantedByUserId,
+                a.AssessmentMethod
             )).ToList();
 
         return new StaffExpedienteDto(
@@ -348,8 +351,7 @@ public class StaffService : IStaffService
                           a.RequiredCompetencies.Select(rc => (Guid?)rc.CompetencyId).FirstOrDefault(),
                           a.RequiredCompetencies.Select(rc => rc.Competency != null ? rc.Competency.Name : null).FirstOrDefault(),
                           a.CreatedByUserId,
-                          u != null ? u.FullName : "Admin",
-                          a.AssessmentMethod
+                          u != null ? u.FullName : "Admin"
                       )).ToListAsync();
     }
 
@@ -368,7 +370,8 @@ public class StaffService : IStaffService
             GrantedAt = DateTime.UtcNow,
             ValidFrom = request.ValidFrom,
             ValidUntil = request.ValidUntil,
-            Status = "VIGENTE"
+            Status = "VIGENTE",
+            AssessmentMethod = request.AssessmentMethod
         };
 
         _context.StaffAuthorizations.Add(auth);
@@ -447,8 +450,7 @@ public class StaffService : IStaffService
             ValidityMonths = request.ValidityMonths,
             IsActive = true,
             CreatedAt = DateTime.UtcNow,
-            CreatedByUserId = request.CreatedByUserId,
-            AssessmentMethod = request.AssessmentMethod
+            CreatedByUserId = request.CreatedByUserId
         };
 
         _context.AuthorizationCatalogs.Add(auth);
@@ -479,7 +481,6 @@ public class StaffService : IStaffService
         auth.RoleScope = request.RoleScope;
         auth.RequiresCompetency = request.RequiresCompetency;
         auth.ValidityMonths = request.ValidityMonths;
-        auth.AssessmentMethod = request.AssessmentMethod;
         if (request.CreatedByUserId.HasValue && request.CreatedByUserId.Value != Guid.Empty)
         {
             auth.CreatedByUserId = request.CreatedByUserId.Value;
@@ -507,6 +508,99 @@ public class StaffService : IStaffService
         if (auth == null) return;
 
         auth.IsActive = false;
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateCompetencyEvaluationAsync(Guid id, AssessCompetencyRequest request)
+    {
+        var eval = await _context.CompetencyEvaluations.FirstOrDefaultAsync(e => e.Id == id);
+        if (eval == null) return;
+
+        var competency = await _context.CompetencyCatalogs.FirstOrDefaultAsync(c => c.Name == request.CompetencyName);
+        if (competency == null) return;
+
+        var validMonths = competency.DefaultReassessmentMonths;
+        var validUntil = request.EvaluationDate.AddMonths(validMonths);
+
+        eval.EvaluationDate = request.EvaluationDate;
+        eval.EvaluatorStaffId = request.AssessedByUserId;
+        eval.Outcome = request.Outcome.ToString();
+        eval.ValidUntil = validUntil;
+        eval.NextDueDate = validUntil;
+        eval.Findings = request.Evidence;
+
+        // Update StaffCompetencyStatus if this is the latest one
+        var status = await _context.StaffCompetencyStatuses
+            .FirstOrDefaultAsync(s => s.StaffId == request.StaffId && s.CompetencyId == competency.Id);
+
+        if (status != null && status.LastEvaluationId == eval.Id)
+        {
+            status.CurrentStatus = request.Outcome == QMSFlowDoc.Shared.Models.CompetencyOutcome.PASS ? "APTO" : "NO_APTO";
+            status.LastEvaluationDate = request.EvaluationDate;
+            status.NextDueDate = validUntil;
+            status.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task DeleteCompetencyEvaluationAsync(Guid id)
+    {
+        var eval = await _context.CompetencyEvaluations.FirstOrDefaultAsync(e => e.Id == id);
+        if (eval == null) return;
+
+        // Find another evaluation for the same staff and competency
+        var otherEvals = await _context.CompetencyEvaluations
+            .Where(e => e.StaffId == eval.StaffId && e.CompetencyId == eval.CompetencyId && e.Id != id && e.Status == "ACTIVO")
+            .OrderByDescending(e => e.EvaluationDate)
+            .FirstOrDefaultAsync();
+
+        var status = await _context.StaffCompetencyStatuses
+            .FirstOrDefaultAsync(s => s.StaffId == eval.StaffId && s.CompetencyId == eval.CompetencyId);
+
+        if (status != null)
+        {
+            if (otherEvals != null)
+            {
+                status.CurrentStatus = otherEvals.Outcome == "PASS" || otherEvals.Outcome == "APTO" ? "APTO" : "NO_APTO";
+                status.LastEvaluationId = otherEvals.Id;
+                status.LastEvaluationDate = otherEvals.EvaluationDate;
+                status.NextDueDate = otherEvals.ValidUntil;
+                status.UpdatedAt = DateTime.UtcNow;
+            }
+            else
+            {
+                _context.StaffCompetencyStatuses.Remove(status);
+            }
+        }
+
+        _context.CompetencyEvaluations.Remove(eval);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task UpdateStaffAuthorizationAsync(Guid id, GrantAuthorizationRequest request)
+    {
+        var auth = await _context.StaffAuthorizations.FirstOrDefaultAsync(a => a.Id == id);
+        if (auth == null) return;
+
+        var authCatalog = await _context.AuthorizationCatalogs.FirstOrDefaultAsync(a => a.Name == request.TaskName);
+        if (authCatalog == null) return;
+
+        auth.AuthorizationId = authCatalog.Id;
+        auth.GrantedByUserId = request.GrantedByUserId;
+        auth.ValidFrom = request.ValidFrom;
+        auth.ValidUntil = request.ValidUntil;
+        auth.AssessmentMethod = request.AssessmentMethod;
+
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task DeleteStaffAuthorizationAsync(Guid id)
+    {
+        var auth = await _context.StaffAuthorizations.FirstOrDefaultAsync(a => a.Id == id);
+        if (auth == null) return;
+
+        _context.StaffAuthorizations.Remove(auth);
         await _context.SaveChangesAsync();
     }
 }

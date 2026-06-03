@@ -29,9 +29,15 @@ public interface IStaffService
     // Authorizations
     Task<List<AuthorizationCatalogDto>> GetAuthorizationCatalogAsync();
     Task GrantAuthorizationAsync(GrantAuthorizationRequest request);
+    Task UpdateStaffAuthorizationAsync(Guid id, GrantAuthorizationRequest request);
+    Task DeleteStaffAuthorizationAsync(Guid id);
     Task<Guid> CreateAuthorizationCatalogAsync(CreateAuthorizationCatalogRequest request);
     Task UpdateAuthorizationCatalogAsync(Guid id, CreateAuthorizationCatalogRequest request);
     Task DeleteAuthorizationCatalogAsync(Guid id);
+    
+    // Competency Evaluation update/delete
+    Task UpdateCompetencyEvaluationAsync(Guid id, AssessCompetencyRequest request);
+    Task DeleteCompetencyEvaluationAsync(Guid id);
     
     // Helpers
     Task<List<UserLookupDto>> GetAvailableUsersLookupAsync();
@@ -56,8 +62,7 @@ public record CreateAuthorizationCatalogRequest(
     bool RequiresCompetency,
     int? ValidityMonths,
     Guid? RequiredCompetencyId = null,
-    Guid? CreatedByUserId = null,
-    string? AssessmentMethod = null
+    Guid? CreatedByUserId = null
 );
 
 public record StaffExpedienteDto(
@@ -110,8 +115,7 @@ public record AuthorizationCatalogDto(
     Guid? RequiredCompetencyId = null,
     string? RequiredCompetencyName = null,
     Guid? CreatedByUserId = null,
-    string? CreatedByUserName = null,
-    string? AssessmentMethod = null
+    string? CreatedByUserName = null
 );
 
 public record TrainingTypeCatalogDto(Guid Id, string Code, string Name, bool IsActive);

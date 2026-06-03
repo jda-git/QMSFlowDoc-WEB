@@ -16,7 +16,6 @@ public class AuthorizationCatalog
     public bool IsActive { get; set; } = true;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public Guid? CreatedByUserId { get; set; }
-    public string? AssessmentMethod { get; set; }
     
     // Relation with required competencies
     public List<AuthorizationRequiredCompetency> RequiredCompetencies { get; set; } = new();
@@ -48,6 +47,7 @@ public class StaffAuthorization
     
     public string Status { get; set; } = "VIGENTE"; // VIGENTE, CADUCADA, REVOCADA
     public string? RevocationReason { get; set; }
+    public string? AssessmentMethod { get; set; }
     
     public Guid? EvidenceDocId { get; set; } // Link to Document System
     

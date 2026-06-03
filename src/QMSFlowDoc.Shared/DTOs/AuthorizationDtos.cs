@@ -20,6 +20,8 @@ public record StaffAuthorizationDto(
     DateTime GrantedAt,
     string Status,
     string? GrantedByName,
+    Guid? GrantedByUserId = null,
+    string? AssessmentMethod = null,
     Guid? CompetencyId = null // Added
 );
 

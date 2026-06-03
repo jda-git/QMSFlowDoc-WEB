@@ -24,4 +24,5 @@ public class CompetencyEvaluationDto
     public string Outcome { get; set; } = "Pending";
     public string? Evidence { get; set; }
     public string? EvaluatorName { get; set; }
+    public Guid? EvaluatorStaffId { get; set; }
 }

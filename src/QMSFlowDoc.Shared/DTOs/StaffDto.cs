@@ -104,5 +104,6 @@ public record GrantAuthorizationRequest(
     DateTime? ValidUntil,
     Guid? GrantedByUserId = null,
     Guid? CompetencyId = null,
-    Guid? EvaluationId = null
+    Guid? EvaluationId = null,
+    string? AssessmentMethod = null
 );
