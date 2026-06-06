@@ -188,3 +188,13 @@ public record CreateSupplierEvaluationRequest(
     string? AttachmentPath
 );
 
+public record ReleaseLotRequest(
+    Guid LotId,
+    Guid UserId,
+    string UserName,
+    string AcceptanceCriteria,
+    string? CertificateOfAnalysis = null,
+    string? ReceptionConditions = null,
+    string? Notes = null
+);
+

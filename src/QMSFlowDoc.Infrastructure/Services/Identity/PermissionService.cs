@@ -47,7 +47,8 @@ namespace QMSFlowDoc.Infrastructure.Services.Identity
                         rp.CanCreate,
                         rp.CanEdit,
                         rp.CanDelete,
-                        rp.CanPrint
+                        rp.CanPrint,
+                        rp.CanApprove
                     ));
                 }
             }
@@ -66,6 +67,7 @@ namespace QMSFlowDoc.Infrastructure.Services.Identity
                     rp.CanEdit = dto.CanEdit;
                     rp.CanDelete = dto.CanDelete;
                     rp.CanPrint = dto.CanPrint;
+                    rp.CanApprove = dto.CanApprove;
                 }
             }
             await _context.SaveChangesAsync();
@@ -75,20 +77,20 @@ namespace QMSFlowDoc.Infrastructure.Services.Identity
         {
             if (user == null || user.Identity == null || !user.Identity.IsAuthenticated)
             {
-                return new PermissionSettingDto(false, false, false, false, false);
+                return new PermissionSettingDto(false, false, false, false, false, false);
             }
 
             var roleClaims = user.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
             
-            // Administrador has definition full access
+            // Administrador has full access
             if (roleClaims.Contains("Administrador"))
             {
-                return new PermissionSettingDto(true, true, true, true, true);
+                return new PermissionSettingDto(true, true, true, true, true, true);
             }
 
             if (!roleClaims.Any())
             {
-                return new PermissionSettingDto(false, false, false, false, false);
+                return new PermissionSettingDto(false, false, false, false, false, false);
             }
 
             var permissions = await (from rp in _context.RolePermissions
@@ -98,7 +100,7 @@ namespace QMSFlowDoc.Infrastructure.Services.Identity
 
             if (!permissions.Any())
             {
-                return new PermissionSettingDto(false, false, false, false, false);
+                return new PermissionSettingDto(false, false, false, false, false, false);
             }
 
             bool canRead = permissions.Any(p => p.CanRead);
@@ -106,8 +108,9 @@ namespace QMSFlowDoc.Infrastructure.Services.Identity
             bool canEdit = permissions.Any(p => p.CanEdit);
             bool canDelete = permissions.Any(p => p.CanDelete);
             bool canPrint = permissions.Any(p => p.CanPrint);
+            bool canApprove = permissions.Any(p => p.CanApprove);
 
-            return new PermissionSettingDto(canRead, canCreate, canEdit, canDelete, canPrint);
+            return new PermissionSettingDto(canRead, canCreate, canEdit, canDelete, canPrint, canApprove);
         }
     }
 }

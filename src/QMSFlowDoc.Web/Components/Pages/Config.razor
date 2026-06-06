@@ -192,6 +192,10 @@
                                     <th>Editar</th>
                                     <th>Eliminar</th>
                                     <th>Imprimir/Exportar</th>
+                                    @if (sectionGroup.Key == "Documents")
+                                    {
+                                        <th>Aprobar</th>
+                                    }
                                 </tr>
                             </thead>
                             <tbody>
@@ -220,6 +224,12 @@
                                         <td>
                                             <input type="checkbox" class="form-check-input" @bind="rp.CanPrint" disabled='@(rp.RoleName == "Administrador")' />
                                         </td>
+                                        @if (sectionGroup.Key == "Documents")
+                                        {
+                                            <td>
+                                                <input type="checkbox" class="form-check-input" @bind="rp.CanApprove" disabled='@(rp.RoleName == "Administrador")' />
+                                            </td>
+                                        }
                                     </tr>
                                 }
                             </tbody>
@@ -534,7 +544,8 @@
                 CanCreate = p.CanCreate,
                 CanEdit = p.CanEdit,
                 CanDelete = p.CanDelete,
-                CanPrint = p.CanPrint
+                CanPrint = p.CanPrint,
+                CanApprove = p.CanApprove
             }).ToList();
             
             // Group permissions by section
@@ -704,7 +715,8 @@
                 p.CanCreate,
                 p.CanEdit,
                 p.CanDelete,
-                p.CanPrint
+                p.CanPrint,
+                p.CanApprove
             )).ToList();
             await PermissionService.SaveRolePermissionsAsync(dtos);
             permissionsSuccessMessage = "Matriz de permisos guardada con éxito.";
@@ -742,6 +754,7 @@
         public bool CanEdit { get; set; }
         public bool CanDelete { get; set; }
         public bool CanPrint { get; set; }
+        public bool CanApprove { get; set; }
     }
 
     public class CreateUserModel

@@ -24,6 +24,7 @@ namespace QMSFlowDoc.Web.Controllers
         /// <summary>
         /// Obtiene el documento PDF para vista en pantalla (Marca de agua: CONTROLADO)
         /// </summary>
+        [AllowAnonymous]
         [HttpGet("{id}/view")]
         public async Task<IActionResult> ViewDocument(Guid id)
         {

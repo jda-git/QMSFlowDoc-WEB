@@ -354,6 +354,20 @@ namespace QMSFlowDoc.Infrastructure.Seed
 
             // 6. Seed EQA Programs
             await SeedEqaProgramsAsync(context);
+
+            // 7. Enforce Quarantine status on all existing reagent lots (ISO 15189 compliance audit requirement)
+            var existingLots = await context.ReagentLots.Where(l => l.Status != LotStatus.QUARANTINE).ToListAsync();
+            if (existingLots.Any())
+            {
+                foreach (var lot in existingLots)
+                {
+                    lot.Status = LotStatus.QUARANTINE;
+                    lot.ReleaseByUserId = null;
+                    lot.ReleaseAt = null;
+                }
+                await context.SaveChangesAsync();
+                Console.WriteLine($"✔ Puestos en cuarentena {existingLots.Count} lotes existentes en la base de datos.");
+            }
         }
 
         private static async Task SeedDefaultRolePermissionsAsync(QmsDbContext context, RoleManager<ApplicationRole> roleManager)

@@ -5,8 +5,8 @@ using System.Threading.Tasks;
 
 namespace QMSFlowDoc.Application.Services.Identity
 {
-    public record RolePermissionDto(Guid Id, Guid RoleId, string RoleName, string Section, bool CanRead, bool CanCreate, bool CanEdit, bool CanDelete, bool CanPrint);
-    public record PermissionSettingDto(bool CanRead, bool CanCreate, bool CanEdit, bool CanDelete, bool CanPrint);
+    public record RolePermissionDto(Guid Id, Guid RoleId, string RoleName, string Section, bool CanRead, bool CanCreate, bool CanEdit, bool CanDelete, bool CanPrint, bool CanApprove);
+    public record PermissionSettingDto(bool CanRead, bool CanCreate, bool CanEdit, bool CanDelete, bool CanPrint, bool CanApprove);
 
     public interface IPermissionService
     {

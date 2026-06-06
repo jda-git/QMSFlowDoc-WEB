@@ -9,6 +9,7 @@
 @inject IInventoryService InventoryService
 @inject IJSRuntime JS
 @inject IPermissionService PermissionService
+@inject IUserService UserService
 
 <PageTitle>Control de Inventario y Reactivos - QMSFlowDoc</PageTitle>
 
@@ -343,6 +344,7 @@ else
                                     <th>F. Caducidad</th>
                                     <th>Ubicación</th>
                                     <th>Estado</th>
+                                    <th>Liberado</th>
                                     <th>Disponible</th>
                                     <th class="text-end pe-3">Acciones de Consumo</th>
                                 </tr>
@@ -356,7 +358,7 @@ else
                                 @if (displayedLots == null || !displayedLots.Any())
                                 {
                                     <tr>
-                                        <td colspan="7" class="text-center py-4 text-muted">
+                                        <td colspan="8" class="text-center py-4 text-muted">
                                             No hay lotes con stock disponibles. active el interruptor para ver el historial completo.
                                         </td>
                                     </tr>
@@ -377,7 +379,7 @@ else
                                             <td>
                                                 <select class="form-select form-select-sm status-dropdown-select @GetLotStatusColorClass(lot.Status)"
                                                         value="@lot.Status.ToString()" 
-                                                        disabled="@(!canEdit)"
+                                                        disabled="@(!canEdit || lot.Status == LotStatus.QUARANTINE)"
                                                         @onchange="(e) => UpdateLotStatus(lot, e.Value?.ToString())">
                                                     <option value="RELEASED">Liberado</option>
                                                     <option value="QUARANTINE">Cuarentena</option>
@@ -388,11 +390,32 @@ else
                                                     <option value="RECALLED">Retirado</option>
                                                 </select>
                                             </td>
+                                            <td>
+                                                @if (lot.ReleaseByUserId.HasValue)
+                                                {
+                                                    var recommenderName = userNames.GetValueOrDefault(lot.ReleaseByUserId.Value) ?? "Sistema";
+                                                    <div class="d-flex flex-column text-start" style="line-height: 1.2;">
+                                                        <span class="fw-bold text-success" style="font-size: 0.75rem;"><i class="bi bi-patch-check-fill me-1"></i>Sí</span>
+                                                        <span class="text-secondary" style="font-size: 0.7rem;">@recommenderName</span>
+                                                        <span class="text-muted" style="font-size: 0.65rem;">@(lot.ReleaseAt?.ToString("dd/MM/yyyy") ?? "N/A")</span>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted italic" style="font-size: 0.7rem;">No</span>
+                                                }
+                                            </td>
                                             <td class="fw-bold">@lot.AvailableQty.ToString("N2") <small class="text-muted">/ @lot.ReceivedQty.ToString("N0")</small></td>
                                             <td class="text-end pe-3">
                                                 <div class="d-flex justify-content-end gap-1">
                                                     @if (canEdit)
                                                     {
+                                                        @if (lot.Status == LotStatus.QUARANTINE)
+                                                        {
+                                                            <button class="btn btn-success btn-xs px-2 py-0.5" @onclick="() => OpenReleaseLotModal(lot)" title="Liberar de Cuarentena">
+                                                                <i class="bi bi-shield-check me-1"></i> Liberar
+                                                            </button>
+                                                        }
                                                         @if (lot.AvailableQty > 0 && (lot.Status == LotStatus.RELEASED || lot.Status == LotStatus.IN_USE))
                                                         {
                                                             <button class="btn btn-outline-success btn-xs px-2 py-0.5" @onclick="() => QuickConsumeLot(lot, 1)" title="Consumir 1 unidad">
@@ -831,6 +854,58 @@ else
         </div>
     </div>
 }
+
+<!-- Modal: Liberar Lote de Cuarentena (ISO 15189) -->
+@if (showReleaseLotModal && targetLotForRelease != null)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-success text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-shield-check-fill me-2"></i>Liberación y Control de Lote</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showReleaseLotModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <div class="alert alert-success-light text-success border border-success border-opacity-25 rounded-3 p-3 mb-4 text-center">
+                        <i class="bi bi-patch-check fs-2"></i>
+                        <h6 class="fw-bold mt-2">Verificación de Criterios de Aceptación</h6>
+                        <p class="small mb-0">Cumplimiento ISO 15189: confirme que el lote ha superado los controles de calidad iniciales y las condiciones de transporte.</p>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-medium text-secondary">Lote a Liberar</label>
+                        <input type="text" class="form-control bg-light" value="Lote: @(targetLotForRelease.LotNumber) (Cant: @targetLotForRelease.AvailableQty)" readonly />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-medium text-secondary">Verificador (Usuario Actual)</label>
+                        <input type="text" class="form-control bg-light" value="@currentUsername" readonly />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="releaseCriteria" class="form-label fw-medium text-secondary">Criterios de Aceptación Verificados *</label>
+                        <textarea id="releaseCriteria" class="form-control form-control-premium" rows="3" placeholder="Ej. Control de temperatura conforme. Control de calidad interno dentro de límites." @bind="releaseCriteria"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="releaseNotes" class="form-label fw-medium text-secondary">Observaciones Adicionales</label>
+                        <textarea id="releaseNotes" class="form-control form-control-premium" rows="2" placeholder="Notas sobre el estado de entrega..." @bind="releaseNotes"></textarea>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(releaseError))
+                    {
+                        <div class="alert alert-danger p-2 small mb-3"><i class="bi bi-exclamation-circle-fill me-1"></i> @releaseError</div>
+                    }
+
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <button class="btn btn-light" @onclick="() => showReleaseLotModal = false">Cancelar</button>
+                        <button class="btn btn-success px-4" @onclick="ReleaseLot">Liberar Lote</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
 }
 
 <style>
@@ -923,6 +998,8 @@ else
     private List<ReagentListDto> reagentsList = new();
     private Reagent? selectedReagent = null;
     private bool showAllLots = false;
+    private Guid? currentUserId = null;
+    private string currentUsername = "Usuario Web";
 
     // Selections / Lookups
     private List<StorageLocation> storageLocations = new();
@@ -939,6 +1016,7 @@ else
     private bool showRegisterLotModal = false;
     private bool showAdjustStockModal = false;
     private bool showMovementsModal = false;
+    private bool showReleaseLotModal = false;
 
     // Print / Export modal state
     private bool showPrintExportModal = false;
@@ -961,6 +1039,13 @@ else
     private ReagentListDto? targetReagent = null;
     private ReagentListDto? targetReagentForAdjust = null;
     private ReagentLot? targetLotForAdjust = null;
+    private ReagentLot? targetLotForRelease = null;
+
+    private string releaseCriteria = string.Empty;
+    private string releaseNotes = string.Empty;
+    private string releaseError = string.Empty;
+    
+    private Dictionary<Guid, string> userNames = new();
 
     [CascadingParameter]
     private Task<AuthenticationState>? AuthStateTask { get; set; }
@@ -971,12 +1056,29 @@ else
         {
             var authState = await AuthStateTask;
             var user = authState.User;
+            currentUsername = user.Identity?.Name ?? "Usuario Web";
+            var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+            if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var uId))
+            {
+                currentUserId = uId;
+            }
+
             var userPermissions = await PermissionService.GetPermissionsForUserAsync(user, "Inventory");
             canRead = userPermissions.CanRead;
             canCreate = userPermissions.CanCreate;
             canEdit = userPermissions.CanEdit;
             canDelete = userPermissions.CanDelete;
             canPrint = userPermissions.CanPrint;
+        }
+
+        try
+        {
+            var usersList = await UserService.GetUsersAsync();
+            userNames = usersList.ToDictionary(u => u.Id, u => u.FullName);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading user names lookup: {ex.Message}");
         }
 
         await LoadInventoryDataAsync();
@@ -1086,7 +1188,7 @@ else
         if (!canEdit) return;
         if (Enum.TryParse<LotStatus>(newStatusStr, out var status))
         {
-            var success = await InventoryService.UpdateLotStatusAsync(lot.Id, (QMSFlowDoc.Domain.Entities.LotStatus)status, null, "Usuario Web");
+            var success = await InventoryService.UpdateLotStatusAsync(lot.Id, (QMSFlowDoc.Domain.Entities.LotStatus)status, currentUserId, currentUsername);
             if (success)
             {
                 if (selectedReagent != null)
@@ -1108,7 +1210,7 @@ else
             -quantity,
             "Descuento rápido por consumo clínico",
             "Consumo rápido",
-            null
+            currentUserId
         );
 
         var success = await InventoryService.AdjustStockAsync(request);
@@ -1397,7 +1499,7 @@ else
                 lotModel.ReceivedQty,
                 lotModel.LocationId,
                 null,
-                null
+                currentUserId
             );
 
             var lots = await InventoryService.RegisterLotAsync(req);
@@ -1458,7 +1560,7 @@ else
                 qty,
                 adjustModel.Reason,
                 "Ajuste manual",
-                null
+                currentUserId
             );
 
             var ok = await InventoryService.AdjustStockAsync(req);
@@ -1479,6 +1581,64 @@ else
         catch (Exception ex)
         {
             adjustError = $"Error: {ex.Message}";
+        }
+    }
+
+    private void OpenReleaseLotModal(ReagentLot lot)
+    {
+        targetLotForRelease = lot;
+        releaseCriteria = string.Empty;
+        releaseNotes = string.Empty;
+        releaseError = string.Empty;
+        showReleaseLotModal = true;
+    }
+
+    private async Task ReleaseLot()
+    {
+        if (targetLotForRelease == null) return;
+        if (!canEdit)
+        {
+            releaseError = "No tiene permisos para liberar lotes.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(releaseCriteria))
+        {
+            releaseError = "Los criterios de aceptación son obligatorios para liberar el lote.";
+            return;
+        }
+
+        try
+        {
+            var req = new ReleaseLotRequest(
+                targetLotForRelease.Id,
+                currentUserId ?? Guid.Empty,
+                currentUsername,
+                releaseCriteria.Trim(),
+                null,
+                null,
+                string.IsNullOrWhiteSpace(releaseNotes) ? null : releaseNotes.Trim()
+            );
+
+            var success = await InventoryService.ReleaseLotAsync(req);
+            if (success)
+            {
+                showReleaseLotModal = false;
+                if (selectedReagent != null)
+                {
+                    // Recargar datos del reactivo seleccionado
+                    selectedReagent = await InventoryService.GetReagentByIdAsync(selectedReagent.Id);
+                }
+                await LoadInventoryDataAsync();
+            }
+            else
+            {
+                releaseError = "No se pudo liberar el lote.";
+            }
+        }
+        catch (Exception ex)
+        {
+            releaseError = ex.Message;
         }
     }
 

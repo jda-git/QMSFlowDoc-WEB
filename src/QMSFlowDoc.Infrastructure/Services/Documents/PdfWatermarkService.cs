@@ -112,16 +112,7 @@ public class PdfWatermarkService : IPdfWatermarkService
                 AddFooterToPage(page, footerText, footerColor);
             }
 
-            // Bloquear impresión para forzar uso de botón imprimir del software
-            // Se requiere OwnerPassword para que Acrobat active la seguridad
-            var security = document.SecuritySettings;
-            security.OwnerPassword = Guid.NewGuid().ToString(); 
-            security.PermitPrint = false;
-            security.PermitFullQualityPrint = false;
-            security.PermitModifyDocument = false;
-            security.PermitExtractContent = false;
-            security.PermitAnnotations = false;
-            
+            // No set security settings / owner password to prevent PDF readers from prompting the user for a password to open the file
             document.Save(outputStream, false);
             return outputStream.ToArray();
         });

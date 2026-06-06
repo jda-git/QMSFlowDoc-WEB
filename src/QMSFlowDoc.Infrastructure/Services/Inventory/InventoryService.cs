@@ -202,10 +202,10 @@ public class InventoryService : IInventoryService
             existingLot.ReceivedQty += request.ReceivedQty;
             existingLot.AvailableQty += request.ReceivedQty;
             
-            // If the lot was previously consumed, reactivate it since we added stock
+            // If the lot was previously consumed, reactivate it in quarantine for validation
             if (existingLot.Status == LotStatus.CONSUMED)
             {
-                existingLot.Status = LotStatus.RELEASED;
+                existingLot.Status = LotStatus.QUARANTINE;
             }
 
             var movement = new InventoryMovement
@@ -235,12 +235,12 @@ public class InventoryService : IInventoryService
                 ExpiryDate = request.ExpiryDate,
                 ReceivedDate = request.ReceivedDate,
                 LocationId = request.LocationId,
-                Status = LotStatus.RELEASED,
+                Status = LotStatus.QUARANTINE,
                 CreatedAt = DateTime.UtcNow,
                 PanelId = request.PanelId
             };
             _context.ReagentLots.Add(lot);
-
+ 
             var movement = new InventoryMovement
             {
                 Id = Guid.NewGuid(),
@@ -248,12 +248,12 @@ public class InventoryService : IInventoryService
                 ReagentLotId = lot.Id,
                 Qty = request.ReceivedQty,
                 MovementType = InventoryMovementType.IN,
-                Reason = $"Lote {request.LotNumber} registrado y liberado",
+                Reason = $"Lote {request.LotNumber} registrado en cuarentena - pendiente de liberación",
                 MovedAt = DateTime.UtcNow
             };
             _context.InventoryMovements.Add(movement);
-
-            await LogAuditAsync("REGISTER_LOT", "ReagentLot", lot.Id, $"Lote registrado: {lot.LotNumber} para reactivo {request.ReagentId}", request.UserId, "Sistema");
+ 
+            await LogAuditAsync("REGISTER_LOT", "ReagentLot", lot.Id, $"Lote registrado en cuarentena: {lot.LotNumber} para reactivo {request.ReagentId}", request.UserId, "Sistema");
             await _context.SaveChangesAsync();
         }
 
@@ -267,6 +267,26 @@ public class InventoryService : IInventoryService
     {
         var lot = await _context.ReagentLots.FindAsync(request.ReagentLotId);
         if (lot == null) return false;
+
+        // Validaciones estrictas ISO 15189 para salidas de stock (consumo)
+        if (request.Qty < 0)
+        {
+            var consumableStatuses = new[] { LotStatus.RELEASED, LotStatus.IN_USE };
+            if (!consumableStatuses.Contains(lot.Status))
+            {
+                throw new InvalidOperationException($"No se permite el consumo del lote {lot.LotNumber} porque su estado es {lot.Status}. Debe estar Liberado o En Uso.");
+            }
+
+            if (Math.Abs(request.Qty) > lot.AvailableQty)
+            {
+                throw new InvalidOperationException($"Stock insuficiente en el lote {lot.LotNumber}. Disponible: {lot.AvailableQty}, Solicitado: {Math.Abs(request.Qty)}.");
+            }
+
+            if (lot.ExpiryDate < DateTime.UtcNow)
+            {
+                throw new InvalidOperationException($"El lote {lot.LotNumber} está caducado (fecha de caducidad: {lot.ExpiryDate:dd/MM/yyyy}). No se puede utilizar en clínica.");
+            }
+        }
 
         lot.AvailableQty += request.Qty;
         if (lot.AvailableQty <= 0)
@@ -292,6 +312,37 @@ public class InventoryService : IInventoryService
         return await _context.SaveChangesAsync() > 0;
     }
 
+    public async Task<bool> ReleaseLotAsync(ReleaseLotRequest request)
+    {
+        var lot = await _context.ReagentLots.FindAsync(request.LotId);
+        if (lot == null) return false;
+
+        if (lot.Status != LotStatus.QUARANTINE)
+        {
+            throw new InvalidOperationException($"El lote {lot.LotNumber} no está en cuarentena (estado actual: {lot.Status}).");
+        }
+
+        lot.Status = LotStatus.RELEASED;
+        lot.ReleaseByUserId = request.UserId;
+        lot.ReleaseAt = DateTime.UtcNow;
+
+        var movement = new InventoryMovement
+        {
+            Id = Guid.NewGuid(),
+            ReagentId = lot.ReagentId,
+            ReagentLotId = lot.Id,
+            Qty = 0,
+            MovementType = InventoryMovementType.ADJUST,
+            Reason = $"Liberación de cuarentena. Criterios: {request.AcceptanceCriteria}",
+            MovedAt = DateTime.UtcNow,
+            Notes = request.Notes
+        };
+        _context.InventoryMovements.Add(movement);
+
+        await LogAuditAsync("RELEASE_LOT", "ReagentLot", lot.Id, $"Lote {lot.LotNumber} liberado de cuarentena. Criterios: {request.AcceptanceCriteria}", request.UserId, request.UserName);
+        return await _context.SaveChangesAsync() > 0;
+    }
+
     public async Task<bool> UpdateLotStatusAsync(Guid lotId, LotStatus newStatus, Guid? userId, string username)
     {
         var lot = await _context.ReagentLots.FindAsync(lotId);
@@ -299,6 +350,12 @@ public class InventoryService : IInventoryService
 
         var oldStatus = lot.Status;
         lot.Status = newStatus;
+
+        if (newStatus == LotStatus.QUARANTINE)
+        {
+            lot.ReleaseByUserId = null;
+            lot.ReleaseAt = null;
+        }
 
         var movement = new InventoryMovement
         {

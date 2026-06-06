@@ -31,7 +31,7 @@ public interface IDocumentService
     /// <summary>
     /// Cambia el estado de aprobación de un documento.
     /// </summary>
-    Task<bool> UpdateStatusAsync(Guid id, DocumentStatus newStatus, string comments, Guid? userId, string username);
+    Task<bool> UpdateStatusAsync(Guid id, DocumentStatus newStatus, string comments, Guid? userId, string username, string? confirmPassword = null);
 
     /// <summary>
     /// Actualiza los metadatos de un documento existente.

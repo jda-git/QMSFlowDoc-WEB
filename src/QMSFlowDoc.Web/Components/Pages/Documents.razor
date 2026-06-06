@@ -13,6 +13,7 @@
 @inject IJSRuntime JS
 @inject NavigationManager Nav
 @inject IPermissionService PermissionService
+@inject IUserService UserService
 
 <PageTitle>Gestor Documental - QMSFlowDoc</PageTitle>
 
@@ -179,7 +180,7 @@ else
                                             <div class="btn-group shadow-sm border rounded bg-white">
                                                 @if (canRead)
                                                 {
-                                                    <a href="/api/documents/@(doc.Id)/view" target="_blank" class="btn btn-white btn-sm px-2.5" title="Ver Seguro (Pantalla)">
+                                                    <a href="/documents/view/@(doc.Id)" target="_blank" class="btn btn-white btn-sm px-2.5" title="Ver Seguro (Pantalla)">
                                                         <i class="bi bi-eye-fill text-primary"></i>
                                                     </a>
                                                 }
@@ -222,15 +223,49 @@ else
                         Área: <strong>@(selectedDocument.Area ?? "N/A")</strong> &bull; Proceso: <strong>@(selectedDocument.Process ?? "N/A")</strong> &bull; Tipo: <strong>@(selectedDocument.DocumentType?.Name ?? "General")</strong>
                     </div>
                 </div>
-                <div class="d-flex gap-2">
-                    @if (canEdit && (selectedDocument.Status == DocumentStatus.DRAFT || selectedDocument.Status == DocumentStatus.REVIEW))
-                    {
-                        <button class="btn btn-success btn-sm fw-bold px-3 py-2" @onclick="() => OpenApproveModal()">
-                            <i class="bi bi-check-circle me-1"></i> Aprobar Documento
-                        </button>
-                    }
+                <div class="d-flex gap-2 flex-wrap">
                     @if (canEdit)
                     {
+                        @if (selectedDocument.Status == DocumentStatus.DRAFT)
+                        {
+                            <button class="btn btn-primary btn-sm fw-bold px-3 py-2" @onclick="() => OpenTransitionModal(DocumentStatus.REVIEW)">
+                                <i class="bi bi-send me-1"></i> Enviar a Revisión
+                            </button>
+                            <button class="btn btn-outline-danger btn-sm fw-bold px-3 py-2" @onclick="() => OpenTransitionModal(DocumentStatus.OBSOLETE)">
+                                <i class="bi bi-slash-circle me-1"></i> Hacer Obsoleto
+                            </button>
+                            <button class="btn btn-outline-warning btn-sm fw-bold px-3 py-2" @onclick="() => OpenTransitionModal(DocumentStatus.RETIRED)">
+                                <i class="bi bi-archive me-1"></i> Retirar
+                            </button>
+                        }
+                        else if (selectedDocument.Status == DocumentStatus.REVIEW)
+                        {
+                            <button class="btn btn-outline-secondary btn-sm fw-bold px-3 py-2" @onclick="() => OpenTransitionModal(DocumentStatus.DRAFT)">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i> Devolver a Borrador
+                            </button>
+                            @if (canApprove)
+                            {
+                                <button class="btn btn-success btn-sm fw-bold px-3 py-2" @onclick="() => OpenApproveModal()">
+                                    <i class="bi bi-check-circle me-1"></i> Aprobar Documento
+                                </button>
+                            }
+                            <button class="btn btn-outline-danger btn-sm fw-bold px-3 py-2" @onclick="() => OpenTransitionModal(DocumentStatus.OBSOLETE)">
+                                <i class="bi bi-slash-circle me-1"></i> Hacer Obsoleto
+                            </button>
+                            <button class="btn btn-outline-warning btn-sm fw-bold px-3 py-2" @onclick="() => OpenTransitionModal(DocumentStatus.RETIRED)">
+                                <i class="bi bi-archive me-1"></i> Retirar
+                            </button>
+                        }
+                        else if (selectedDocument.Status == DocumentStatus.APPROVED)
+                        {
+                            <button class="btn btn-outline-danger btn-sm fw-bold px-3 py-2" @onclick="() => OpenTransitionModal(DocumentStatus.OBSOLETE)">
+                                <i class="bi bi-slash-circle me-1"></i> Hacer Obsoleto
+                            </button>
+                            <button class="btn btn-outline-warning btn-sm fw-bold px-3 py-2" @onclick="() => OpenTransitionModal(DocumentStatus.RETIRED)">
+                                <i class="bi bi-archive me-1"></i> Retirar
+                            </button>
+                        }
+
                         <button class="btn btn-outline-primary btn-sm fw-bold px-3 py-2" @onclick="() => OpenAddVersionModal()">
                             <i class="bi bi-cloud-upload me-1"></i> Nueva Versión
                         </button>
@@ -259,12 +294,24 @@ else
                             <span class="text-muted d-block small">Intervalo de Revisión</span>
                             <span class="fw-medium">Cada @(selectedDocument.ReviewIntervalMonths ?? 12) meses</span>
                         </div>
-                        <div>
+                        <div class="mb-2.5">
                             <span class="text-muted d-block small">Próxima Revisión Due</span>
                             <span class="fw-medium @(selectedDocument.NextReviewDue < DateTime.UtcNow ? "text-danger fw-bold" : "")">
                                 @(selectedDocument.NextReviewDue?.ToLocalTime().ToString("dd/MM/yyyy") ?? "N/A")
                             </span>
                         </div>
+                        @if (selectedDocument.Status == DocumentStatus.APPROVED)
+                        {
+                            var currentVer = selectedDocument.Versions.FirstOrDefault(v => v.IsCurrent);
+                            if (currentVer != null && currentVer.ApprovedByUserId.HasValue)
+                            {
+                                var approverName = userNames.GetValueOrDefault(currentVer.ApprovedByUserId.Value) ?? "Aprobador";
+                                <div class="pt-2.5 border-top mt-2.5">
+                                    <span class="text-muted d-block small">Aprobado Por</span>
+                                    <span class="fw-bold text-success"><i class="bi bi-patch-check-fill me-1"></i>@approverName</span>
+                                </div>
+                            }
+                        }
                     </div>
                 </div>
 
@@ -304,7 +351,12 @@ else
                                             <td class="text-truncate" style="max-width: 150px;" title="@ver.FileName">@ver.FileName</td>
                                             <td class="small">@ver.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
                                             <td class="small text-secondary">
-                                                @if (ver.ApprovedByUserId.HasValue || (selectedDocument.Status == DocumentStatus.APPROVED && ver.IsCurrent))
+                                                @if (ver.ApprovedByUserId.HasValue)
+                                                {
+                                                    var approverName = userNames.GetValueOrDefault(ver.ApprovedByUserId.Value) ?? "Aprobador";
+                                                    <span><i class="bi bi-file-earmark-check-fill text-success me-1"></i> Aprobado por @approverName@(ver.ApprovalDate.HasValue ? $" el {ver.ApprovalDate?.ToLocalTime().ToString("dd/MM/yyyy")}" : "")</span>
+                                                }
+                                                else if (selectedDocument.Status == DocumentStatus.APPROVED && ver.IsCurrent)
                                                 {
                                                     <span><i class="bi bi-file-earmark-check-fill text-success me-1"></i> Aprobado@(ver.ApprovalDate.HasValue ? $" el {ver.ApprovalDate?.ToLocalTime().ToString("dd/MM/yyyy")}" : "")</span>
                                                 }
@@ -516,15 +568,7 @@ else
                             <label class="form-label fw-medium text-secondary">Intervalo de Revisión (Meses)</label>
                             <input type="number" class="form-control form-control-premium" @bind="editingReviewInterval" />
                         </div>
-                        <div class="col-md-6">
-                            <label class="form-label fw-medium text-secondary">Estado</label>
-                            <select class="form-select form-control-premium" @bind="editingDocStatus">
-                                @foreach (var s in Enum.GetValues<DocumentStatus>())
-                                {
-                                    <option value="@s">@GetStatusText(s)</option>
-                                }
-                            </select>
-                        </div>
+                        <!-- Estado removed from metadata editing: status is controlled by the workflow state machine -->
                     </div>
 
                     @if (!string.IsNullOrEmpty(editMetadataError))
@@ -626,6 +670,11 @@ else
                         <textarea id="approveComments" class="form-control form-control-premium" rows="3" placeholder="Ej. Aprobado tras revisión de comité científico." @bind="approveComments"></textarea>
                     </div>
 
+                    <div class="mb-3">
+                        <label for="approvePassword" class="form-label fw-medium text-secondary">Contraseña de Confirmación *</label>
+                        <input type="password" id="approvePassword" class="form-control form-control-premium" placeholder="Ingrese su contraseña para firmar" @bind="approvePassword" />
+                    </div>
+
                     @if (!string.IsNullOrEmpty(approveError))
                     {
                         <div class="alert alert-danger p-2 small mb-3"><i class="bi bi-exclamation-circle-fill me-1"></i> @approveError</div>
@@ -634,6 +683,42 @@ else
                     <div class="d-flex justify-content-end gap-2 mt-4">
                         <button class="btn btn-light" @onclick="() => showApproveModal = false">Cancelar</button>
                         <button class="btn btn-success px-4" @onclick="ApproveDocument">Firmar y Aprobar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Cambio de Estado / Transición -->
+@if (showTransitionModal && selectedDocument != null)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-primary text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-arrow-left-right me-2"></i>Cambiar Estado de Documento</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showTransitionModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    <div class="mb-3">
+                        <p>Va a cambiar el estado del documento a <strong>@GetStatusText(targetStatus)</strong>.</p>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-medium text-secondary">Usuario Responsable</label>
+                        <input type="text" class="form-control bg-light" value="@currentUsername" readonly />
+                    </div>
+                    <div class="mb-3">
+                        <label for="transitionComments" class="form-label fw-medium text-secondary">Comentarios / Justificación del Cambio *</label>
+                        <textarea id="transitionComments" class="form-control form-control-premium" rows="3" placeholder="Ej. Cambio de estado por motivos de revisión..." @bind="transitionComments"></textarea>
+                    </div>
+                    @if (!string.IsNullOrEmpty(transitionError))
+                    {
+                        <div class="alert alert-danger p-2 small mb-3"><i class="bi bi-exclamation-circle-fill me-1"></i> @transitionError</div>
+                    }
+                    <div class="d-flex justify-content-end gap-2 mt-4">
+                        <button class="btn btn-light" @onclick="() => showTransitionModal = false">Cancelar</button>
+                        <button class="btn btn-premium px-4" @onclick="ApplyTransition">Cambiar Estado</button>
                     </div>
                 </div>
             </div>
@@ -711,6 +796,7 @@ else
     private bool canEdit = false;
     private bool canDelete = false;
     private bool canPrint = false;
+    private bool canApprove = false;
     private List<FolderDto> folders = new();
     private List<DocumentType> documentTypes = new();
     private List<DocumentDto> allDocuments = new();
@@ -792,7 +878,15 @@ else
 
     private bool showApproveModal = false;
     private string approveComments = string.Empty;
+    private string approvePassword = string.Empty;
     private string approveError = string.Empty;
+
+    private bool showTransitionModal = false;
+    private DocumentStatus targetStatus;
+    private string transitionComments = string.Empty;
+    private string transitionError = string.Empty;
+    
+    private Dictionary<Guid, string> userNames = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -815,6 +909,17 @@ else
             canEdit = userPermissions.CanEdit;
             canDelete = userPermissions.CanDelete;
             canPrint = userPermissions.CanPrint;
+            canApprove = userPermissions.CanApprove;
+        }
+
+        try
+        {
+            var users = await UserService.GetUsersAsync();
+            userNames = users.ToDictionary(u => u.Id, u => u.FullName);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error al cargar diccionario de usuarios: {ex.Message}");
         }
 
         await LoadFoldersAsync();
@@ -1042,7 +1147,6 @@ else
 
         try
         {
-            // 1. Create document entry
             var request = new CreateDocumentRequest(
                 newDocCode.Trim(),
                 newDocTitle.Trim(),
@@ -1051,8 +1155,7 @@ else
                 string.IsNullOrWhiteSpace(newDocArea) ? null : newDocArea.Trim(),
                 string.IsNullOrWhiteSpace(newDocProcess) ? null : newDocProcess.Trim(),
                 newDocReviewInterval,
-                newDocVersionLabel,
-                QMSFlowDoc.Shared.Models.DocumentStatus.DRAFT
+                newDocVersionLabel
             );
 
             var createdDoc = await DocumentService.CreateDocumentAsync(request, currentUserId);
@@ -1145,8 +1248,7 @@ else
                 string.IsNullOrWhiteSpace(editingDoc.Area) ? null : editingDoc.Area.Trim(),
                 string.IsNullOrWhiteSpace(editingDoc.Process) ? null : editingDoc.Process.Trim(),
                 editingReviewInterval,
-                null,
-                (QMSFlowDoc.Shared.Models.DocumentStatus)editingDocStatus
+                null
             );
 
             var success = await DocumentService.UpdateDocumentAsync(editingDoc.Id, request, currentUserId, currentUsername);
@@ -1273,6 +1375,7 @@ else
     private void OpenApproveModal()
     {
         approveComments = string.Empty;
+        approvePassword = string.Empty;
         approveError = string.Empty;
         showApproveModal = true;
     }
@@ -1280,7 +1383,7 @@ else
     private async Task ApproveDocument()
     {
         if (selectedDocument == null) return;
-        if (!canEdit)
+        if (!canApprove)
         {
             approveError = "No tiene permisos para aprobar documentos.";
             return;
@@ -1288,6 +1391,11 @@ else
         if (string.IsNullOrWhiteSpace(approveComments))
         {
             approveError = "Debe ingresar comentarios de aprobación para auditar la firma.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(approvePassword))
+        {
+            approveError = "Debe ingresar su contraseña para confirmar la firma electrónica.";
             return;
         }
 
@@ -1298,7 +1406,8 @@ else
                 DocumentStatus.APPROVED, 
                 approveComments.Trim(), 
                 currentUserId, 
-                currentUsername);
+                currentUsername,
+                approvePassword);
 
             if (success)
             {
@@ -1314,6 +1423,54 @@ else
         catch (Exception ex)
         {
             approveError = ex.Message;
+        }
+    }
+
+    private void OpenTransitionModal(DocumentStatus status)
+    {
+        targetStatus = status;
+        transitionComments = string.Empty;
+        transitionError = string.Empty;
+        showTransitionModal = true;
+    }
+
+    private async Task ApplyTransition()
+    {
+        if (selectedDocument == null) return;
+        if (!canEdit)
+        {
+            transitionError = "No tiene permisos para modificar el estado.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(transitionComments))
+        {
+            transitionError = "Debe ingresar comentarios sobre el motivo del cambio de estado.";
+            return;
+        }
+
+        try
+        {
+            var success = await DocumentService.UpdateStatusAsync(
+                selectedDocument.Id, 
+                targetStatus, 
+                transitionComments.Trim(), 
+                currentUserId, 
+                currentUsername);
+
+            if (success)
+            {
+                showTransitionModal = false;
+                await LoadDocumentsAsync();
+                await SelectDocument(selectedDocument.Id); // Refresh selected document detail view
+            }
+            else
+            {
+                transitionError = "No se pudo cambiar el estado.";
+            }
+        }
+        catch (Exception ex)
+        {
+            transitionError = ex.Message;
         }
     }
 }

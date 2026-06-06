@@ -2,6 +2,8 @@ using Microsoft.EntityFrameworkCore;
 using QMSFlowDoc.Application.Services.Documents;
 using QMSFlowDoc.DocumentStorage;
 using QMSFlowDoc.Domain.Entities;
+using QMSFlowDoc.Domain.Identity;
+using Microsoft.AspNetCore.Identity;
 using QMSFlowDoc.Infrastructure.Persistence;
 using QMSFlowDoc.Shared.DTOs;
 using System;
@@ -19,11 +21,13 @@ public class DocumentService : IDocumentService
 {
     private readonly QmsDbContext _context;
     private readonly IDocumentStorageService _storageService;
+    private readonly UserManager<ApplicationUser> _userManager;
 
-    public DocumentService(QmsDbContext context, IDocumentStorageService storageService)
+    public DocumentService(QmsDbContext context, IDocumentStorageService storageService, UserManager<ApplicationUser> userManager)
     {
         _context = context;
         _storageService = storageService;
+        _userManager = userManager;
     }
 
     /// <inheritdoc/>
@@ -110,7 +114,7 @@ public class DocumentService : IDocumentService
             Area = request.Area,
             Process = request.Process,
             OwnerUserId = ownerUserId,
-            Status = request.Status.HasValue ? (DocumentStatus)request.Status.Value : DocumentStatus.DRAFT,
+            Status = DocumentStatus.DRAFT,
             ReviewIntervalMonths = request.ReviewIntervalMonths ?? 12,
             CreatedAt = DateTime.UtcNow,
             UpdatedAt = DateTime.UtcNow
@@ -146,11 +150,8 @@ public class DocumentService : IDocumentService
         doc.ReviewIntervalMonths = request.ReviewIntervalMonths ?? doc.ReviewIntervalMonths;
         doc.UpdatedAt = DateTime.UtcNow;
 
-        if (request.Status.HasValue)
-        {
-            doc.Status = (DocumentStatus)request.Status.Value;
-        }
-
+        // El estado no se puede actualizar directamente mediante metadatos, se ignora request.Status
+        
         if (doc.ReviewIntervalMonths.HasValue && doc.ReviewIntervalMonths.Value > 0)
         {
             doc.NextReviewDue = DateTime.UtcNow.AddMonths(doc.ReviewIntervalMonths.Value);
@@ -161,28 +162,64 @@ public class DocumentService : IDocumentService
     }
 
     /// <inheritdoc/>
-    public async Task<bool> UpdateStatusAsync(Guid id, DocumentStatus newStatus, string comments, Guid? userId, string username)
+    public async Task<bool> UpdateStatusAsync(Guid id, DocumentStatus newStatus, string comments, Guid? userId, string username, string? confirmPassword = null)
     {
         var doc = await _context.Documents.FindAsync(id);
         if (doc == null) return false;
 
         var oldStatus = doc.Status;
-        doc.Status = newStatus;
-        doc.UpdatedAt = DateTime.UtcNow;
+        
+        // Validar transición usando la máquina de estados
+        if (!DocumentWorkflow.CanTransition(oldStatus, newStatus))
+        {
+            throw new InvalidOperationException(DocumentWorkflow.GetTransitionError(oldStatus, newStatus));
+        }
 
         if (newStatus == DocumentStatus.APPROVED)
         {
+            // 1. Reautenticación por contraseña
+            if (string.IsNullOrWhiteSpace(confirmPassword))
+            {
+                throw new InvalidOperationException("Se requiere confirmación de contraseña para la firma electrónica de aprobación.");
+            }
+
+            if (!userId.HasValue)
+            {
+                throw new InvalidOperationException("Usuario no identificado para firmar la aprobación.");
+            }
+
+            var appUser = await _userManager.FindByIdAsync(userId.Value.ToString());
+            if (appUser == null)
+            {
+                throw new InvalidOperationException("El usuario firmante no existe.");
+            }
+
+            var isPasswordValid = await _userManager.CheckPasswordAsync(appUser, confirmPassword);
+            if (!isPasswordValid)
+            {
+                throw new InvalidOperationException("La contraseña ingresada es incorrecta. No se pudo validar la firma electrónica.");
+            }
+
+            // 2. Anti-auto-aprobación (ISO 15189)
             var currentVersion = await _context.DocumentVersions
                 .Where(v => v.DocumentId == id && v.IsCurrent)
                 .FirstOrDefaultAsync();
 
             if (currentVersion != null)
             {
+                if (currentVersion.CreatedByUserId.HasValue && currentVersion.CreatedByUserId.Value == userId.Value)
+                {
+                    throw new InvalidOperationException("No se permite la auto-aprobación del documento (ISO 15189). El usuario que lo aprueba debe ser diferente al que subió la versión.");
+                }
+                
                 currentVersion.ApprovedByUserId = userId;
                 currentVersion.ApprovalDate = DateTime.UtcNow;
                 currentVersion.EffectiveFrom = DateTime.UtcNow;
             }
         }
+
+        doc.Status = newStatus;
+        doc.UpdatedAt = DateTime.UtcNow;
 
         await LogAuditAsync("STATUS_CHANGE", "Document", id, $"Estado cambiado de {oldStatus} a {newStatus}. Motivo: {comments}", userId, username);
         return await _context.SaveChangesAsync() > 0;
@@ -274,6 +311,15 @@ public class DocumentService : IDocumentService
         };
 
         _context.DocumentVersions.Add(newVersion);
+
+        // Si el documento estaba vigente o en revisión, volver a Borrador (DRAFT) al subir una nueva versión (Control de cambios ISO)
+        if (doc.Status == DocumentStatus.APPROVED || doc.Status == DocumentStatus.REVIEW)
+        {
+            var previousStatus = doc.Status;
+            doc.Status = DocumentStatus.DRAFT;
+            await LogAuditAsync("AUTO_STATUS_CHANGE", "Document", doc.Id, $"Estado cambiado automáticamente de {previousStatus} a DRAFT debido a la carga de una nueva versión ({newVersion.VersionLabel})", userId, username);
+        }
+
         doc.UpdatedAt = DateTime.UtcNow;
 
         await LogAuditAsync("UPLOAD", "Document", doc.Id, $"Cargada versión {newVersion.VersionLabel} del archivo: {fileName}", userId, username);

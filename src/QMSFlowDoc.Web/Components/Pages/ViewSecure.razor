@@ -1,0 +1,147 @@
+@page "/documents/view/{DocumentId:guid}"
+@layout EmptyLayout
+@rendermode InteractiveServer
+@using QMSFlowDoc.Web.Components.Layout
+@using QMSFlowDoc.Application.Services.Documents
+@using QMSFlowDoc.Shared.DTOs
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize]
+@inject IDocumentService DocumentService
+@inject IJSRuntime JS
+
+<PageTitle>Visualizar Documento Seguro</PageTitle>
+
+<div class="pdf-viewer-container">
+    <div class="pdf-viewer-header">
+        <div class="d-flex align-items-center">
+            <i class="bi bi-shield-lock-fill text-success fs-4 me-2"></i>
+            <div>
+                <h5 class="mb-0 fw-bold text-dark">Visualizador Seguro de Documento</h5>
+                <small class="text-muted">@docCode - @docTitle (Copia Controlada en Pantalla)</small>
+            </div>
+        </div>
+        <div>
+            <button class="btn btn-outline-secondary btn-sm" onclick="window.close()">
+                <i class="bi bi-x-lg"></i> Cerrar Vista
+            </button>
+        </div>
+    </div>
+
+    <div class="pdf-viewer-body">
+        @if (isLoading)
+        {
+            <div class="text-center py-5">
+                <div class="spinner-border text-primary" role="status"></div>
+                <p class="text-muted mt-2">Cargando visor seguro...</p>
+            </div>
+        }
+        else if (!string.IsNullOrEmpty(errorMsg))
+        {
+            <div class="alert alert-danger m-4">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i> @errorMsg
+            </div>
+        }
+        else
+        {
+            <div class="pdf-wrapper">
+                <embed src="/api/documents/@(DocumentId)/view#toolbar=0&navpanes=0&scrollbar=0" type="application/pdf" width="100%" height="100%" />
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden;
+        background-color: #f8f9fa;
+    }
+    .pdf-viewer-container {
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+    }
+    .pdf-viewer-header {
+        background: #ffffff;
+        border-bottom: 1px solid #dee2e6;
+        padding: 12px 20px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-shrink: 0;
+    }
+    .pdf-viewer-body {
+        flex-grow: 1;
+        background: #525659;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        position: relative;
+    }
+    .pdf-wrapper {
+        width: 100%;
+        height: 100%;
+    }
+    /* Disable print css */
+    @@media print {
+        body { display: none !important; }
+    }
+</style>
+
+@code {
+    [Parameter]
+    public Guid DocumentId { get; set; }
+
+    private bool isLoading = true;
+    private string errorMsg = string.Empty;
+    private string docCode = string.Empty;
+    private string docTitle = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var doc = await DocumentService.GetDocumentByIdAsync(DocumentId);
+            if (doc == null)
+            {
+                errorMsg = "Documento no encontrado.";
+            }
+            else
+            {
+                docCode = doc.DocCode;
+                docTitle = doc.Title;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMsg = ex.Message;
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Inject Javascript to intercept Ctrl+P and Right click inside the page
+            await JS.InvokeVoidAsync("eval", @"
+                window.addEventListener('keydown', function(e) {
+                    if ((e.ctrlKey || e.metaKey) && (e.key === 'p' || e.key === 'P' || e.keyCode === 80)) {
+                        e.preventDefault();
+                        e.stopImmediatePropagation();
+                        alert('La impresión nativa de este documento controlado está bloqueada por normativa de calidad. Use el botón oficial de exportación si cuenta con el permiso canPrint.');
+                    }
+                }, true);
+
+                window.addEventListener('contextmenu', function(e) {
+                    e.preventDefault();
+                }, true);
+            ");
+        }
+    }
+}
