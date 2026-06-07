@@ -311,7 +311,7 @@
         {
             totalDocuments = await Db.Documents.CountAsync();
             activeReagents = await Db.Reagents.CountAsync(r => r.Status == ReagentStatus.ACTIVO);
-            expiredLots = await Db.ReagentLots.CountAsync(l => l.ExpiryDate < DateTime.UtcNow && l.Status != LotStatus.CONSUMED);
+            expiredLots = await Db.ReagentLots.CountAsync(l => l.ExpiryDate < DateTime.UtcNow && l.Status != LotStatus.CONSUMED && l.AvailableQty > 0);
             outOfServiceEquipment = await Db.Equipments.CountAsync(e => e.Status == EquipmentStatus.OUT_OF_SERVICE);
         }
         catch (Exception ex)
