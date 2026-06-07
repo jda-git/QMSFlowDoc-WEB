@@ -22,7 +22,9 @@ public record StaffAuthorizationDto(
     string? GrantedByName,
     Guid? GrantedByUserId = null,
     string? AssessmentMethod = null,
-    Guid? CompetencyId = null // Added
+    Guid? CompetencyId = null, // Added
+    Guid? EvidenceDocId = null,
+    string? RevocationReason = null
 );
 
 public class GlobalAuthorizationDto

@@ -30,7 +30,7 @@ public interface IStaffService
     Task<List<AuthorizationCatalogDto>> GetAuthorizationCatalogAsync();
     Task GrantAuthorizationAsync(GrantAuthorizationRequest request);
     Task UpdateStaffAuthorizationAsync(Guid id, GrantAuthorizationRequest request);
-    Task DeleteStaffAuthorizationAsync(Guid id);
+    Task DeleteStaffAuthorizationAsync(Guid id, string reason, Guid? userId = null, string? userName = null);
     Task<Guid> CreateAuthorizationCatalogAsync(CreateAuthorizationCatalogRequest request);
     Task UpdateAuthorizationCatalogAsync(Guid id, CreateAuthorizationCatalogRequest request);
     Task DeleteAuthorizationCatalogAsync(Guid id);

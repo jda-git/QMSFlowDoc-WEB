@@ -20,6 +20,7 @@ public interface IQualityService
     Task<Guid> CreateCAPAAsync(CreateCAPARequest request, Guid? userId = null, string? userName = null);
     Task<bool> UpdateCAPAStatusAsync(Guid id, CAPAStatus status, Guid? userId = null, string? userName = null);
     Task<bool> CompleteCAPAAsync(Guid id, string? effectivenessCheck, Guid? userId = null, string? userName = null);
+    Task<bool> VerifyCAPAAsync(Guid id, string? verificationNotes, Guid? userId = null, string? userName = null);
     Task<bool> DeleteCAPAAsync(Guid id, Guid? userId = null, string? userName = null);
 
     // Complaints

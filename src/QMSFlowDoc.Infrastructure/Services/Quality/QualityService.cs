@@ -146,7 +146,15 @@ public class QualityService : IQualityService
         nc.RootCauseAnalysis = request.RootCauseAnalysis;
         nc.DetectedByUserId = request.DetectedByUserId;
         if (request.Status.HasValue)
-            nc.Status = (DomainEntities.NCStatus)request.Status.Value;
+        {
+            var targetStatus = (DomainEntities.NCStatus)request.Status.Value;
+            if (targetStatus == DomainEntities.NCStatus.CLOSED)
+            {
+                await _context.Entry(nc).Collection(n => n.Actions).LoadAsync();
+                ValidateNCClosure(nc);
+            }
+            nc.Status = targetStatus;
+        }
         nc.UpdatedAt = DateTime.UtcNow;
 
         await LogAuditAsync("EDIT", "Nonconformity", nc.Id, $"NC '{nc.Title}' editada", userId, userName);
@@ -158,11 +166,11 @@ public class QualityService : IQualityService
         var nc = await _context.Nonconformities.FindAsync(id);
         if (nc == null || nc.IsDeleted) return false;
 
-        nc.Status = (DomainEntities.NCStatus)status;
-        nc.UpdatedAt = DateTime.UtcNow;
-
-        if (status == SharedModels.NCStatus.CLOSED)
+        var targetStatus = (DomainEntities.NCStatus)status;
+        if (targetStatus == DomainEntities.NCStatus.CLOSED)
         {
+            await _context.Entry(nc).Collection(n => n.Actions).LoadAsync();
+            ValidateNCClosure(nc);
             nc.ClosedAt = DateTime.UtcNow;
             nc.ClosedByUserId = userId;
         }
@@ -171,6 +179,9 @@ public class QualityService : IQualityService
             nc.ClosedAt = null;
             nc.ClosedByUserId = null;
         }
+
+        nc.Status = targetStatus;
+        nc.UpdatedAt = DateTime.UtcNow;
 
         await LogAuditAsync("STATUS_CHANGE", "Nonconformity", nc.Id, $"NC estado cambiado a {status}", userId, userName);
         return await _context.SaveChangesAsync() > 0;
@@ -253,27 +264,30 @@ public class QualityService : IQualityService
 
         await LogAuditAsync("COMPLETE", "CapaAction", capa.Id, "Acción CAPA completada con verificación de eficacia", userId, userName);
 
-        // Reglas de cierre automático de NC:
-        // Si todas las CAPA no eliminadas de la NC asociada están DONE o VERIFIED, y la NC está en ACTION, cerrarla.
-        if (capa.NCId.HasValue)
+        return await _context.SaveChangesAsync() > 0;
+    }
+
+    public async Task<bool> VerifyCAPAAsync(Guid id, string? verificationNotes, Guid? userId = null, string? userName = null)
+    {
+        var capa = await _context.CapaActions.FindAsync(id);
+        if (capa == null || capa.IsDeleted) return false;
+
+        if (userId.HasValue)
         {
-            var nc = await _context.Nonconformities.Include(n => n.Actions).FirstOrDefaultAsync(n => n.Id == capa.NCId.Value && !n.IsDeleted);
-            if (nc != null)
+            var isAuthorized = await (from ur in _context.UserRoles
+                                      join r in _context.Roles on ur.RoleId equals r.Id
+                                      where ur.UserId == userId.Value && (r.Name == "Administrador" || r.Name == "Responsable calidad")
+                                      select r).AnyAsync();
+            if (!isAuthorized)
             {
-                var activeCapas = nc.Actions.Where(a => !a.IsDeleted && a.Status != DomainEntities.CAPAStatus.CANCELLED);
-                if (activeCapas.All(a => a.Status == DomainEntities.CAPAStatus.DONE || a.Status == DomainEntities.CAPAStatus.VERIFIED))
-                {
-                    if (nc.Status == DomainEntities.NCStatus.ACTION)
-                    {
-                        nc.Status = DomainEntities.NCStatus.CLOSED;
-                        nc.ClosedAt = DateTime.UtcNow;
-                        nc.ClosedByUserId = userId;
-                        await LogAuditAsync("STATUS_CHANGE", "Nonconformity", nc.Id, "NC cerrada automáticamente al completar todas sus acciones CAPA con éxito (ISO 15189 §8.7.2)", userId, userName);
-                    }
-                }
+                throw new UnauthorizedAccessException("Únicamente los roles de Administrador o Responsable calidad pueden verificar la eficacia de las acciones CAPA (ISO 15189 §8.7.2).");
             }
         }
 
+        capa.Status = DomainEntities.CAPAStatus.VERIFIED;
+        capa.EffectivenessCheck = $"{capa.EffectivenessCheck} [Verificado por {userName ?? "Usuario"} el {DateTime.UtcNow:dd/MM/yyyy}: {verificationNotes}]";
+
+        await LogAuditAsync("VERIFY", "CapaAction", capa.Id, $"Acción CAPA verificada: {verificationNotes}", userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 
@@ -404,9 +418,23 @@ public class QualityService : IQualityService
         var complaint = await _context.Complaints.FindAsync(id);
         if (complaint == null || complaint.IsDeleted) return false;
 
-        complaint.Status = (DomainEntities.ComplaintStatus)status;
         if (status == SharedModels.ComplaintStatus.CLOSED)
         {
+            if (string.IsNullOrWhiteSpace(complaint.InvestigationResult))
+            {
+                throw new InvalidOperationException("No se puede cerrar la queja sin registrar el resultado de la investigación (ISO 15189 §7.7).");
+            }
+
+            if (string.IsNullOrWhiteSpace(complaint.CorrectiveAction))
+            {
+                throw new InvalidOperationException("No se puede cerrar la queja sin registrar la acción correctiva.");
+            }
+
+            if (string.IsNullOrWhiteSpace(complaint.ResolutionEvidence))
+            {
+                throw new InvalidOperationException("No se puede cerrar la queja sin registrar la evidencia de resolución (comunicación al cliente).");
+            }
+
             complaint.ClosedAt = DateTime.UtcNow;
             complaint.ClosedByUserId = userId;
         }
@@ -415,6 +443,8 @@ public class QualityService : IQualityService
             complaint.ClosedAt = null;
             complaint.ClosedByUserId = null;
         }
+
+        complaint.Status = (DomainEntities.ComplaintStatus)status;
 
         await LogAuditAsync("STATUS_CHANGE", "Complaint", complaint.Id, $"Queja estado cambiado a {status}", userId, userName);
         return await _context.SaveChangesAsync() > 0;
@@ -434,6 +464,30 @@ public class QualityService : IQualityService
     }
 
     // ── Audit Logging Helper ──────────────────────────────────────────
+
+    private void ValidateNCClosure(DomainEntities.Nonconformity nc)
+    {
+        if (string.IsNullOrWhiteSpace(nc.RootCauseAnalysis))
+        {
+            throw new InvalidOperationException("No se puede cerrar la No Conformidad sin registrar el Análisis de Causa Raíz (ISO 15189 §8.7.2).");
+        }
+
+        if (string.IsNullOrWhiteSpace(nc.Containment))
+        {
+            throw new InvalidOperationException("No se puede cerrar la No Conformidad sin registrar la Contención Inmediata.");
+        }
+
+        var activeActions = nc.Actions.Where(a => !a.IsDeleted && a.Status != DomainEntities.CAPAStatus.CANCELLED).ToList();
+        if (!activeActions.Any())
+        {
+            throw new InvalidOperationException("Debe registrar al menos una acción CAPA antes de cerrar la No Conformidad.");
+        }
+
+        if (activeActions.Any(a => a.Status != DomainEntities.CAPAStatus.VERIFIED))
+        {
+            throw new InvalidOperationException("No se puede cerrar la No Conformidad: existen acciones CAPA que no han sido verificadas independientemente (estado VERIFIED).");
+        }
+    }
 
     private async Task LogAuditAsync(string action, string entityType, Guid? entityId, string details, Guid? userId, string? username)
     {

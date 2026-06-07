@@ -16,6 +16,7 @@
 @inject IJSRuntime JS
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 @inject QMSFlowDoc.Infrastructure.Persistence.QmsDbContext DbContext
+@inject QMSFlowDoc.Application.Services.Quality.IQualityService QualityService
 
 
 <PageTitle>Evaluación Externa de la Calidad (EQA) — QMSFlowDoc</PageTitle>
@@ -535,6 +536,14 @@
                             </div>
                         </div>
 
+                        @if (!string.IsNullOrEmpty(roundErrorMessage))
+                        {
+                            <div class="alert alert-danger alert-dismissible fade show rounded-3 mb-4" role="alert">
+                                <i class="bi bi-exclamation-triangle-fill me-2"></i>@roundErrorMessage
+                                <button type="button" class="btn-close" @onclick="() => roundErrorMessage = null" aria-label="Close"></button>
+                            </div>
+                        }
+
                         <div class="row g-4">
                             <!-- Left: Schedule & Files -->
                             <div class="col-md-6">
@@ -942,6 +951,13 @@
                     <button type="button" class="btn-close" @onclick="() => showDeviationModal = false"></button>
                 </div>
                 <div class="modal-body p-4">
+                    @if (!string.IsNullOrEmpty(deviationErrorMessage))
+                    {
+                        <div class="alert alert-danger alert-dismissible fade show rounded-3 mb-3" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>@deviationErrorMessage
+                            <button type="button" class="btn-close" @onclick="() => deviationErrorMessage = null" aria-label="Close"></button>
+                        </div>
+                    }
                     <div class="row g-3">
                         <div class="col-md-6">
                             <label class="form-label small text-secondary">Asociar a Ronda</label>
@@ -952,6 +968,19 @@
                                     @foreach (var r in rounds)
                                     {
                                         <option value="@r.Id">@r.ExternalCode</option>
+                                    }
+                                }
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label small text-secondary">No Conformidad Vinculada (NC/CAPA)</label>
+                            <select class="form-select" @bind="editingDeviation.LinkedCapaId">
+                                <option value="">-- Sin Vincular / Nueva NC --</option>
+                                @if (activeNonconformities != null)
+                                {
+                                    @foreach (var nc in activeNonconformities)
+                                    {
+                                        <option value="@nc.Id">NC: @nc.Title (@nc.DetectedAt.ToString("dd/MM/yyyy"))</option>
                                     }
                                 }
                             </select>
@@ -1203,6 +1232,9 @@
 
     // Active Selection
     private EQARound? selectedRound;
+    private string? roundErrorMessage;
+    private string? deviationErrorMessage;
+    private List<QMSFlowDoc.Shared.DTOs.NCListDto>? activeNonconformities;
 
     // Modal forms
     private bool showProgramModal = false;
@@ -1273,6 +1305,17 @@
 
         // Fetch methods for mappings selection list
         availableMethods = await DbContext.Methods.Where(m => m.Status == MethodStatus.ACTIVE).OrderBy(m => m.Name).ToListAsync();
+
+        try
+        {
+            activeNonconformities = (await QualityService.GetNonconformitiesAsync())?
+                .Where(nc => nc.Status != QMSFlowDoc.Domain.Entities.NCStatus.CLOSED)
+                .ToList();
+        }
+        catch (Exception)
+        {
+            activeNonconformities = new();
+        }
 
         await LoadYearEnrollments();
         GenerateAlerts();
@@ -1563,15 +1606,20 @@
         {
             try
             {
+                roundErrorMessage = null;
                 await EQAService.UpdateRoundAsync(selectedRound, currentUserId, currentUserName);
                 await LoadData();
                 // Refresh selectedRound reference from the newly loaded list to ensure database tracking is correct
                 selectedRound = rounds?.FirstOrDefault(r => r.Id == selectedRound.Id);
                 await JS.InvokeVoidAsync("alert", "Cambios de la ronda guardados correctamente.");
             }
+            catch (InvalidOperationException ex)
+            {
+                roundErrorMessage = ex.Message;
+            }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al guardar cambios de la ronda: {ex.Message}");
+                roundErrorMessage = $"Error al guardar cambios de la ronda: {ex.Message}";
             }
         }
     }
@@ -1619,12 +1667,14 @@
     private void OpenCreateDeviationModal()
     {
         editingDeviation = new EQADeviation { Status = "Abierta" };
+        deviationErrorMessage = null;
         showDeviationModal = true;
     }
 
     private void EditDeviation(EQADeviation dev)
     {
         editingDeviation = dev;
+        deviationErrorMessage = null;
         showDeviationModal = true;
     }
 
@@ -1632,17 +1682,18 @@
     {
         if (editingDeviation.RoundId == Guid.Empty)
         {
-            await JS.InvokeVoidAsync("alert", "Error: Debe seleccionar una ronda válida para registrar la desviación.");
+            deviationErrorMessage = "Error: Debe seleccionar una ronda válida para registrar la desviación.";
             return;
         }
 
         try
         {
+            deviationErrorMessage = null;
             if (editingDeviation.Id == Guid.Empty)
             {
                 if (!canCreate)
                 {
-                    await JS.InvokeVoidAsync("alert", "No tiene permisos para registrar desviaciones.");
+                    deviationErrorMessage = "No tiene permisos para registrar desviaciones.";
                     return;
                 }
                 await EQAService.CreateDeviationAsync(editingDeviation, currentUserId, currentUserName);
@@ -1652,7 +1703,7 @@
             {
                 if (!canEdit)
                 {
-                    await JS.InvokeVoidAsync("alert", "No tiene permisos para modificar desviaciones.");
+                    deviationErrorMessage = "No tiene permisos para modificar desviaciones.";
                     return;
                 }
                 await EQAService.UpdateDeviationAsync(editingDeviation, currentUserId, currentUserName);
@@ -1661,9 +1712,13 @@
             showDeviationModal = false;
             await LoadData();
         }
+        catch (InvalidOperationException ex)
+        {
+            deviationErrorMessage = ex.Message;
+        }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al guardar la desviación: {ex.Message}");
+            deviationErrorMessage = $"Error al guardar la desviación: {ex.Message}";
         }
     }
 

@@ -251,6 +251,43 @@ public class EQAService : IEQAService
 
     public async Task<bool> UpdateRoundAsync(EQARound round, Guid? userId = null, string? userName = null)
     {
+        // Enforce validations
+        if (round.GlobalOutcome == EQAPerformance.UNSATISFACTORY)
+        {
+            round.RequiresAction = true;
+            var activeDeviations = round.Deviations.Where(d => !d.IsDeleted).ToList();
+            if (!activeDeviations.Any())
+            {
+                throw new InvalidOperationException("Un resultado insatisfactorio (UNSATISFACTORY) requiere registrar al menos una desviación activa en la ronda.");
+            }
+        }
+
+        if (round.Status == EQARoundStatus.CLOSED)
+        {
+            var activeDeviations = round.Deviations.Where(d => !d.IsDeleted).ToList();
+            if (round.GlobalOutcome == EQAPerformance.UNSATISFACTORY)
+            {
+                foreach (var dev in activeDeviations)
+                {
+                    if (dev.Status != "Cerrada")
+                    {
+                        throw new InvalidOperationException("No se puede cerrar la ronda EQA porque existen desviaciones asociadas que no están en estado 'Cerrada'.");
+                    }
+                    if (dev.LinkedCapaId == null || dev.LinkedCapaId == Guid.Empty)
+                    {
+                        throw new InvalidOperationException("No se puede cerrar la ronda EQA porque existen desviaciones que no están vinculadas a una NC o CAPA.");
+                    }
+                    var linkedId = dev.LinkedCapaId.Value;
+                    bool isLinkedClosedNc = await _context.Nonconformities.AnyAsync(nc => nc.Id == linkedId && nc.Status == NCStatus.CLOSED && !nc.IsDeleted);
+                    bool isLinkedVerifiedCapa = await _context.CapaActions.AnyAsync(capa => capa.Id == linkedId && capa.Status == CAPAStatus.VERIFIED && !capa.IsDeleted);
+                    if (!isLinkedClosedNc && !isLinkedVerifiedCapa)
+                    {
+                        throw new InvalidOperationException("La No Conformidad o CAPA vinculada a la desviación debe estar en estado CLOSED o VERIFIED para poder cerrar la ronda.");
+                    }
+                }
+            }
+        }
+
         var existing = await _context.EQARounds
             .Include(r => r.Samples)
             .Include(r => r.Deviations)

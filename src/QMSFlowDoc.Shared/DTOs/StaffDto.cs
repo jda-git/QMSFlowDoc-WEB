@@ -100,10 +100,10 @@ public record GrantAuthorizationRequest(
     string TaskName,
     string? Description,
     DateTime ValidFrom,
-
     DateTime? ValidUntil,
     Guid? GrantedByUserId = null,
     Guid? CompetencyId = null,
     Guid? EvaluationId = null,
-    string? AssessmentMethod = null
+    string? AssessmentMethod = null,
+    Guid? EvidenceDocId = null
 );

@@ -1336,6 +1336,20 @@ public class EquipmentService : IEquipmentService
         var e = await _context.Equipments.FindAsync(request.EquipmentId);
         if (e == null) return false;
 
+        // ISO 15189 §6.3.3 - Enforce NC and evidence on potential clinical impact
+        if ((request.ImpactType == "Impacto Mayor / Posible Error" || request.ImpactType == "Posible impacto en resultados" || request.ImpactType == "Impacto Menor") &&
+            (request.EndStatus == SharedModels.EquipmentStatus.IN_SERVICE || request.EndStatus == SharedModels.EquipmentStatus.IN_SERVICE_WITH_RESTRICTIONS))
+        {
+            if (!request.ExternalNCId.HasValue || request.ExternalNCId == Guid.Empty)
+            {
+                throw new InvalidOperationException("No se puede devolver el equipo al servicio si hay un posible impacto en los resultados sin vincular una No Conformidad (ISO 15189 §6.3.3).");
+            }
+            if (string.IsNullOrWhiteSpace(request.EvidencePath))
+            {
+                throw new InvalidOperationException("No se puede devolver el equipo al servicio si hay un posible impacto en los resultados sin registrar la ruta del documento de evidencia de verificación.");
+            }
+        }
+
         var assessment = new DomainEntities.EquipmentImpactAssessment
         {
             Id = Guid.NewGuid(),

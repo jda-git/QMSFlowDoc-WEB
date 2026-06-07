@@ -16,6 +16,7 @@
 @inject IEquipmentService EquipmentService
 @inject IJSRuntime JS
 @inject IPermissionService PermissionService
+@inject QMSFlowDoc.Application.Services.Quality.IQualityService QualityService
 
 <PageTitle>Gestión de Equipamiento — QMSFlowDoc</PageTitle>
 
@@ -1703,6 +1704,14 @@ else
                             <h6 class="fw-bold text-danger"><i class="bi bi-person-exclamation me-1"></i>Análisis Retrospectivo de Resultados y Trazabilidad</h6>
                             <p class="small text-muted">Evalúe si la desviación metrológica o avería ha podido afectar a los resultados entregados a pacientes (ISO 15189:2022 §8.7).</p>
 
+                            @if (!string.IsNullOrEmpty(impactErrorMessage))
+                            {
+                                <div class="alert alert-danger d-flex align-items-center rounded-3 p-3 mb-3" role="alert">
+                                    <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                                    <div>@impactErrorMessage</div>
+                                </div>
+                            }
+
                             <div class="row g-3 mb-3">
                                 <div class="col-md-6">
                                     <label class="form-label small fw-semibold">Último Control de Calidad Conforme</label>
@@ -1725,6 +1734,22 @@ else
                                         <option value="Impacto Menor">Impacto Menor (sin cambio de diagnóstico)</option>
                                         <option value="Impacto Mayor / Posible Error">Impacto Mayor (requiere reanálisis de muestras)</option>
                                     </select>
+                                </div>
+                            </div>
+                            <div class="row g-3 mb-3">
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">No Conformidad Vinculada (Obligatorio si hay impacto clínico)</label>
+                                    <select class="form-select" @bind="impactModel.ExternalNCId">
+                                        <option value="">-- Seleccionar No Conformidad --</option>
+                                        @foreach (var nc in nonconformities)
+                                        {
+                                            <option value="@nc.Id">NC: @nc.Title (@nc.DetectedAt.ToString("dd/MM/yyyy"))</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label small fw-semibold">Ruta de Documento de Evidencia (Obligatorio si hay impacto clínico)</label>
+                                    <input type="text" class="form-control" @bind="impactModel.EvidencePath" placeholder="Ej: /documentos/equipos/EV-NC-102.pdf" />
                                 </div>
                             </div>
                             <div class="mb-3">
@@ -1971,6 +1996,8 @@ else
     private RegisterIncidentRequest incidentModel = new();
     private RegisterRepairRequest repairModel = new();
     private RegisterImpactRequest impactModel = new();
+    private List<NCListDto> nonconformities = new();
+    private string? impactErrorMessage = null;
     private RegisterDecommissionRequest decommissionModel = new();
 
     private IEnumerable<EquipmentListDto> filteredEquipments =>
@@ -2015,6 +2042,7 @@ else
     {
         equipments = await EquipmentService.GetEquipmentsAsync();
         dashboard = await EquipmentService.GetDashboardStatsAsync();
+        nonconformities = await QualityService.GetNonconformitiesAsync();
         if (selectedId.HasValue)
         {
             details = await EquipmentService.GetEquipmentDetailsAsync(selectedId.Value);
@@ -2655,6 +2683,7 @@ else
             EndStatus = EquipmentStatus.IN_SERVICE,
             UserId = currentUserId
         };
+        impactErrorMessage = null;
         showImpactModal = true;
     }
 
@@ -2662,6 +2691,7 @@ else
     {
         try
         {
+            impactErrorMessage = null;
             var ok = await EquipmentService.RegisterImpactAssessmentAsync(impactModel);
             if (ok)
             {
@@ -2671,7 +2701,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            impactErrorMessage = ex.Message;
         }
     }
 

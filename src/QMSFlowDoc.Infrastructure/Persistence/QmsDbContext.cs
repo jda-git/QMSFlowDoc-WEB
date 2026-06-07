@@ -853,14 +853,83 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
+            CaptureSnapshots();
             ApplyAuditHashChaining();
             return base.SaveChanges(acceptAllChangesOnSuccess);
         }
 
         public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
+            CaptureSnapshots();
             await ApplyAuditHashChainingAsync();
             return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        }
+
+        private void CaptureSnapshots()
+        {
+            var newLogs = ChangeTracker.Entries<AuditLog>()
+                .Where(e => e.State == EntityState.Added)
+                .Select(e => e.Entity)
+                .ToList();
+
+            if (!newLogs.Any()) return;
+
+            foreach (var log in newLogs)
+            {
+                if (log.EntityId == null || log.EntityId == Guid.Empty) continue;
+
+                var matchedEntry = ChangeTracker.Entries()
+                    .FirstOrDefault(e => e.Entity is not AuditLog && 
+                                         (e.Entity.GetType().Name == log.EntityType || e.Entity.GetType().BaseType?.Name == log.EntityType) && 
+                                         GetEntityId(e.Entity) == log.EntityId);
+
+                if (matchedEntry != null)
+                {
+                    // If modified or deleted, capture original values (before state)
+                    if (matchedEntry.State == EntityState.Modified || matchedEntry.State == EntityState.Deleted)
+                    {
+                        var beforeDict = new Dictionary<string, object?>();
+                        foreach (var prop in matchedEntry.OriginalValues.Properties)
+                        {
+                            beforeDict[prop.Name] = matchedEntry.OriginalValues[prop];
+                        }
+                        log.BeforeSnapshot = System.Text.Json.JsonSerializer.Serialize(beforeDict);
+                    }
+
+                    // If added or modified, capture current values (after state)
+                    if (matchedEntry.State == EntityState.Added || matchedEntry.State == EntityState.Modified)
+                    {
+                        var afterDict = new Dictionary<string, object?>();
+                        foreach (var prop in matchedEntry.CurrentValues.Properties)
+                        {
+                            afterDict[prop.Name] = matchedEntry.CurrentValues[prop];
+                        }
+                        log.AfterSnapshot = System.Text.Json.JsonSerializer.Serialize(afterDict);
+                    }
+
+                    // Map RevocationReason to Reason if present
+                    var revocationProp = matchedEntry.Entity.GetType().GetProperty("RevocationReason");
+                    if (revocationProp != null)
+                    {
+                        var reasonVal = revocationProp.GetValue(matchedEntry.Entity) as string;
+                        if (!string.IsNullOrEmpty(reasonVal))
+                        {
+                            log.Reason = reasonVal;
+                        }
+                    }
+                }
+            }
+        }
+
+        private Guid? GetEntityId(object entity)
+        {
+            var prop = entity.GetType().GetProperty("Id");
+            if (prop != null)
+            {
+                var val = prop.GetValue(entity);
+                if (val is Guid guidVal) return guidVal;
+            }
+            return null;
         }
 
         private void ApplyAuditHashChaining()

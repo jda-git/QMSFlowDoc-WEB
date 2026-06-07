@@ -8,6 +8,7 @@
 @inject IStaffService StaffService
 @inject IJSRuntime JS
 @inject IPermissionService PermissionService
+@inject QMSFlowDoc.Application.Services.Documents.IDocumentService DocumentService
 
 <PageTitle>Personal y Formación (ISO 15189) - QMSFlowDoc</PageTitle>
 
@@ -547,20 +548,27 @@ else
                 {
                     @foreach (var auth in selectedStaffDetail.Authorizations)
                     {
+                        var statusBadgeClass = auth.Status switch
+                        {
+                            "VIGENTE" => "bg-success",
+                            "REVOCADA" => "bg-danger",
+                            "CADUCADA" => "bg-secondary",
+                            _ => "bg-info"
+                        };
                         <div class="card border-0 bg-light p-3 rounded-3 mb-3">
                             <div class="d-flex justify-content-between align-items-center mb-1">
-                                <span class="badge bg-success rounded-pill">@auth.Status</span>
+                                <span class="badge @statusBadgeClass rounded-pill">@auth.Status</span>
                                 <div class="d-flex align-items-center gap-2">
-                                    @if (canEdit)
+                                    @if (canEdit && auth.Status == "VIGENTE")
                                     {
                                         <button class="btn btn-sm btn-outline-secondary p-0.5 border-0" @onclick="() => OpenEditAuthorizationModal(auth)" title="Editar">
                                             <i class="bi bi-pencil-square" style="font-size: 0.85rem;"></i>
                                         </button>
                                     }
-                                    @if (canDelete)
+                                    @if (canDelete && auth.Status == "VIGENTE")
                                     {
-                                        <button class="btn btn-sm btn-outline-danger p-0.5 border-0" @onclick="() => ConfirmDeleteAuthorization(auth.Id)" title="Eliminar">
-                                            <i class="bi bi-trash" style="font-size: 0.85rem;"></i>
+                                        <button class="btn btn-sm btn-outline-danger p-0.5 border-0" @onclick="() => ConfirmDeleteAuthorization(auth.Id)" title="Revocar">
+                                            <i class="bi bi-x-circle" style="font-size: 0.85rem;"></i>
                                         </button>
                                     }
                                 </div>
@@ -572,9 +580,21 @@ else
                                     <i class="bi bi-eye-fill text-primary me-1"></i>Valoración: @auth.AssessmentMethod
                                 </div>
                             }
+                            @if (auth.EvidenceDocId.HasValue && auth.EvidenceDocId.Value != Guid.Empty)
+                            {
+                                <div class="small text-secondary mb-1">
+                                    <i class="bi bi-file-earmark-text me-1"></i>Doc. Evidencia: @auth.EvidenceDocId
+                                </div>
+                            }
+                            @if (auth.Status == "REVOCADA" && !string.IsNullOrEmpty(auth.RevocationReason))
+                            {
+                                <div class="small text-danger fw-bold mb-1">
+                                    <i class="bi bi-exclamation-octagon me-1"></i>Motivo Revocación: @auth.RevocationReason
+                                </div>
+                            }
                             <div class="d-flex justify-content-between align-items-center mt-2 small text-muted">
                                 <span>Autorizó: @auth.GrantedByName</span>
-                                <span>Vence: @auth.ValidUntil?.ToString("dd/MM/yyyy")</span>
+                                <span>Vence: @(auth.ValidUntil?.ToString("dd/MM/yyyy") ?? "N/A")</span>
                             </div>
                         </div>
                     }
@@ -857,6 +877,15 @@ else
                 </div>
                 <div class="card-body p-4">
                     <h6 class="fw-bold mb-3 text-secondary">Empleado: @selectedStaffDetail?.FullName</h6>
+                    
+                    @if (!string.IsNullOrEmpty(authorizationErrorMessage))
+                    {
+                        <div class="alert alert-danger d-flex align-items-center rounded-3 p-3 mb-3" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <div>@authorizationErrorMessage</div>
+                        </div>
+                    }
+
                     <EditForm Model="grantModel" OnValidSubmit="SaveAuthorization">
                         <div class="row g-3">
                             <div class="col-12">
@@ -880,14 +909,18 @@ else
                                 </InputSelect>
                             </div>
                             <div class="col-12">
-                                <label class="form-label fw-medium text-secondary small">Método de Valoración de Habilidades</label>
-                                <InputSelect class="form-select form-select-premium" @bind-Value="grantModel.AssessmentMethod">
-                                    <option value="">-- Seleccionar método de valoración --</option>
-                                    @foreach (var method in assessmentMethodsList)
+                                <label class="form-label fw-medium text-secondary small">Evidencia Documental del Sistema (Obligatorio - ISO 15189)</label>
+                                <InputSelect class="form-select form-select-premium" @bind-Value="grantModel.EvidenceDocId">
+                                    <option value="">-- Seleccionar Documento --</option>
+                                    @foreach (var doc in systemDocuments)
                                     {
-                                        <option value="@method">@method</option>
+                                        <option value="@doc.Id">@doc.DocCode - @doc.Title</option>
                                     }
                                 </InputSelect>
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-medium text-secondary small">Justificación del Método de Valoración (Obligatorio - ISO 15189)</label>
+                                <InputTextArea class="form-control form-control-premium" @bind-Value="grantModel.AssessmentMethod" placeholder="Describa de manera textual cómo se ha evaluado la aptitud..." rows="2" />
                             </div>
                             <div class="col-6">
                                 <label class="form-label fw-medium text-secondary small">Vigente Desde</label>
@@ -1121,18 +1154,29 @@ else
 @if (showDeleteAuthorizationConfirm)
 {
     <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
-        <div class="modal-dialog modal-dialog-centered modal-sm">
+        <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content card shadow border-0 rounded-4">
                 <div class="card-header bg-danger text-white py-3 border-0 rounded-top-4">
-                    <h6 class="mb-0 fw-bold"><i class="bi bi-exclamation-triangle me-2"></i>¿Eliminar Autorización?</h6>
+                    <h6 class="mb-0 fw-bold"><i class="bi bi-x-circle me-2"></i>Revocar Autorización</h6>
                 </div>
-                <div class="card-body p-3">
+                <div class="card-body p-4">
                     <p class="small text-secondary mb-3">
-                        ¿Está seguro de que desea eliminar esta autorización concedida a este usuario? Esta acción es irreversible.
+                        ¿Está seguro de que desea revocar esta autorización? Deberá justificar el motivo para mantener la trazabilidad de auditoría (ISO 15189 §6.2).
                     </p>
+                    @if (!string.IsNullOrEmpty(revocationErrorMessage))
+                    {
+                        <div class="alert alert-danger d-flex align-items-center rounded-3 p-3 mb-3" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <div>@revocationErrorMessage</div>
+                        </div>
+                    }
+                    <div class="mb-3">
+                        <label class="form-label fw-medium text-secondary small">Motivo de la Revocación</label>
+                        <textarea class="form-control form-control-premium" rows="3" placeholder="Escriba el motivo detallado de la revocación..." @bind="revocationReason"></textarea>
+                    </div>
                     <div class="d-flex gap-2 justify-content-end">
-                        <button type="button" class="btn btn-light btn-sm" @onclick="() => showDeleteAuthorizationConfirm = false">Cancelar</button>
-                        <button type="button" class="btn btn-danger btn-sm px-3 text-white" @onclick="DeleteAuthorization">Eliminar</button>
+                        <button type="button" class="btn btn-light" @onclick="() => showDeleteAuthorizationConfirm = false">Cancelar</button>
+                        <button type="button" class="btn btn-danger text-white px-4 fw-medium" @onclick="DeleteAuthorization">Confirmar Revocación</button>
                     </div>
                 </div>
             </div>
@@ -1269,6 +1313,11 @@ else
     private CompetencyCatalogDto? deletingCompetencyCatalog;
     private AuthorizationCatalogDto? deletingAuthorizationCatalog;
     private string? catalogErrorMessage;
+    private string? authorizationErrorMessage;
+    private string revocationReason = string.Empty;
+    private string? revocationErrorMessage;
+    private List<DocumentDto> systemDocuments = new();
+    private string? currentUserName = null;
 
     private bool canRead = false;
     private bool canCreate = false;
@@ -1297,6 +1346,7 @@ else
         {
             var authState = await AuthStateTask;
             var user = authState.User;
+            currentUserName = user.Identity?.Name;
             var userIdClaim = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
             if (userIdClaim != null && Guid.TryParse(userIdClaim.Value, out var uId))
             {
@@ -1321,6 +1371,7 @@ else
         authorizationsCatalog = await StaffService.GetAuthorizationCatalogAsync();
         trainingTypeCatalog = await StaffService.GetTrainingTypeCatalogAsync();
         usersLookup = await StaffService.GetAvailableUsersLookupAsync();
+        systemDocuments = (await DocumentService.GetDocumentsAsync()).ToList();
     }
 
     private void SetTab(string tab)
@@ -1563,8 +1614,10 @@ else
         grantModel = new GrantModel
         {
             StaffId = selectedStaffDetail.Id,
-            ValidFrom = DateTime.Today
+            ValidFrom = DateTime.Today,
+            EvidenceDocId = null
         };
+        authorizationErrorMessage = null;
         isEditingAuthorization = false;
         editingAuthorizationId = null;
         showAuthorizationModal = true;
@@ -1579,8 +1632,10 @@ else
             ValidFrom = auth.ValidFrom,
             ValidUntil = auth.ValidUntil,
             GrantedByUserId = auth.GrantedByUserId,
-            AssessmentMethod = auth.AssessmentMethod
+            AssessmentMethod = auth.AssessmentMethod,
+            EvidenceDocId = auth.EvidenceDocId
         };
+        authorizationErrorMessage = null;
         isEditingAuthorization = true;
         editingAuthorizationId = auth.Id;
         showAuthorizationModal = true;
@@ -1589,20 +1644,35 @@ else
     private void ConfirmDeleteAuthorization(Guid id)
     {
         deletingAuthorizationId = id;
+        revocationReason = string.Empty;
+        revocationErrorMessage = null;
         showDeleteAuthorizationConfirm = true;
     }
 
     private async Task DeleteAuthorization()
     {
         if (!canDelete || !deletingAuthorizationId.HasValue) return;
-        await StaffService.DeleteStaffAuthorizationAsync(deletingAuthorizationId.Value);
-        showDeleteAuthorizationConfirm = false;
-        deletingAuthorizationId = null;
-        if (selectedStaffDetail != null)
+        if (string.IsNullOrWhiteSpace(revocationReason))
         {
-            await SelectStaff(selectedStaffDetail.Id);
+            revocationErrorMessage = "El motivo de la revocación es obligatorio.";
+            return;
         }
-        await LoadData();
+
+        try
+        {
+            await StaffService.DeleteStaffAuthorizationAsync(deletingAuthorizationId.Value, revocationReason, currentUserId, currentUserName);
+            showDeleteAuthorizationConfirm = false;
+            deletingAuthorizationId = null;
+            if (selectedStaffDetail != null)
+            {
+                await SelectStaff(selectedStaffDetail.Id);
+            }
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            revocationErrorMessage = ex.Message;
+        }
     }
 
     private async Task SaveAuthorization()
@@ -1622,24 +1692,33 @@ else
             grantedBy,
             null,
             null,
-            grantModel.AssessmentMethod
+            grantModel.AssessmentMethod,
+            grantModel.EvidenceDocId
         );
 
-        if (isEditingAuthorization && editingAuthorizationId.HasValue)
+        try
         {
-            await StaffService.UpdateStaffAuthorizationAsync(editingAuthorizationId.Value, req);
-        }
-        else
-        {
-            await StaffService.GrantAuthorizationAsync(req);
-        }
+            authorizationErrorMessage = null;
+            if (isEditingAuthorization && editingAuthorizationId.HasValue)
+            {
+                await StaffService.UpdateStaffAuthorizationAsync(editingAuthorizationId.Value, req);
+            }
+            else
+            {
+                await StaffService.GrantAuthorizationAsync(req);
+            }
 
-        showAuthorizationModal = false;
-        if (selectedStaffDetail != null)
-        {
-            await SelectStaff(selectedStaffDetail.Id);
+            showAuthorizationModal = false;
+            if (selectedStaffDetail != null)
+            {
+                await SelectStaff(selectedStaffDetail.Id);
+            }
+            await LoadData();
         }
-        await LoadData();
+        catch (Exception ex)
+        {
+            authorizationErrorMessage = ex.Message;
+        }
     }
 
     // Competency Catalog Handlers
@@ -1860,6 +1939,7 @@ else
         public DateTime? ValidUntil { get; set; }
         public Guid? GrantedByUserId { get; set; }
         public string? AssessmentMethod { get; set; }
+        public Guid? EvidenceDocId { get; set; }
     }
 
     public class CompetencyCatalogModel

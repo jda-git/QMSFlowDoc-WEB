@@ -125,7 +125,6 @@ public class StaffService : IStaffService
             )).ToList();
 
         var authorizations = staff.Authorizations
-            .Where(a => a.Status == "VIGENTE")
             .Select(a => new StaffAuthorizationDto(
                 a.Id,
                 a.AuthorizationId,
@@ -137,7 +136,10 @@ public class StaffService : IStaffService
                 a.Status,
                 systemUserNames.TryGetValue(a.GrantedByUserId ?? Guid.Empty, out var granterName) ? granterName : "Responsable",
                 a.GrantedByUserId,
-                a.AssessmentMethod
+                a.AssessmentMethod,
+                null,
+                a.EvidenceDocId,
+                a.RevocationReason
             )).ToList();
 
         return new StaffExpedienteDto(
@@ -285,8 +287,28 @@ public class StaffService : IStaffService
                       )).ToListAsync();
     }
 
+    private async Task ValidateQualifiedEvaluatorAsync(Guid? evaluatorUserId)
+    {
+        if (!evaluatorUserId.HasValue || evaluatorUserId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Debe especificarse un evaluador para registrar la evaluación de competencia.");
+        }
+
+        var isAuthorized = await (from ur in _context.UserRoles
+                                  join r in _context.Roles on ur.RoleId equals r.Id
+                                  where ur.UserId == evaluatorUserId.Value && 
+                                        (r.Name == "Administrador" || r.Name == "Facultativo" || r.Name == "Responsable calidad")
+                                  select r).AnyAsync();
+        if (!isAuthorized)
+        {
+            throw new InvalidOperationException("El evaluador no tiene un rol cualificado (Administrador, Facultativo o Responsable calidad) para registrar evaluaciones de competencia (ISO 15189 §6.2).");
+        }
+    }
+
     public async Task RecordCompetencyEvaluationAsync(AssessCompetencyRequest request)
     {
+        await ValidateQualifiedEvaluatorAsync(request.AssessedByUserId);
+
         // Encontrar una competencia en base al nombre o Id si estuviera mapeada
         var competency = await _context.CompetencyCatalogs.FirstOrDefaultAsync(c => c.Name == request.CompetencyName);
         if (competency == null) return;
@@ -355,9 +377,70 @@ public class StaffService : IStaffService
                       )).ToListAsync();
     }
 
+    private async Task ValidateAuthorizationRequestAsync(GrantAuthorizationRequest request)
+    {
+        if (!request.EvidenceDocId.HasValue || request.EvidenceDocId == Guid.Empty)
+        {
+            throw new InvalidOperationException("Se requiere un documento de evidencia obligatoria (EvidenceDocId) para conceder o actualizar la autorización (ISO 15189 §6.2).");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.AssessmentMethod))
+        {
+            throw new InvalidOperationException("Se requiere una justificación textual en el método de evaluación (AssessmentMethod) para la autorización (ISO 15189 §6.2).");
+        }
+
+        var authCatalog = await _context.AuthorizationCatalogs
+            .Include(a => a.RequiredCompetencies)
+            .FirstOrDefaultAsync(a => a.Name == request.TaskName);
+        if (authCatalog == null) return;
+
+        if (authCatalog.RequiresCompetency)
+        {
+            var requiredCompetencyIds = authCatalog.RequiredCompetencies.Select(rc => rc.CompetencyId).ToList();
+            if (!requiredCompetencyIds.Any())
+            {
+                requiredCompetencyIds = await _context.AuthorizationRequiredCompetencies
+                    .Where(rc => rc.AuthorizationId == authCatalog.Id)
+                    .Select(rc => rc.CompetencyId)
+                    .ToListAsync();
+            }
+
+            foreach (var compId in requiredCompetencyIds)
+            {
+                var compStatus = await _context.StaffCompetencyStatuses
+                    .FirstOrDefaultAsync(cs => cs.StaffId == request.StaffId && cs.CompetencyId == compId);
+
+                if (compStatus == null || compStatus.CurrentStatus != "APTO" || (compStatus.NextDueDate.HasValue && compStatus.NextDueDate.Value <= DateTime.UtcNow))
+                {
+                    var compName = (await _context.CompetencyCatalogs.FindAsync(compId))?.Name ?? "Competencia requerida";
+                    throw new InvalidOperationException($"El empleado no cuenta con la competencia '{compName}' en estado APTO y vigente.");
+                }
+            }
+        }
+    }
+
+    private async Task LogAuditAsync(string action, string entityType, Guid? entityId, string details, Guid? userId, string? username)
+    {
+        var audit = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Action = action,
+            EntityType = entityType,
+            EntityId = entityId,
+            Details = details,
+            UserId = userId ?? Guid.Empty,
+            UserName = username ?? "Sistema",
+            Timestamp = DateTime.UtcNow,
+            MachineName = Environment.MachineName,
+            Result = "Success"
+        };
+        _context.AuditLogs.Add(audit);
+    }
+
     public async Task GrantAuthorizationAsync(GrantAuthorizationRequest request)
     {
-        // Buscar por nombre de tarea o id
+        await ValidateAuthorizationRequestAsync(request);
+
         var authCatalog = await _context.AuthorizationCatalogs.FirstOrDefaultAsync(a => a.Name == request.TaskName);
         if (authCatalog == null) return;
 
@@ -371,10 +454,13 @@ public class StaffService : IStaffService
             ValidFrom = request.ValidFrom,
             ValidUntil = request.ValidUntil,
             Status = "VIGENTE",
-            AssessmentMethod = request.AssessmentMethod
+            AssessmentMethod = request.AssessmentMethod,
+            EvidenceDocId = request.EvidenceDocId
         };
 
         _context.StaffAuthorizations.Add(auth);
+        await _context.SaveChangesAsync();
+        await LogAuditAsync("CREATE", "StaffAuthorization", auth.Id, $"Autorización concedida para {request.TaskName}", request.GrantedByUserId, null);
         await _context.SaveChangesAsync();
     }
 
@@ -513,6 +599,8 @@ public class StaffService : IStaffService
 
     public async Task UpdateCompetencyEvaluationAsync(Guid id, AssessCompetencyRequest request)
     {
+        await ValidateQualifiedEvaluatorAsync(request.AssessedByUserId);
+
         var eval = await _context.CompetencyEvaluations.FirstOrDefaultAsync(e => e.Id == id);
         if (eval == null) return;
 
@@ -580,6 +668,8 @@ public class StaffService : IStaffService
 
     public async Task UpdateStaffAuthorizationAsync(Guid id, GrantAuthorizationRequest request)
     {
+        await ValidateAuthorizationRequestAsync(request);
+
         var auth = await _context.StaffAuthorizations.FirstOrDefaultAsync(a => a.Id == id);
         if (auth == null) return;
 
@@ -591,16 +681,23 @@ public class StaffService : IStaffService
         auth.ValidFrom = request.ValidFrom;
         auth.ValidUntil = request.ValidUntil;
         auth.AssessmentMethod = request.AssessmentMethod;
+        auth.EvidenceDocId = request.EvidenceDocId;
+        auth.UpdatedAt = DateTime.UtcNow;
 
+        await LogAuditAsync("EDIT", "StaffAuthorization", auth.Id, $"Autorización editada para {request.TaskName}", request.GrantedByUserId, null);
         await _context.SaveChangesAsync();
     }
 
-    public async Task DeleteStaffAuthorizationAsync(Guid id)
+    public async Task DeleteStaffAuthorizationAsync(Guid id, string reason, Guid? userId = null, string? userName = null)
     {
         var auth = await _context.StaffAuthorizations.FirstOrDefaultAsync(a => a.Id == id);
         if (auth == null) return;
 
-        _context.StaffAuthorizations.Remove(auth);
+        auth.Status = "REVOCADA";
+        auth.RevocationReason = reason;
+        auth.UpdatedAt = DateTime.UtcNow;
+
+        await LogAuditAsync("REVOKE", "StaffAuthorization", auth.Id, $"Autorización revocada: {reason}", userId, userName);
         await _context.SaveChangesAsync();
     }
 }

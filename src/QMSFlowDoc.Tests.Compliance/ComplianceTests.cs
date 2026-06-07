@@ -2,7 +2,13 @@ using Microsoft.EntityFrameworkCore;
 using QMSFlowDoc.Domain.Entities;
 using QMSFlowDoc.Infrastructure.Persistence;
 using QMSFlowDoc.Infrastructure.Services.EQA;
+using QMSFlowDoc.Infrastructure.Services.Quality;
+using QMSFlowDoc.Infrastructure.Services.Staff;
+using QMSFlowDoc.Infrastructure.Services.Equipment;
+using QMSFlowDoc.Shared.DTOs;
+using SharedModels = QMSFlowDoc.Shared.Models;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Xunit;
@@ -128,6 +134,197 @@ namespace QMSFlowDoc.Tests.Compliance
                 var expectedHash = Convert.ToHexString(sha256.ComputeHash(expectedBytes)).ToLowerInvariant();
                 Assert.Equal(expectedHash, log2.IntegrityHash);
             }
+        }
+
+        [Fact]
+        public async Task TestNC_CannotClose_WithoutCAPAVerified()
+        {
+            using var context = new QmsDbContext(_options);
+            var qualityService = new QualityService(context);
+
+            // Create NC
+            var ncId = Guid.NewGuid();
+            var nc = new Nonconformity
+            {
+                Id = ncId,
+                Title = "Test NC",
+                Description = "Description",
+                Severity = NCSeverity.LOW,
+                Status = NCStatus.OPEN,
+                RootCauseAnalysis = "Some root cause",
+                Containment = "Immediate containment",
+                IsDeleted = false
+            };
+            context.Nonconformities.Add(nc);
+
+            // Create CAPA action linked to NC
+            var capaId = Guid.NewGuid();
+            var capa = new CapaAction
+            {
+                Id = capaId,
+                NCId = ncId,
+                Description = "Test CAPA",
+                Status = CAPAStatus.OPEN,
+                IsDeleted = false
+            };
+            context.CapaActions.Add(capa);
+            await context.SaveChangesAsync();
+
+            // Try to close NC directly: should fail because CAPA is not VERIFIED (it is OPEN)
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => 
+                qualityService.UpdateNCStatusAsync(ncId, SharedModels.NCStatus.CLOSED));
+            Assert.Contains("VERIFIED", ex.Message);
+
+            // Set CAPA to DONE
+            await qualityService.CompleteCAPAAsync(capaId, "check", Guid.NewGuid(), "User");
+
+            // Still should fail because CAPA is not VERIFIED (it is DONE)
+            var ex2 = await Assert.ThrowsAsync<InvalidOperationException>(() => 
+                qualityService.UpdateNCStatusAsync(ncId, SharedModels.NCStatus.CLOSED));
+            Assert.Contains("VERIFIED", ex2.Message);
+        }
+
+        [Fact]
+        public async Task TestAuthorization_CannotGrant_WithoutAptoCompetency()
+        {
+            using var context = new QmsDbContext(_options);
+            var staffService = new StaffService(context);
+
+            var staffId = Guid.NewGuid();
+            var authCatalogId = Guid.NewGuid();
+
+            var catalog = new AuthorizationCatalog
+            {
+                Id = authCatalogId,
+                Code = "AUTH_01",
+                Name = "Task 1", // Matches the request TaskName
+                RequiresCompetency = true
+            };
+            context.AuthorizationCatalogs.Add(catalog);
+
+            var competencyId = Guid.NewGuid();
+            
+            // Add a catalog competency so FindAsync finds it in ValidateAuthorizationRequestAsync
+            var competencyCatalog = new CompetencyCatalog
+            {
+                Id = competencyId,
+                Code = "COMP_01",
+                Name = "Competency 1",
+                RoleScope = "Analyst",
+                Area = "Hematología"
+            };
+            context.CompetencyCatalogs.Add(competencyCatalog);
+
+            var reqComp = new AuthorizationRequiredCompetency
+            {
+                AuthorizationId = authCatalogId,
+                CompetencyId = competencyId
+            };
+            context.AuthorizationRequiredCompetencies.Add(reqComp);
+
+            var staffProfile = new StaffProfile
+            {
+                Id = staffId,
+                PositionTitle = "Analyst",
+                IsActive = true
+            };
+            context.StaffProfiles.Add(staffProfile);
+            await context.SaveChangesAsync();
+
+            var authRequest = new GrantAuthorizationRequest(
+                StaffId: staffId,
+                TaskName: "Task 1",
+                Description: "Description 1",
+                ValidFrom: DateTime.UtcNow,
+                ValidUntil: DateTime.UtcNow.AddYears(1),
+                GrantedByUserId: Guid.NewGuid(),
+                CompetencyId: competencyId,
+                EvaluationId: null,
+                AssessmentMethod: "Justificación de prueba",
+                EvidenceDocId: Guid.NewGuid()
+            );
+
+            // Should throw because required competency is not met (no status in DB, status is null/not APTO)
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                staffService.GrantAuthorizationAsync(authRequest));
+            Assert.Contains("competencia", ex.Message);
+        }
+
+        [Fact]
+        public async Task TestEquipmentImpact_CannotReturnToService_WithoutNCAndEvidence()
+        {
+            using var context = new QmsDbContext(_options);
+            var equipmentService = new EquipmentService(context);
+
+            var equipmentId = Guid.NewGuid();
+            var eq = new Equipment
+            {
+                Id = equipmentId,
+                Name = "Test Equipment",
+                Status = EquipmentStatus.OUT_OF_SERVICE
+            };
+            context.Equipments.Add(eq);
+            await context.SaveChangesAsync();
+
+            var assessment = new RegisterImpactRequest
+            {
+                EquipmentId = equipmentId,
+                ImpactType = "Posible impacto en resultados",
+                ExternalNCId = null, // Missing NC linkage
+                EvidencePath = "",   // Missing evidence
+                UserId = Guid.NewGuid()
+            };
+
+            // Should throw because critical impact requires NC and evidence
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                equipmentService.RegisterImpactAssessmentAsync(assessment));
+            Assert.Contains("vincular una No Conformidad", ex.Message);
+        }
+
+        [Fact]
+        public async Task TestEQARound_CannotClose_IfUnsatisfactoryWithoutCAPA()
+        {
+            using var context = new QmsDbContext(_options);
+            var eqaService = new EQAService(context);
+
+            var programId = Guid.NewGuid();
+            var prog = new EQAProgram { Id = programId, InternalCode = "PROG_EQA", Name = "EQA" };
+            context.EQAPrograms.Add(prog);
+
+            var roundId = Guid.NewGuid();
+            var round = new EQARound
+            {
+                Id = roundId,
+                ProgramId = programId,
+                ExternalCode = "ROUND_01",
+                GlobalOutcome = EQAPerformance.UNSATISFACTORY,
+                Status = EQARoundStatus.IN_PROGRESS
+            };
+            context.EQARounds.Add(round);
+            await context.SaveChangesAsync();
+
+            // Try to close round - should fail because UNSATISFACTORY requires at least one active deviation
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                eqaService.UpdateRoundAsync(round));
+            Assert.Contains("desviación activa", ex.Message);
+
+            // Add active deviation but it's not closed
+            var dev = new EQADeviation
+            {
+                Id = Guid.NewGuid(),
+                RoundId = roundId,
+                Status = "Abierta",
+                LinkedCapaId = null
+            };
+            round.Deviations.Add(dev);
+
+            // Set round to CLOSED
+            round.Status = EQARoundStatus.CLOSED;
+
+            // Should fail because deviation is not CLOSED
+            var ex2 = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                eqaService.UpdateRoundAsync(round));
+            Assert.Contains("estado 'Cerrada'", ex2.Message);
         }
     }
 }

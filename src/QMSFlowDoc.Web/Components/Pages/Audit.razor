@@ -38,6 +38,31 @@
             </button>
         </div>
 
+        <!-- Integrity Banner -->
+        @if (filteredLogs != null)
+        {
+            @if (isChainValid)
+            {
+                <div class="alert alert-success rounded-4 shadow-sm p-3 mb-4 d-flex align-items-center" role="alert">
+                    <i class="bi bi-shield-fill-check fs-3 me-3 text-success"></i>
+                    <div>
+                        <h6 class="alert-heading fw-bold mb-0 text-success">Base de datos íntegra. Encadenamiento de firmas correcto.</h6>
+                        <span class="small text-muted">Todos los registros de auditoría han sido verificados criptográficamente y no presentan alteraciones.</span>
+                    </div>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-danger rounded-4 shadow-sm p-3 mb-4 d-flex align-items-center animate__animated animate__shakeX" role="alert">
+                    <i class="bi bi-shield-fill-exclamation fs-3 me-3 text-danger"></i>
+                    <div>
+                        <h6 class="alert-heading fw-bold mb-0 text-danger">¡Alerta de integridad! Se ha detectado una alteración en la cadena de firmas del historial.</h6>
+                        <span class="small text-muted">La firma criptográfica recalculada no coincide con el registro en base de datos. Póngase en contacto con el administrador.</span>
+                    </div>
+                </div>
+            }
+        }
+
         <!-- Filters Bar -->
         <div class="card border-0 shadow-sm rounded-4 mb-4 bg-light">
             <div class="card-body p-4">
@@ -173,6 +198,7 @@
     private bool isAuthorized = false;
     private List<AuditLog>? auditLogs;
     private List<AuditLog>? filteredLogs;
+    private bool isChainValid = true;
 
     // Filters
     private DateTime? filterStartDate;
@@ -204,7 +230,35 @@
             .OrderByDescending(l => l.Timestamp)
             .ToListAsync();
         
+        isChainValid = VerifyDbChain();
         ApplyFilters();
+    }
+
+    private bool VerifyDbChain()
+    {
+        if (auditLogs == null || !auditLogs.Any()) return true;
+
+        var orderedLogs = auditLogs.OrderBy(l => l.Timestamp).ThenBy(l => l.Id).ToList();
+        string lastHash = string.Empty;
+
+        foreach (var log in orderedLogs)
+        {
+            var payload = $"{lastHash}|{log.Id}|{log.Timestamp:o}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}";
+            string computedHash;
+            using (var sha256 = System.Security.Cryptography.SHA256.Create())
+            {
+                var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
+                var hashBytes = sha256.ComputeHash(bytes);
+                computedHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+            }
+            if (log.IntegrityHash != computedHash)
+            {
+                return false;
+            }
+            lastHash = computedHash;
+        }
+
+        return true;
     }
 
     private void ApplyFilters()
@@ -274,14 +328,25 @@
         if (filteredLogs == null || !filteredLogs.Any()) return;
 
         var builder = new StringBuilder();
-        builder.AppendLine("Fecha;Usuario;Acción;Entidad;Detalles;Equipo");
+        builder.AppendLine("Fecha;Usuario;Acción;Entidad;Detalles;Equipo;HashIntegridad");
 
         foreach (var log in filteredLogs)
         {
             var dateStr = log.Timestamp.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss");
             var detailsEscaped = log.Details.Replace("\"", "\"\"").Replace("\n", " ").Replace("\r", "");
-            builder.AppendLine($"\"{dateStr}\";\"{log.UserName}\";\"{log.Action}\";\"{log.EntityType}\";\"{detailsEscaped}\";\"{log.MachineName}\"");
+            var integrityHash = log.IntegrityHash ?? string.Empty;
+            builder.AppendLine($"\"{dateStr}\";\"{log.UserName}\";\"{log.Action}\";\"{log.EntityType}\";\"{detailsEscaped}\";\"{log.MachineName}\";\"{integrityHash}\"");
         }
+
+        // Add cryptographic footer
+        builder.AppendLine();
+        builder.AppendLine("=== INFORME DE INTEGRIDAD CRIPTOGRÁFICA (ISO 15189 §8.4) ===");
+        builder.AppendLine($"Fecha de Exportación;{DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss")}");
+        builder.AppendLine($"Resultado de Validación;{(isChainValid ? "ÉXITO - Cadena de firmas íntegra" : "¡ALERTA! Alteración detectada en la cadena")}");
+        
+        var lastLog = auditLogs?.OrderBy(l => l.Timestamp).ThenBy(l => l.Id).LastOrDefault();
+        builder.AppendLine($"Último Hash Verificado;{lastLog?.IntegrityHash ?? "N/A"}");
+        builder.AppendLine("Evidencia de inalterabilidad generada automáticamente por QMSFlowDoc V2.");
 
         var csvContent = builder.ToString();
         var fileName = $"auditoria_{DateTime.Now:yyyyMMdd_HHmmss}.csv";
