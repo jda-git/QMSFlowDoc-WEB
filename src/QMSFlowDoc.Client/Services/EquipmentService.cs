@@ -50,7 +50,12 @@ public class EquipmentService : IEquipmentService
                 InternalId = e.InternalId,
                 AssetTag = e.AssetTag,
                 NextCalibration = e.NextCalibration,
-                IsVerified = e.IsVerified
+                IsVerified = e.IsVerified,
+                CytoType = e.CytoType,
+                PipetteType = e.PipetteType,
+                ColdTempMin = e.ColdTempMin,
+                CentrifugeType = e.CentrifugeType,
+                SoftName = e.SoftName
             })
             .ToListAsync();
     }

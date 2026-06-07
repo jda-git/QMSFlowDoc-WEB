@@ -116,7 +116,12 @@ public class EquipmentService : IEquipmentService
                 LastEventType = lastMaint?.EventType.ToString(),
                 LastOutcome = lastMaint?.Outcome,
                 TodayQCStatus = qcStatus,
-                TodayQCColor = qcColor
+                TodayQCColor = qcColor,
+                CytoType = e.CytoType,
+                PipetteType = e.PipetteType,
+                ColdTempMin = e.ColdTempMin,
+                CentrifugeType = e.CentrifugeType,
+                SoftName = e.SoftName
             });
         }
 

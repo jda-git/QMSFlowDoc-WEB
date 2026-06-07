@@ -33,6 +33,13 @@ public class EquipmentListDto
     
     public int ActiveAlertCount { get; set; }
     public string? Observations { get; set; }
+    
+    // Technical spec helpers for UI filtering
+    public string? CytoType { get; set; }
+    public string? PipetteType { get; set; }
+    public decimal? ColdTempMin { get; set; }
+    public string? CentrifugeType { get; set; }
+    public string? SoftName { get; set; }
 
     public EquipmentListDto() { }
     

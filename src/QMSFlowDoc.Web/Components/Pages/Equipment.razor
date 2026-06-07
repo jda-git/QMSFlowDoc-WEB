@@ -2059,15 +2059,15 @@ else
     private bool MatchesCategory(EquipmentListDto eq, string category)
     {
         if (category == "Citómetro")
-            return eq.Name.Contains("Citómetro", StringComparison.OrdinalIgnoreCase) || (eq.Restrictions ?? "").Contains("Citómetro", StringComparison.OrdinalIgnoreCase);
+            return !string.IsNullOrEmpty(eq.CytoType) || eq.Name.Contains("Citómetro", StringComparison.OrdinalIgnoreCase) || (eq.Restrictions ?? "").Contains("Citómetro", StringComparison.OrdinalIgnoreCase);
         if (category == "Pipeta")
-            return eq.Name.Contains("Pipeta", StringComparison.OrdinalIgnoreCase) || eq.Name.Contains("Micropipeta", StringComparison.OrdinalIgnoreCase);
+            return !string.IsNullOrEmpty(eq.PipetteType) || eq.Name.Contains("Pipeta", StringComparison.OrdinalIgnoreCase) || eq.Name.Contains("Micropipeta", StringComparison.OrdinalIgnoreCase);
         if (category == "Nevera")
-            return eq.Name.Contains("Nevera", StringComparison.OrdinalIgnoreCase) || eq.Name.Contains("Congelador", StringComparison.OrdinalIgnoreCase);
+            return eq.ColdTempMin.HasValue || eq.Name.Contains("Nevera", StringComparison.OrdinalIgnoreCase) || eq.Name.Contains("Congelador", StringComparison.OrdinalIgnoreCase);
         if (category == "Centrífuga")
-            return eq.Name.Contains("Centrífuga", StringComparison.OrdinalIgnoreCase);
+            return !string.IsNullOrEmpty(eq.CentrifugeType) || eq.Name.Contains("Centrífuga", StringComparison.OrdinalIgnoreCase);
         if (category == "Software")
-            return eq.Name.Contains("Software", StringComparison.OrdinalIgnoreCase) || eq.Name.Contains("Infinicyt", StringComparison.OrdinalIgnoreCase) || eq.Name.Contains("Kaluza", StringComparison.OrdinalIgnoreCase);
+            return !string.IsNullOrEmpty(eq.SoftName) || eq.Name.Contains("Software", StringComparison.OrdinalIgnoreCase) || eq.Name.Contains("Infinicyt", StringComparison.OrdinalIgnoreCase) || eq.Name.Contains("Kaluza", StringComparison.OrdinalIgnoreCase);
         if (category == "Auxiliar")
             return eq.Criticidad == EquipmentCriticidad.AUXILIARY;
         return true;

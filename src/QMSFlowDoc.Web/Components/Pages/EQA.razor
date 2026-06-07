@@ -1309,7 +1309,7 @@
         try
         {
             activeNonconformities = (await QualityService.GetNonconformitiesAsync())?
-                .Where(nc => nc.Status != QMSFlowDoc.Domain.Entities.NCStatus.CLOSED)
+                .Where(nc => nc.Status != QMSFlowDoc.Shared.Models.NCStatus.CLOSED)
                 .ToList();
         }
         catch (Exception)
