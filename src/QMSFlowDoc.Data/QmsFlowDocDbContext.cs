@@ -68,6 +68,7 @@ public class QmsFlowDocDbContext : DbContext
     public DbSet<AuditPlan> AuditPlans => Set<AuditPlan>();
     public DbSet<AuditFinding> AuditFindings => Set<AuditFinding>();
     public DbSet<ManagementReview> ManagementReviews => Set<ManagementReview>();
+    public DbSet<QualityIndicator> QualityIndicators => Set<QualityIndicator>();
     public DbSet<IQCResult> IQCResults => Set<IQCResult>();
     public DbSet<ContingencyPlan> ContingencyPlans => Set<ContingencyPlan>();
 
@@ -323,6 +324,10 @@ public class QmsFlowDocDbContext : DbContext
             e.ToTable("SupplierEvaluations");
             e.HasKey(se => se.Id);
             e.Property(se => se.EvaluatedPeriod).HasMaxLength(50);
+            e.Property(se => se.EvaluatorName).HasMaxLength(200);
+            e.Property(se => se.Criticality).HasMaxLength(50);
+            e.Property(se => se.Scope).HasMaxLength(500);
+            e.Property(se => se.Decision).HasMaxLength(100);
             e.Property(se => se.AttachmentPath).HasMaxLength(1000);
             e.HasOne(se => se.Supplier).WithMany().HasForeignKey(se => se.SupplierId).OnDelete(DeleteBehavior.Cascade);
             e.Ignore(se => se.AverageScore); // Calculated property
@@ -524,9 +529,12 @@ public class QmsFlowDocDbContext : DbContext
             e.Property(r => r.Category).HasMaxLength(100);
             e.Property(r => r.Likelihood).HasConversion<int>();
             e.Property(r => r.Impact).HasConversion<int>();
+            e.Property(r => r.ResidualLikelihood).HasConversion<int?>();
+            e.Property(r => r.ResidualImpact).HasConversion<int?>();
             e.Property(r => r.Status).HasConversion<int>();
             e.Property(r => r.RowVersion).IsRowVersion();
             e.Ignore(r => r.RiskScore); // Calculated property
+            e.Ignore(r => r.ResidualRiskScore);
             e.HasOne(r => r.Owner).WithMany().HasForeignKey(r => r.OwnerUserId).OnDelete(DeleteBehavior.SetNull);
         });
 
@@ -555,6 +563,21 @@ public class QmsFlowDocDbContext : DbContext
             e.ToTable("ManagementReviews");
             e.HasKey(r => r.Id);
             e.HasOne(r => r.MinutesDocument).WithMany().HasForeignKey(r => r.MinutesDocumentId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<QualityIndicator>(e =>
+        {
+            e.ToTable("QualityIndicators");
+            e.HasKey(i => i.Id);
+            e.Property(i => i.Name).HasMaxLength(300);
+            e.Property(i => i.Area).HasMaxLength(150);
+            e.Property(i => i.Period).HasMaxLength(50);
+            e.Property(i => i.Unit).HasMaxLength(50);
+            e.Property(i => i.Trend).HasMaxLength(50);
+            e.Property(i => i.TargetRule).HasMaxLength(20);
+            e.Property(i => i.TargetValue).HasPrecision(18, 2);
+            e.Property(i => i.ActualValue).HasPrecision(18, 2);
+            e.HasIndex(i => new { i.Name, i.Period });
         });
 
         modelBuilder.Entity<IQCResult>(e =>

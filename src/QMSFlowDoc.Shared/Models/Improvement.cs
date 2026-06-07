@@ -55,6 +55,15 @@ public class Risk
     public RiskImpact Impact { get; set; }
     public int RiskScore => (int)Likelihood * (int)Impact;
     public string? MitigationPlan { get; set; }
+    public string? Opportunity { get; set; }
+    public string? ActionPlan { get; set; }
+    public string? Responsible { get; set; }
+    public DateTime? DueDate { get; set; }
+    public RiskLikelihood? ResidualLikelihood { get; set; }
+    public RiskImpact? ResidualImpact { get; set; }
+    public int? ResidualRiskScore => ResidualLikelihood.HasValue && ResidualImpact.HasValue ? (int)ResidualLikelihood.Value * (int)ResidualImpact.Value : null;
+    public string? EffectivenessReview { get; set; }
+    public DateTime? EffectivenessReviewDate { get; set; }
     public Guid? OwnerUserId { get; set; }
     public string? OwnerName { get; set; }
     public User? Owner { get; set; }
@@ -72,9 +81,14 @@ public class AuditPlan
     public string Title { get; set; } = string.Empty;
     public DateTime ScheduledDate { get; set; }
     public string Scope { get; set; } = string.Empty;
+    public string? Objectives { get; set; }
+    public string? Criteria { get; set; }
     public string? LeadAuditor { get; set; }
     public AuditStatus Status { get; set; } = AuditStatus.PLANNED;
     public string? SummaryReport { get; set; }
+    public string? Conclusions { get; set; }
+    public string? FollowUpActions { get; set; }
+    public DateTime? CompletedAt { get; set; }
     
     public Guid? ReportDocumentId { get; set; }
     public Document? ReportDocument { get; set; }
@@ -95,6 +109,9 @@ public class AuditFinding
     public string Description { get; set; } = string.Empty;
     public string? IsoRequirement { get; set; }
     public FindingType Type { get; set; }
+    public string? Responsible { get; set; }
+    public DateTime? DueDate { get; set; }
+    public string? EffectivenessReview { get; set; }
     public Guid? RelatedNCId { get; set; } // Link to Nonconformity if it becomes one
     public Nonconformity? RelatedNC { get; set; }
 }
@@ -105,11 +122,40 @@ public class ManagementReview
     public DateTime ReviewDate { get; set; }
     public string Participants { get; set; } = string.Empty;
     public string Agenda { get; set; } = string.Empty;
+    public string? PreviousActionsReview { get; set; }
+    public string? ChangesAffectingQms { get; set; }
+    public string? ResourceNeeds { get; set; }
+    public string? QualityIndicatorsReview { get; set; }
+    public string? ExternalProviderPerformance { get; set; }
     public string Summary { get; set; } = string.Empty;
+    public string? Decisions { get; set; }
+    public string? ImprovementOpportunities { get; set; }
     public string? Actions { get; set; }
+    public string? ActionOwner { get; set; }
+    public DateTime? ActionDueDate { get; set; }
+    public string? EffectivenessReview { get; set; }
     
     public Guid? MinutesDocumentId { get; set; }
     public Document? MinutesDocument { get; set; }
+}
+
+public class QualityIndicator
+{
+    public Guid Id { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Area { get; set; } = string.Empty;
+    public string Period { get; set; } = string.Empty;
+    public decimal TargetValue { get; set; }
+    public string TargetRule { get; set; } = "Maximo";
+    public decimal ActualValue { get; set; }
+    public string Unit { get; set; } = string.Empty;
+    public string Trend { get; set; } = "Estable";
+    public bool MeetsTarget { get; set; }
+    public string? Analysis { get; set; }
+    public string? ActionPlan { get; set; }
+    public string? Responsible { get; set; }
+    public DateTime? DueDate { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 
 // === IQC / Control Interno (ISO 15189 §7.3.7.2) ===

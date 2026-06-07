@@ -12,7 +12,10 @@ public class SupplierEvaluation
     public Supplier? Supplier { get; set; }
     public DateTime EvaluationDate { get; set; }
     public Guid? EvaluatorUserId { get; set; }
+    public string? EvaluatorName { get; set; }
     public string EvaluatedPeriod { get; set; } = string.Empty; // e.g., "2024-2025"
+    public string Criticality { get; set; } = "Media";
+    public string Scope { get; set; } = string.Empty;
     
     // Scores (1-5 scale)
     public int ScorePlazos { get; set; }      // Delivery times compliance
@@ -22,6 +25,9 @@ public class SupplierEvaluation
     
     // Result
     public bool IsApproved { get; set; }
+    public string Decision { get; set; } = "Aprobado";
+    public string? CorrectiveActions { get; set; }
+    public DateTime? NextEvaluationDate { get; set; }
     public string? Observations { get; set; }
     public string? AttachmentPath { get; set; }
     
