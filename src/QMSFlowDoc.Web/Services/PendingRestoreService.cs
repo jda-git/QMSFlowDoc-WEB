@@ -75,10 +75,10 @@ public static class PendingRestoreService
 
             if (File.Exists(targetDatabasePath))
             {
-                File.Copy(targetDatabasePath, safetyDbPath, overwrite: true);
+                await CopyFileWithRetriesAsync(targetDatabasePath, safetyDbPath, ct);
             }
 
-            File.Copy(request.DatabaseBackupPath, targetDatabasePath, overwrite: true);
+            await CopyFileWithRetriesAsync(request.DatabaseBackupPath, targetDatabasePath, ct);
 
             if (!string.IsNullOrWhiteSpace(request.DocumentBackupPath) &&
                 !string.IsNullOrWhiteSpace(request.TargetDocumentPath))
@@ -172,17 +172,7 @@ public static class PendingRestoreService
             }
         }
 
-        await using (var conn = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = request.DatabaseBackupPath }.ToString()))
-        {
-            await conn.OpenAsync(ct);
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "PRAGMA integrity_check;";
-            var result = (await cmd.ExecuteScalarAsync(ct))?.ToString();
-            if (!string.Equals(result, "ok", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("La copia SQLite seleccionada no supera PRAGMA integrity_check.");
-            }
-        }
+        await VerifySqliteIntegrityWithRetriesAsync(request.DatabaseBackupPath, ct);
 
         if (!string.IsNullOrWhiteSpace(request.DocumentBackupPath))
         {
@@ -216,7 +206,7 @@ public static class PendingRestoreService
             {
                 await DeleteIfExistsAsync($"{request.TargetDatabasePath}-wal", ct);
                 await DeleteIfExistsAsync($"{request.TargetDatabasePath}-shm", ct);
-                File.Copy(safetyDbPath, request.TargetDatabasePath, overwrite: true);
+                await CopyFileWithRetriesAsync(safetyDbPath, request.TargetDatabasePath, ct);
             }
 
             if (!string.IsNullOrWhiteSpace(safetyDocumentPath) &&
@@ -285,9 +275,125 @@ public static class PendingRestoreService
     private static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
     {
         using var sha = SHA256.Create();
-        await using var stream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 81920, useAsync: true);
-        var hash = await sha.ComputeHashAsync(stream, ct);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            try
+            {
+                await using var stream = new FileStream(
+                    filePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    bufferSize: 81920,
+                    useAsync: true);
+                var hash = await sha.ComputeHashAsync(stream, ct);
+                return Convert.ToHexString(hash).ToLowerInvariant();
+            }
+            catch (IOException) when (attempt < 6)
+            {
+                await Task.Delay(200 * attempt, ct);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 6)
+            {
+                await Task.Delay(200 * attempt, ct);
+            }
+        }
+
+        await using var finalStream = new FileStream(
+            filePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 81920,
+            useAsync: true);
+        var finalHash = await sha.ComputeHashAsync(finalStream, ct);
+        return Convert.ToHexString(finalHash).ToLowerInvariant();
+    }
+
+    private static async Task VerifySqliteIntegrityWithRetriesAsync(string databasePath, CancellationToken ct)
+    {
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            try
+            {
+                var builder = new SqliteConnectionStringBuilder
+                {
+                    DataSource = databasePath,
+                    Mode = SqliteOpenMode.ReadOnly,
+                    Cache = SqliteCacheMode.Private
+                };
+
+                await using var conn = new SqliteConnection(builder.ToString());
+                await conn.OpenAsync(ct);
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = "PRAGMA integrity_check;";
+                var result = (await cmd.ExecuteScalarAsync(ct))?.ToString();
+                if (!string.Equals(result, "ok", StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("La copia SQLite seleccionada no supera PRAGMA integrity_check.");
+                }
+
+                return;
+            }
+            catch (SqliteException) when (attempt < 6)
+            {
+                await Task.Delay(200 * attempt, ct);
+            }
+            catch (IOException) when (attempt < 6)
+            {
+                await Task.Delay(200 * attempt, ct);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 6)
+            {
+                await Task.Delay(200 * attempt, ct);
+            }
+        }
+
+        throw new IOException($"No se pudo abrir la copia SQLite para verificarla: {databasePath}");
+    }
+
+    private static async Task CopyFileWithRetriesAsync(string sourcePath, string destinationPath, CancellationToken ct)
+    {
+        var destinationDir = Path.GetDirectoryName(destinationPath);
+        if (!string.IsNullOrWhiteSpace(destinationDir))
+        {
+            Directory.CreateDirectory(destinationDir);
+        }
+
+        for (var attempt = 1; attempt <= 6; attempt++)
+        {
+            try
+            {
+                await using var source = new FileStream(
+                    sourcePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    bufferSize: 81920,
+                    useAsync: true);
+
+                await using var destination = new FileStream(
+                    destinationPath,
+                    FileMode.Create,
+                    FileAccess.Write,
+                    FileShare.None,
+                    bufferSize: 81920,
+                    useAsync: true);
+
+                await source.CopyToAsync(destination, ct);
+                return;
+            }
+            catch (IOException) when (attempt < 6)
+            {
+                await Task.Delay(200 * attempt, ct);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 6)
+            {
+                await Task.Delay(200 * attempt, ct);
+            }
+        }
+
+        File.Copy(sourcePath, destinationPath, overwrite: true);
     }
 
     private static async Task WriteRestoreStatusAsync(RestoreStatus status, CancellationToken ct)
