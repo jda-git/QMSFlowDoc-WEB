@@ -79,18 +79,27 @@
                         <label class="form-label small fw-semibold text-secondary mb-1">Riesgo residual</label>
                         <div class="row g-2 mb-2">
                             <div class="col">
-                                <select class="form-select" @bind="riskModel.ResidualLikelihood">
+                                <select class="form-select" value="@GetNullableEnumValue(riskModel.ResidualLikelihood)" @onchange="OnResidualLikelihoodChanged">
                                     <option value="">Probabilidad residual</option>
-                                    @foreach (var v in Enum.GetValues<RiskLikelihood>()) { <option value="@v">@GetRiskLikelihoodLabel(v)</option> }
+                                    @foreach (var v in Enum.GetValues<RiskLikelihood>()) { <option value="@((int)v)">@GetRiskLikelihoodLabel(v)</option> }
                                 </select>
                             </div>
                             <div class="col">
-                                <select class="form-select" @bind="riskModel.ResidualImpact">
+                                <select class="form-select" value="@GetNullableEnumValue(riskModel.ResidualImpact)" @onchange="OnResidualImpactChanged">
                                     <option value="">Impacto residual</option>
-                                    @foreach (var v in Enum.GetValues<RiskImpact>()) { <option value="@v">@GetRiskImpactLabel(v)</option> }
+                                    @foreach (var v in Enum.GetValues<RiskImpact>()) { <option value="@((int)v)">@GetRiskImpactLabel(v)</option> }
                                 </select>
                             </div>
                         </div>
+                        @if (riskModel.ResidualRiskScore.HasValue)
+                        {
+                            <div class="small mb-2">
+                                Riesgo residual calculado:
+                                <span class="badge @GetRiskScoreBadgeClass(riskModel.ResidualRiskScore.Value)">
+                                    @riskModel.ResidualRiskScore.Value - @GetRiskScoreLevel(riskModel.ResidualRiskScore.Value)
+                                </span>
+                            </div>
+                        }
                         <label class="form-label small fw-semibold text-secondary mb-1">Revisión de eficacia / aceptación</label>
                         <textarea class="form-control mb-2" rows="2" placeholder="Revisión de eficacia / aceptación" @bind="riskModel.EffectivenessReview"></textarea>
                         <label class="form-label small fw-semibold text-secondary mb-1">Fecha de revisión de eficacia</label>
@@ -574,6 +583,11 @@
     private async Task CreateRisk()
     {
         if (string.IsNullOrWhiteSpace(riskModel.Title)) return;
+        if (riskModel.ResidualLikelihood.HasValue != riskModel.ResidualImpact.HasValue)
+        {
+            SetError("Para calcular el riesgo residual debe seleccionar probabilidad residual e impacto residual.");
+            return;
+        }
         if (riskModel.RiskScore >= 12 && string.IsNullOrWhiteSpace(riskModel.ActionPlan) && string.IsNullOrWhiteSpace(riskModel.MitigationPlan))
         {
             SetError("Los riesgos altos o críticos deben tener acción o mitigación planificada.");
@@ -586,6 +600,16 @@
         AddAuditLog("CREATE", "Risk", riskModel.Id, $"Riesgo registrado: {riskModel.Title}");
         await SaveAndReload("Riesgo registrado.");
         riskModel = NewRisk();
+    }
+
+    private void OnResidualLikelihoodChanged(ChangeEventArgs e)
+    {
+        riskModel.ResidualLikelihood = TryParseNullableEnum<RiskLikelihood>(e.Value?.ToString());
+    }
+
+    private void OnResidualImpactChanged(ChangeEventArgs e)
+    {
+        riskModel.ResidualImpact = TryParseNullableEnum<RiskImpact>(e.Value?.ToString());
     }
 
     private async Task CreateAudit()
@@ -859,6 +883,21 @@
         RiskImpact.CATASTROPHIC => "Catastrófico",
         _ => value.ToString()
     };
+
+    private static string GetNullableEnumValue<TEnum>(TEnum? value) where TEnum : struct, Enum
+    {
+        return value.HasValue ? Convert.ToInt32(value.Value).ToString() : string.Empty;
+    }
+
+    private static TEnum? TryParseNullableEnum<TEnum>(string? rawValue) where TEnum : struct, Enum
+    {
+        if (int.TryParse(rawValue, out var numericValue) && Enum.IsDefined(typeof(TEnum), numericValue))
+        {
+            return (TEnum)Enum.ToObject(typeof(TEnum), numericValue);
+        }
+
+        return null;
+    }
 
     private static string GetRiskStatusLabel(RiskStatus value) => value switch
     {
