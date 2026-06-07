@@ -2,12 +2,17 @@
 @rendermode InteractiveServer
 @using QMSFlowDoc.Application.Services.Identity
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using QMSFlowDoc.Domain.Entities
+@using QMSFlowDoc.Infrastructure.Persistence
 @using QMSFlowDoc.Shared.Models
 @using QMSFlowDoc.Shared.Services
+@using System.Security.Claims
 @using System.Text.Json
 @attribute [Authorize]
 @inject IUserService UserService
 @inject IPermissionService PermissionService
+@inject QmsDbContext DbContext
 @inject Microsoft.AspNetCore.Identity.UserManager<QMSFlowDoc.Domain.Identity.ApplicationUser> UserManager
 @inject IJSRuntime JS
 
@@ -61,18 +66,49 @@
             <div class="row">
                 <div class="col-md-6">
                     <h5 class="fw-bold mb-3 text-secondary">Información del Laboratorio</h5>
+                    @if (!string.IsNullOrEmpty(labSettingsSuccessMessage))
+                    {
+                        <div class="alert alert-success py-2 small mb-3">
+                            <i class="bi bi-check-circle-fill me-2"></i>@labSettingsSuccessMessage
+                        </div>
+                    }
+                    @if (!string.IsNullOrEmpty(labSettingsErrorMessage))
+                    {
+                        <div class="alert alert-danger py-2 small mb-3">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>@labSettingsErrorMessage
+                        </div>
+                    }
                     <div class="mb-3">
                         <label class="form-label text-muted small">Nombre de la Organización</label>
-                        <input type="text" class="form-control form-control-premium" value="Laboratorio Clínico Central" readonly />
+                        <input type="text" class="form-control form-control-premium" @bind="labSettings.OrganizationName" readonly="@(!canEditLaboratorySettings)" />
                     </div>
                     <div class="mb-3">
                         <label class="form-label text-muted small">Norma de Acreditación Principal</label>
-                        <input type="text" class="form-control form-control-premium" value="UNE-EN ISO 15189:2023" readonly />
+                        <input type="text" class="form-control form-control-premium" @bind="labSettings.AccreditationStandard" readonly="@(!canEditLaboratorySettings)" />
                     </div>
                     <div class="mb-3">
                         <label class="form-label text-muted small">Código de Acreditación</label>
-                        <input type="text" class="form-control form-control-premium" value="1234/LE2345" readonly />
+                        <input type="text" class="form-control form-control-premium" @bind="labSettings.AccreditationCode" readonly="@(!canEditLaboratorySettings)" />
                     </div>
+                    @if (canEditLaboratorySettings)
+                    {
+                        <button class="btn btn-premium px-4" @onclick="SaveLaboratorySettingsAsync" disabled="@isSavingLabSettings">
+                            @if (isSavingLabSettings)
+                            {
+                                <span class="spinner-border spinner-border-sm me-2" role="status"></span><span>Guardando...</span>
+                            }
+                            else
+                            {
+                                <i class="bi bi-save-fill me-2"></i><span>Guardar información del laboratorio</span>
+                            }
+                        </button>
+                    }
+                    else
+                    {
+                        <div class="text-muted small">
+                            <i class="bi bi-lock-fill me-1"></i>Solo un usuario con rol Administrador puede modificar estos datos.
+                        </div>
+                    }
                 </div>
                 <div class="col-md-6 border-start ps-4">
                     <h5 class="fw-bold mb-3 text-secondary">Estado del Sistema</h5>
@@ -717,8 +753,14 @@
 }
 
 @code {
+    private const string OrganizationNameKey = "Laboratory.OrganizationName";
+    private const string AccreditationStandardKey = "Laboratory.AccreditationStandard";
+    private const string AccreditationCodeKey = "Laboratory.AccreditationCode";
+
     private string activeTab = "general";
     private bool isAdmin = false;
+    private bool canEditLaboratorySettings = false;
+    private ClaimsPrincipal? currentUser;
 
     private List<UserDto> users = new();
     private List<RoleDto> roles = new();
@@ -738,8 +780,12 @@
     private string? permissionsSuccessMessage;
     private string? userModalError;
     private string? roleModalError;
+    private string? labSettingsSuccessMessage;
+    private string? labSettingsErrorMessage;
+    private bool isSavingLabSettings = false;
 
     // Form Models
+    private LaboratorySettingsModel labSettings = new();
     private CreateUserModel createUserModel = new();
     private EditUserModel editUserModel = new();
     private UserDto? selectedUser;
@@ -773,8 +819,9 @@
         if (AuthStateTask != null)
         {
             var authState = await AuthStateTask;
-            var user = authState.User;
-            isAdmin = user.IsInRole("Administrador") || user.IsInRole("Responsable calidad");
+            currentUser = authState.User;
+            isAdmin = currentUser.IsInRole("Administrador") || currentUser.IsInRole("Responsable calidad");
+            canEditLaboratorySettings = currentUser.IsInRole("Administrador");
         }
 
         await LoadData();
@@ -782,6 +829,8 @@
 
     private async Task LoadData()
     {
+        await LoadLaboratorySettingsAsync();
+
         if (isAdmin)
         {
             // Load ServerSettings
@@ -832,6 +881,121 @@
         activeTab = tab;
         userSuccessMessage = null;
         permissionsSuccessMessage = null;
+        labSettingsSuccessMessage = null;
+        labSettingsErrorMessage = null;
+    }
+
+    private async Task LoadLaboratorySettingsAsync()
+    {
+        var keys = new[] { OrganizationNameKey, AccreditationStandardKey, AccreditationCodeKey };
+        var settings = await DbContext.SystemSettings
+            .Where(s => keys.Contains(s.Key))
+            .ToDictionaryAsync(s => s.Key, s => s.Value);
+
+        labSettings = new LaboratorySettingsModel
+        {
+            OrganizationName = settings.GetValueOrDefault(OrganizationNameKey, "Laboratorio Clínico Central"),
+            AccreditationStandard = settings.GetValueOrDefault(AccreditationStandardKey, "UNE-EN ISO 15189:2023"),
+            AccreditationCode = settings.GetValueOrDefault(AccreditationCodeKey, "1234/LE2345")
+        };
+    }
+
+    private async Task SaveLaboratorySettingsAsync()
+    {
+        labSettingsSuccessMessage = null;
+        labSettingsErrorMessage = null;
+
+        if (!canEditLaboratorySettings)
+        {
+            labSettingsErrorMessage = "Solo un usuario con rol Administrador puede modificar la información del laboratorio.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(labSettings.OrganizationName) ||
+            string.IsNullOrWhiteSpace(labSettings.AccreditationStandard) ||
+            string.IsNullOrWhiteSpace(labSettings.AccreditationCode))
+        {
+            labSettingsErrorMessage = "Nombre de la organización, norma de acreditación y código de acreditación son obligatorios.";
+            return;
+        }
+
+        isSavingLabSettings = true;
+
+        try
+        {
+            var beforeSnapshot = await GetLaboratorySettingsSnapshotAsync();
+            labSettings.OrganizationName = labSettings.OrganizationName.Trim();
+            labSettings.AccreditationStandard = labSettings.AccreditationStandard.Trim();
+            labSettings.AccreditationCode = labSettings.AccreditationCode.Trim();
+
+            await UpsertSystemSettingAsync(OrganizationNameKey, labSettings.OrganizationName, "Nombre de la organización del laboratorio");
+            await UpsertSystemSettingAsync(AccreditationStandardKey, labSettings.AccreditationStandard, "Norma de acreditación principal");
+            await UpsertSystemSettingAsync(AccreditationCodeKey, labSettings.AccreditationCode, "Código de acreditación");
+
+            var afterSnapshot = JsonSerializer.Serialize(labSettings);
+            DbContext.AuditLogs.Add(new QMSFlowDoc.Domain.Entities.AuditLog
+            {
+                UserId = GetCurrentUserId(),
+                UserName = currentUser?.Identity?.Name ?? "Sistema",
+                Action = "UPDATE",
+                EntityType = "SystemSettings",
+                Details = "Actualización de información del laboratorio y acreditación",
+                Reason = "Configuración general del sistema",
+                BeforeSnapshot = beforeSnapshot,
+                AfterSnapshot = afterSnapshot,
+                Result = "OK"
+            });
+
+            await DbContext.SaveChangesAsync();
+            labSettingsSuccessMessage = "Información del laboratorio guardada correctamente.";
+        }
+        catch (Exception ex)
+        {
+            labSettingsErrorMessage = $"No se pudo guardar la información del laboratorio: {ex.Message}";
+        }
+        finally
+        {
+            isSavingLabSettings = false;
+        }
+    }
+
+    private async Task UpsertSystemSettingAsync(string key, string value, string description)
+    {
+        var setting = await DbContext.SystemSettings.FindAsync(key);
+        if (setting == null)
+        {
+            DbContext.SystemSettings.Add(new QMSFlowDoc.Domain.Entities.SystemSetting
+            {
+                Key = key,
+                Value = value,
+                Description = description
+            });
+            return;
+        }
+
+        setting.Value = value;
+        setting.Description = description;
+    }
+
+    private async Task<string> GetLaboratorySettingsSnapshotAsync()
+    {
+        var keys = new[] { OrganizationNameKey, AccreditationStandardKey, AccreditationCodeKey };
+        var settings = await DbContext.SystemSettings
+            .Where(s => keys.Contains(s.Key))
+            .ToDictionaryAsync(s => s.Key, s => s.Value);
+
+        return JsonSerializer.Serialize(new LaboratorySettingsModel
+        {
+            OrganizationName = settings.GetValueOrDefault(OrganizationNameKey, "Laboratorio Clínico Central"),
+            AccreditationStandard = settings.GetValueOrDefault(AccreditationStandardKey, "UNE-EN ISO 15189:2023"),
+            AccreditationCode = settings.GetValueOrDefault(AccreditationCodeKey, "1234/LE2345")
+        });
+    }
+
+    private Guid? GetCurrentUserId()
+    {
+        var rawId = currentUser?.FindFirstValue(ClaimTypes.NameIdentifier);
+        return Guid.TryParse(rawId, out var userId) ? userId : null;
     }
 
     private IEnumerable<UserDto> FilteredUsers =>
@@ -1094,6 +1258,13 @@
         public bool CanDelete { get; set; }
         public bool CanPrint { get; set; }
         public bool CanApprove { get; set; }
+    }
+
+    public class LaboratorySettingsModel
+    {
+        public string OrganizationName { get; set; } = string.Empty;
+        public string AccreditationStandard { get; set; } = string.Empty;
+        public string AccreditationCode { get; set; } = string.Empty;
     }
 
     public class CreateUserModel
