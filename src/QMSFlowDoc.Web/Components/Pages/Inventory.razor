@@ -33,6 +33,12 @@ else
             <p class="text-muted mb-0">Control de trazabilidad de reactivos, lotes y vigencia (Requisitos ISO 15189)</p>
         </div>
         <div class="d-flex gap-2">
+            @if (canRead)
+            {
+                <button class="btn btn-outline-success px-3" @onclick="OpenSupplierManager">
+                    <i class="bi bi-building-add me-2"></i> Gestionar Proveedores
+                </button>
+            }
             <button class="btn btn-outline-secondary px-3" @onclick="OpenMovementsModal">
                 <i class="bi bi-journal-text me-2"></i> Historial de Movimientos
             </button>
@@ -576,12 +582,20 @@ else
                                 </select>
                             </div>
                             <div class="col-md-4">
-                                <label class="form-label fw-medium text-secondary">Proveedor</label>
+                                <div class="d-flex justify-content-between align-items-center">
+                                    <label class="form-label fw-medium text-secondary mb-1">Proveedor</label>
+                                    @if (canCreate)
+                                    {
+                                        <button type="button" class="btn btn-link btn-sm text-success text-decoration-none p-0 mb-1" @onclick="OpenAddSupplierFromReagentModal">
+                                            <i class="bi bi-plus-circle me-1"></i>Nuevo
+                                        </button>
+                                    }
+                                </div>
                                 <select class="form-select form-select-premium" @bind="reagentModel.SupplierId">
                                     <option value="">-- Sin proveedor --</option>
                                     @foreach (var supplier in suppliers)
                                     {
-                                        <option value="@supplier.Id">@supplier.Name</option>
+                                        <option value="@supplier.Id">@supplier.Name (@GetSupplierQualityStatusLabel(supplier.QualityStatus))</option>
                                     }
                                 </select>
                             </div>
@@ -629,6 +643,170 @@ else
                             <button type="submit" class="btn btn-premium px-4">Guardar Reactivo</button>
                         </div>
                     </EditForm>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Modal: Gestionar Proveedores -->
+@if (showSupplierModal)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-xl modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-success text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold"><i class="bi bi-building-add me-2"></i>Gestión de Proveedores</h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="CloseSupplierModal"></button>
+                </div>
+                <div class="card-body p-4">
+                    <div class="row g-4">
+                        <div class="col-lg-5">
+                            <div class="border rounded-3 p-3 bg-light h-100">
+                                <h6 class="fw-bold mb-3">@(isEditingSupplier ? "Editar proveedor" : "Nuevo proveedor")</h6>
+                                <EditForm Model="supplierModel" OnValidSubmit="SaveSupplier">
+                                    <DataAnnotationsValidator />
+                                    <div class="row g-3">
+                                        <div class="col-12">
+                                            <label class="form-label fw-medium text-secondary">Nombre del proveedor *</label>
+                                            <InputText class="form-control form-control-premium" @bind-Value="supplierModel.Name" placeholder="Ej. BD Biosciences" />
+                                            <ValidationMessage For="() => supplierModel.Name" class="text-danger small" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-medium text-secondary">Tipo</label>
+                                            <select class="form-select form-select-premium" @bind="supplierModel.Type">
+                                                @foreach (var type in Enum.GetValues<SupplierType>())
+                                                {
+                                                    <option value="@type">@GetSupplierTypeLabel(type)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-medium text-secondary">Estado de calidad</label>
+                                            <select class="form-select form-select-premium" @bind="supplierModel.QualityStatus">
+                                                @foreach (var status in Enum.GetValues<SupplierQualityStatus>())
+                                                {
+                                                    <option value="@status">@GetSupplierQualityStatusLabel(status)</option>
+                                                }
+                                            </select>
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-medium text-secondary">Contacto</label>
+                                            <InputText class="form-control form-control-premium" @bind-Value="supplierModel.ContactName" placeholder="Persona de contacto" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-medium text-secondary">Teléfono</label>
+                                            <InputText class="form-control form-control-premium" @bind-Value="supplierModel.Phone" placeholder="Teléfono" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-medium text-secondary">Email</label>
+                                            <InputText type="email" class="form-control form-control-premium" @bind-Value="supplierModel.Email" placeholder="correo@proveedor.com" />
+                                        </div>
+                                        <div class="col-md-6">
+                                            <label class="form-label fw-medium text-secondary">Próxima evaluación</label>
+                                            <InputDate class="form-control form-control-premium" @bind-Value="supplierModel.NextEvaluationDate" />
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label fw-medium text-secondary">Dirección</label>
+                                            <InputText class="form-control form-control-premium" @bind-Value="supplierModel.Address" placeholder="Dirección del proveedor" />
+                                        </div>
+                                        <div class="col-12">
+                                            <label class="form-label fw-medium text-secondary">Notas</label>
+                                            <InputTextArea class="form-control form-control-premium" rows="2" @bind-Value="supplierModel.Notes" placeholder="Observaciones, restricciones, condiciones de compra..." />
+                                        </div>
+                                    </div>
+
+                                    @if (!string.IsNullOrEmpty(supplierError))
+                                    {
+                                        <div class="alert alert-danger p-2 small mt-3 mb-0">
+                                            <i class="bi bi-exclamation-circle-fill me-1"></i> @supplierError
+                                        </div>
+                                    }
+
+                                    <div class="d-flex justify-content-end gap-2 mt-4">
+                                        @if (isEditingSupplier)
+                                        {
+                                            <button type="button" class="btn btn-light" @onclick="ResetSupplierForm">Cancelar edición</button>
+                                        }
+                                        <button type="submit" class="btn btn-premium px-4" disabled="@(!canCreate && !canEdit)">
+                                            @(isEditingSupplier ? "Guardar cambios" : "Crear proveedor")
+                                        </button>
+                                    </div>
+                                </EditForm>
+                            </div>
+                        </div>
+                        <div class="col-lg-7">
+                            <div class="d-flex justify-content-between align-items-center mb-3">
+                                <h6 class="fw-bold mb-0">Proveedores activos</h6>
+                                <span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-25">@suppliers.Count proveedor(es)</span>
+                            </div>
+                            <div class="table-responsive border rounded-3" style="max-height: 520px; overflow-y: auto;">
+                                <table class="table table-hover align-middle mb-0">
+                                    <thead class="bg-light text-muted small text-uppercase">
+                                        <tr>
+                                            <th>Proveedor</th>
+                                            <th>Tipo</th>
+                                            <th>Estado</th>
+                                            <th>Contacto</th>
+                                            <th class="text-end">Acciones</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @if (!suppliers.Any())
+                                        {
+                                            <tr>
+                                                <td colspan="5" class="text-center text-muted py-4">No hay proveedores registrados.</td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            @foreach (var supplier in suppliers)
+                                            {
+                                                <tr>
+                                                    <td>
+                                                        <div class="fw-semibold">@supplier.Name</div>
+                                                        @if (!string.IsNullOrWhiteSpace(supplier.Email))
+                                                        {
+                                                            <small class="text-muted">@supplier.Email</small>
+                                                        }
+                                                    </td>
+                                                    <td><span class="badge bg-light text-secondary border">@GetSupplierTypeLabel(supplier.Type)</span></td>
+                                                    <td><span class="badge @GetSupplierStatusBadgeClass(supplier.QualityStatus)">@GetSupplierQualityStatusLabel(supplier.QualityStatus)</span></td>
+                                                    <td class="small text-secondary">
+                                                        <div>@(supplier.ContactName ?? "-")</div>
+                                                        @if (!string.IsNullOrWhiteSpace(supplier.Phone))
+                                                        {
+                                                            <div>@supplier.Phone</div>
+                                                        }
+                                                    </td>
+                                                    <td class="text-end">
+                                                        <div class="btn-group btn-group-sm">
+                                                            @if (canEdit)
+                                                            {
+                                                                <button type="button" class="btn btn-outline-primary" @onclick="() => EditSupplier(supplier)" title="Editar proveedor">
+                                                                    <i class="bi bi-pencil"></i>
+                                                                </button>
+                                                            }
+                                                            @if (canDelete)
+                                                            {
+                                                                <button type="button" class="btn btn-outline-danger" @onclick="() => ConfirmDeleteSupplier(supplier)" title="Eliminar proveedor">
+                                                                    <i class="bi bi-trash"></i>
+                                                                </button>
+                                                            }
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            }
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                            <div class="alert alert-info py-2 small mt-3 mb-0">
+                                <i class="bi bi-info-circle me-1"></i>
+                                Al eliminar un proveedor se oculta de nuevas selecciones, pero se conserva la trazabilidad histórica en auditoría.
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1017,6 +1195,9 @@ else
     private bool showAdjustStockModal = false;
     private bool showMovementsModal = false;
     private bool showReleaseLotModal = false;
+    private bool showSupplierModal = false;
+    private bool isEditingSupplier = false;
+    private bool selectCreatedSupplierForReagent = false;
 
     // Print / Export modal state
     private bool showPrintExportModal = false;
@@ -1029,11 +1210,13 @@ else
     private ReagentFormModel reagentModel = new();
     private LotFormModel lotModel = new();
     private AdjustFormModel adjustModel = new();
+    private SupplierFormModel supplierModel = new();
 
     // Validation Errors
     private string reagentError = string.Empty;
     private string lotError = string.Empty;
     private string adjustError = string.Empty;
+    private string supplierError = string.Empty;
 
     // Context for lot modal/adjust modal
     private ReagentListDto? targetReagent = null;
@@ -1083,7 +1266,7 @@ else
 
         await LoadInventoryDataAsync();
         storageLocations = (await InventoryService.GetStorageLocationsAsync()).ToList();
-        suppliers = (await InventoryService.GetSuppliersAsync()).ToList();
+        await ReloadSuppliersAsync();
     }
 
     private async Task LoadInventoryDataAsync()
@@ -1164,6 +1347,11 @@ else
         selectedReagent = await InventoryService.GetReagentByIdAsync(reagentId);
     }
 
+    private async Task ReloadSuppliersAsync()
+    {
+        suppliers = (await InventoryService.GetSuppliersAsync()).ToList();
+    }
+
     private string GetExpiryBadgeClass(int status) => status switch
     {
         2 => "bg-danger text-white",
@@ -1234,32 +1422,79 @@ else
         showReagentModal = true;
     }
 
-    private void OpenEditReagentModal(ReagentListDto reagent)
+    private async Task OpenEditReagentModal(ReagentListDto reagent)
     {
+        var fullReagent = await InventoryService.GetReagentByIdAsync(reagent.Id);
         reagentModel = new ReagentFormModel
         {
             Id = reagent.Id,
-            Name = reagent.Name,
-            Manufacturer = reagent.Manufacturer,
-            Reference = reagent.Reference,
-            ReagentType = reagent.ReagentType,
-            Classification = reagent.Classification ?? "Anticuerpo Monoclonal",
-            Fluorescence = reagent.Fluorescence,
-            InternalCode = reagent.InternalCode,
-            MinStock = reagent.MinStock,
-            TargetStock = reagent.TargetStock
+            Name = fullReagent?.Name ?? reagent.Name,
+            Manufacturer = fullReagent?.Manufacturer ?? reagent.Manufacturer,
+            Reference = fullReagent?.Reference ?? reagent.Reference,
+            ReagentType = fullReagent?.ReagentType ?? reagent.ReagentType,
+            Classification = fullReagent?.Classification ?? reagent.Classification ?? "Anticuerpo Monoclonal",
+            Fluorescence = fullReagent?.Fluorescence ?? reagent.Fluorescence,
+            InternalCode = fullReagent?.InternalCode ?? reagent.InternalCode,
+            ManufacturerCode = fullReagent?.ManufacturerCode,
+            SupplierId = fullReagent?.SupplierId,
+            StorageConditions = fullReagent?.StorageConditions,
+            DefaultLocationId = fullReagent?.DefaultLocationId,
+            OpenShelfLifeDays = fullReagent?.OpenShelfLifeDays,
+            MinStock = fullReagent?.MinStock ?? reagent.MinStock,
+            TargetStock = fullReagent?.TargetStock ?? reagent.TargetStock,
+            ReorderQty = fullReagent?.ReorderQty ?? reagent.ReorderQty
         };
-
-        // Find details to load other fields
-        var fullReagent = reagentsList.FirstOrDefault(r => r.Id == reagent.Id);
-        if (fullReagent != null)
-        {
-            reagentModel.OpenShelfLifeDays = 30; // default/placeholder
-        }
 
         isEditingReagent = true;
         reagentError = string.Empty;
         showReagentModal = true;
+    }
+
+    private void OpenSupplierManager()
+    {
+        selectCreatedSupplierForReagent = false;
+        ResetSupplierForm();
+        showSupplierModal = true;
+    }
+
+    private void OpenAddSupplierFromReagentModal()
+    {
+        selectCreatedSupplierForReagent = true;
+        ResetSupplierForm();
+        showSupplierModal = true;
+    }
+
+    private void CloseSupplierModal()
+    {
+        showSupplierModal = false;
+        supplierError = string.Empty;
+        selectCreatedSupplierForReagent = false;
+    }
+
+    private void ResetSupplierForm()
+    {
+        supplierModel = new SupplierFormModel();
+        isEditingSupplier = false;
+        supplierError = string.Empty;
+    }
+
+    private void EditSupplier(Supplier supplier)
+    {
+        supplierModel = new SupplierFormModel
+        {
+            Id = supplier.Id,
+            Name = supplier.Name,
+            ContactName = supplier.ContactName,
+            Email = supplier.Email,
+            Phone = supplier.Phone,
+            Address = supplier.Address,
+            Notes = supplier.Notes,
+            Type = supplier.Type,
+            QualityStatus = supplier.QualityStatus,
+            NextEvaluationDate = supplier.NextEvaluationDate
+        };
+        isEditingSupplier = true;
+        supplierError = string.Empty;
     }
 
     private void OpenRegisterLotModal(ReagentListDto? reagent)
@@ -1420,6 +1655,113 @@ else
 
     // SAVING LOGIC
 
+    private async Task SaveSupplier()
+    {
+        supplierError = string.Empty;
+        if (isEditingSupplier && !canEdit)
+        {
+            supplierError = "No tiene permisos para modificar proveedores.";
+            return;
+        }
+        if (!isEditingSupplier && !canCreate)
+        {
+            supplierError = "No tiene permisos para crear proveedores.";
+            return;
+        }
+
+        try
+        {
+            var supplier = new Supplier
+            {
+                Id = supplierModel.Id ?? Guid.Empty,
+                Name = supplierModel.Name,
+                ContactName = supplierModel.ContactName,
+                Email = supplierModel.Email,
+                Phone = supplierModel.Phone,
+                Address = supplierModel.Address,
+                Notes = supplierModel.Notes,
+                Type = supplierModel.Type,
+                QualityStatus = supplierModel.QualityStatus,
+                NextEvaluationDate = supplierModel.NextEvaluationDate
+            };
+
+            if (isEditingSupplier && supplierModel.Id.HasValue)
+            {
+                var ok = await InventoryService.UpdateSupplierAsync(supplier);
+                if (!ok)
+                {
+                    supplierError = "No se pudo actualizar el proveedor.";
+                    return;
+                }
+            }
+            else
+            {
+                var created = await InventoryService.CreateSupplierAsync(supplier);
+                if (created == null)
+                {
+                    supplierError = "No se pudo crear el proveedor.";
+                    return;
+                }
+
+                if (selectCreatedSupplierForReagent)
+                {
+                    reagentModel.SupplierId = created.Id;
+                    showSupplierModal = false;
+                    selectCreatedSupplierForReagent = false;
+                }
+            }
+
+            await ReloadSuppliersAsync();
+            await LoadInventoryDataAsync();
+            ResetSupplierForm();
+        }
+        catch (Exception ex)
+        {
+            supplierError = ex.Message;
+        }
+    }
+
+    private async Task ConfirmDeleteSupplier(Supplier supplier)
+    {
+        if (!canDelete)
+        {
+            await JS.InvokeVoidAsync("alert", "Error: No tiene permisos para eliminar proveedores.");
+            return;
+        }
+
+        var confirmResult = await JS.InvokeAsync<object>("confirm", $"¿Está seguro de que desea eliminar el proveedor '{supplier.Name}'? Se ocultará de nuevas selecciones, conservando la trazabilidad histórica.");
+        bool confirm = confirmResult is bool b
+            ? b
+            : confirmResult is System.Text.Json.JsonElement j && j.GetBoolean();
+        if (!confirm)
+        {
+            return;
+        }
+
+        try
+        {
+            var success = await InventoryService.DeleteSupplierAsync(supplier.Id);
+            if (!success)
+            {
+                supplierError = "No se pudo eliminar el proveedor.";
+                return;
+            }
+
+            if (reagentModel.SupplierId == supplier.Id)
+            {
+                reagentModel.SupplierId = null;
+            }
+
+            await ReloadSuppliersAsync();
+            await LoadInventoryDataAsync();
+            ResetSupplierForm();
+        }
+        catch (Exception ex)
+        {
+            supplierError = ex.Message;
+        }
+    }
+
     private async Task SaveReagent()
     {
         reagentError = string.Empty;
@@ -1443,7 +1785,7 @@ else
                 reagentModel.InternalCode,
                 reagentModel.Fluorescence,
                 reagentModel.ReagentType,
-                reagentModel.Reference,
+                reagentModel.Reference ?? string.Empty,
                 reagentModel.Classification,
                 reagentModel.StorageConditions,
                 reagentModel.DefaultLocationId,
@@ -1689,6 +2031,21 @@ else
         public decimal ReorderQty { get; set; } = 3;
     }
 
+    public class SupplierFormModel
+    {
+        public Guid? Id { get; set; }
+        [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El nombre del proveedor es obligatorio")]
+        public string Name { get; set; } = string.Empty;
+        public string? ContactName { get; set; }
+        public string? Email { get; set; }
+        public string? Phone { get; set; }
+        public string? Address { get; set; }
+        public string? Notes { get; set; }
+        public SupplierType Type { get; set; } = SupplierType.SUMINISTROS_REACTIVOS;
+        public SupplierQualityStatus QualityStatus { get; set; } = SupplierQualityStatus.PENDIENTE;
+        public DateTime? NextEvaluationDate { get; set; }
+    }
+
     public class LotFormModel
     {
         public Guid ReagentId { get; set; }
@@ -1711,4 +2068,32 @@ else
         [System.ComponentModel.DataAnnotations.Required(ErrorMessage = "El motivo es obligatorio")]
         public string Reason { get; set; } = string.Empty;
     }
+
+    private static string GetSupplierTypeLabel(SupplierType type) => type switch
+    {
+        SupplierType.SUMINISTROS_REACTIVOS => "Suministros / reactivos",
+        SupplierType.SERVICIO_TECNICO => "Servicio técnico",
+        SupplierType.LABORATORIO_DERIVACION => "Laboratorio de derivación",
+        _ => type.ToString()
+    };
+
+    private static string GetSupplierQualityStatusLabel(SupplierQualityStatus status) => status switch
+    {
+        SupplierQualityStatus.PENDIENTE => "Pendiente",
+        SupplierQualityStatus.APTO => "Apto",
+        SupplierQualityStatus.NO_APTO => "No apto",
+        SupplierQualityStatus.EN_OBSERVACION => "En observación",
+        SupplierQualityStatus.EVALUACION_CADUCADA => "Evaluación caducada",
+        _ => status.ToString()
+    };
+
+    private static string GetSupplierStatusBadgeClass(SupplierQualityStatus status) => status switch
+    {
+        SupplierQualityStatus.APTO => "bg-success",
+        SupplierQualityStatus.PENDIENTE => "bg-secondary",
+        SupplierQualityStatus.EN_OBSERVACION => "bg-warning text-dark",
+        SupplierQualityStatus.EVALUACION_CADUCADA => "bg-warning text-dark",
+        SupplierQualityStatus.NO_APTO => "bg-danger",
+        _ => "bg-secondary"
+    };
 }

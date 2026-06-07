@@ -21,4 +21,7 @@ public interface IInventoryService
     Task<List<InventoryMovementDto>> GetMovementsAsync(DateTime? from, DateTime? to, QMSFlowDoc.Domain.Entities.InventoryMovementType? type, Guid? reagentId);
     Task<IEnumerable<StorageLocation>> GetStorageLocationsAsync();
     Task<IEnumerable<Supplier>> GetSuppliersAsync();
+    Task<Supplier?> CreateSupplierAsync(Supplier supplier);
+    Task<bool> UpdateSupplierAsync(Supplier supplier);
+    Task<bool> DeleteSupplierAsync(Guid id);
 }

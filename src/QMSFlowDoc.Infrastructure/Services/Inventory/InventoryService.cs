@@ -431,6 +431,91 @@ public class InventoryService : IInventoryService
         return await _context.Suppliers.Where(s => !s.IsDeleted).OrderBy(s => s.Name).ToListAsync();
     }
 
+    public async Task<Supplier?> CreateSupplierAsync(Supplier supplier)
+    {
+        supplier.Name = supplier.Name.Trim();
+        if (string.IsNullOrWhiteSpace(supplier.Name))
+        {
+            throw new InvalidOperationException("El nombre del proveedor es obligatorio.");
+        }
+
+        var duplicate = await _context.Suppliers
+            .AnyAsync(s => !s.IsDeleted && s.Name.ToLower() == supplier.Name.ToLower());
+        if (duplicate)
+        {
+            throw new InvalidOperationException($"Ya existe un proveedor activo con el nombre '{supplier.Name}'.");
+        }
+
+        supplier.Id = supplier.Id == Guid.Empty ? Guid.NewGuid() : supplier.Id;
+        supplier.ContactName = NormalizeText(supplier.ContactName);
+        supplier.Email = NormalizeText(supplier.Email);
+        supplier.Phone = NormalizeText(supplier.Phone);
+        supplier.Address = NormalizeText(supplier.Address);
+        supplier.Notes = NormalizeText(supplier.Notes);
+        supplier.CreatedAt = DateTime.UtcNow;
+        supplier.UpdatedAt = DateTime.UtcNow;
+        supplier.IsDeleted = false;
+
+        _context.Suppliers.Add(supplier);
+        await LogAuditAsync("CREATE", "Supplier", supplier.Id, $"Proveedor creado: {supplier.Name}", null, "Sistema");
+        await _context.SaveChangesAsync();
+        return supplier;
+    }
+
+    public async Task<bool> UpdateSupplierAsync(Supplier supplier)
+    {
+        supplier.Name = supplier.Name.Trim();
+        if (string.IsNullOrWhiteSpace(supplier.Name))
+        {
+            throw new InvalidOperationException("El nombre del proveedor es obligatorio.");
+        }
+
+        var existing = await _context.Suppliers.FindAsync(supplier.Id);
+        if (existing == null || existing.IsDeleted)
+        {
+            return false;
+        }
+
+        var duplicate = await _context.Suppliers
+            .AnyAsync(s => !s.IsDeleted && s.Id != supplier.Id && s.Name.ToLower() == supplier.Name.ToLower());
+        if (duplicate)
+        {
+            throw new InvalidOperationException($"Ya existe otro proveedor activo con el nombre '{supplier.Name}'.");
+        }
+
+        existing.Name = supplier.Name;
+        existing.ContactName = NormalizeText(supplier.ContactName);
+        existing.Email = NormalizeText(supplier.Email);
+        existing.Phone = NormalizeText(supplier.Phone);
+        existing.Address = NormalizeText(supplier.Address);
+        existing.Notes = NormalizeText(supplier.Notes);
+        existing.Type = supplier.Type;
+        existing.QualityStatus = supplier.QualityStatus;
+        existing.NextEvaluationDate = supplier.NextEvaluationDate;
+        existing.UpdatedAt = DateTime.UtcNow;
+
+        await LogAuditAsync("EDIT", "Supplier", existing.Id, $"Proveedor actualizado: {existing.Name}", null, "Sistema");
+        return await _context.SaveChangesAsync() > 0;
+    }
+
+    public async Task<bool> DeleteSupplierAsync(Guid id)
+    {
+        var supplier = await _context.Suppliers.FindAsync(id);
+        if (supplier == null || supplier.IsDeleted)
+        {
+            return false;
+        }
+
+        supplier.IsDeleted = true;
+        supplier.UpdatedAt = DateTime.UtcNow;
+
+        await LogAuditAsync("DELETE", "Supplier", supplier.Id, $"Proveedor borrado de forma lógica: {supplier.Name}", null, "Sistema");
+        return await _context.SaveChangesAsync() > 0;
+    }
+
+    private static string? NormalizeText(string? value)
+        => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private async Task LogAuditAsync(string action, string entityType, Guid? entityId, string details, Guid? userId, string username)
     {
         var audit = new AuditLog
