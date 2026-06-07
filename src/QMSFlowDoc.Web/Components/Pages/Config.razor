@@ -1369,7 +1369,7 @@
             // Save settings first
             QMSFlowDoc.Shared.Models.ServerSettingsService.Save(serverSettings);
             
-            var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm");
+            var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
 
             // 1. Database Backup
             var dbEntry = await BackupDatabaseAsync(timestamp);
@@ -1479,7 +1479,10 @@
             source.BackupDatabase(destination);
         }
 
+        await NormalizeSqliteBackupAsync(backupBuilder.ToString());
         var integrityOk = await VerifySqliteBackupAsync(backupBuilder.ToString());
+        await DeleteSqliteSidecarIfExistsAsync($"{backupPath}-wal");
+        await DeleteSqliteSidecarIfExistsAsync($"{backupPath}-shm");
         var dbFile = new FileInfo(backupPath);
         var dbSha = await ComputeSha256Async(backupPath);
 
@@ -1547,6 +1550,56 @@
         return string.Equals(result, "ok", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static async Task NormalizeSqliteBackupAsync(string connectionString)
+    {
+        await using var conn = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await conn.OpenAsync();
+
+        await using (var checkpointCmd = conn.CreateCommand())
+        {
+            checkpointCmd.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+            await checkpointCmd.ExecuteNonQueryAsync();
+        }
+
+        await using (var journalCmd = conn.CreateCommand())
+        {
+            journalCmd.CommandText = "PRAGMA journal_mode=DELETE;";
+            await journalCmd.ExecuteScalarAsync();
+        }
+    }
+
+    private static async Task DeleteSqliteSidecarIfExistsAsync(string path)
+    {
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+
+                return;
+            }
+            catch (IOException) when (attempt < 5)
+            {
+                await Task.Delay(150 * attempt);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 5)
+            {
+                await Task.Delay(150 * attempt);
+            }
+            catch (IOException)
+            {
+                return;
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return;
+            }
+        }
+    }
+
     private static bool LooksLikeSqliteConnectionString(string connectionString)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -1602,9 +1655,39 @@
     private static async Task<string> ComputeSha256Async(string filePath)
     {
         using var sha = System.Security.Cryptography.SHA256.Create();
-        using var stream = File.OpenRead(filePath);
-        var hash = await sha.ComputeHashAsync(stream);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        for (var attempt = 1; attempt <= 5; attempt++)
+        {
+            try
+            {
+                await using var stream = new FileStream(
+                    filePath,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete,
+                    bufferSize: 81920,
+                    useAsync: true);
+                var hash = await sha.ComputeHashAsync(stream);
+                return Convert.ToHexString(hash).ToLowerInvariant();
+            }
+            catch (IOException) when (attempt < 5)
+            {
+                await Task.Delay(150 * attempt);
+            }
+            catch (UnauthorizedAccessException) when (attempt < 5)
+            {
+                await Task.Delay(150 * attempt);
+            }
+        }
+
+        await using var finalStream = new FileStream(
+            filePath,
+            FileMode.Open,
+            FileAccess.Read,
+            FileShare.ReadWrite | FileShare.Delete,
+            bufferSize: 81920,
+            useAsync: true);
+        var finalHash = await sha.ComputeHashAsync(finalStream);
+        return Convert.ToHexString(finalHash).ToLowerInvariant();
     }
 
     private async Task AddManifestEntryAsync(string backupBasePath, BackupManifestEntry entry)
