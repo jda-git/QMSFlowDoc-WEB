@@ -14,17 +14,20 @@ public class Worker : BackgroundService
     private readonly SqlBackupService _sqlBackup;
     private readonly FileBackupService _fileBackup;
     private readonly RetentionService _retention;
+    private readonly BackupManifestService _manifest;
 
     public Worker(
         ILogger<Worker> logger,
         SqlBackupService sqlBackup,
         FileBackupService fileBackup,
-        RetentionService retention)
+        RetentionService retention,
+        BackupManifestService manifest)
     {
         _logger = logger;
         _sqlBackup = sqlBackup;
         _fileBackup = fileBackup;
         _retention = retention;
+        _manifest = manifest;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -93,29 +96,85 @@ public class Worker : BackgroundService
 
         // 1. SQL Server backup
         var connStr = settings.BuildConnectionString();
-        var dbResult = await _sqlBackup.BackupDatabaseAsync(
+        var (dbPath, dbVerified) = await _sqlBackup.BackupDatabaseAsync(
             connStr, settings.DatabaseName, settings.BackupPath, ct);
+
+        // Record DB backup in manifest
+        var dbEntry = new BackupManifestEntry
+        {
+            Timestamp = DateTime.Now,
+            Type = "DB",
+            Path = dbPath ?? string.Empty,
+            Status = dbPath != null ? (dbVerified ? "OK" : "VERIFY_FAILED") : "FAILED",
+            VerifyOnlyPassed = dbVerified
+        };
+
+        if (dbPath != null)
+        {
+            try
+            {
+                var fi = new System.IO.FileInfo(dbPath);
+                dbEntry.SizeBytes = fi.Length;
+                dbEntry.Sha256 = await BackupManifestService.ComputeSha256Async(dbPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Could not compute hash for backup: {Path}", dbPath);
+            }
+        }
+
+        await _manifest.AddEntryAsync(settings.BackupPath, dbEntry);
 
         // 2. Document files backup
         string? fileResult = null;
+        BackupManifestEntry? fileEntry = null;
         if (!string.IsNullOrWhiteSpace(settings.DocumentRepositoryPath))
         {
             fileResult = await _fileBackup.BackupFilesAsync(
                 settings.DocumentRepositoryPath, settings.BackupPath, ct);
+
+            fileEntry = new BackupManifestEntry
+            {
+                Timestamp = DateTime.Now,
+                Type = "Files",
+                Path = fileResult ?? string.Empty,
+                Status = fileResult != null ? "OK" : "FAILED",
+                VerifyOnlyPassed = fileResult != null
+            };
+
+            if (fileResult != null && Directory.Exists(fileResult))
+            {
+                // Calculate total size of backed-up files
+                try
+                {
+                    var dirInfo = new DirectoryInfo(fileResult);
+                    fileEntry.SizeBytes = dirInfo.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
+                }
+                catch { /* best effort */ }
+            }
+
+            await _manifest.AddEntryAsync(settings.BackupPath, fileEntry);
         }
         else
         {
             _logger.LogWarning("Document repository path not configured. Skipping file backup.");
         }
 
-        // 3. Retention cleanup
-        await _retention.CleanupAsync(settings.BackupPath, settings.BackupRetentionDays, ct);
+        // 3. Write last status for configurator
+        await _manifest.WriteLastStatusAsync(settings.BackupPath, dbEntry, fileEntry);
+
+        // 4. Retention cleanup
+        await _retention.CleanupAsync(settings.BackupPath, settings.BackupRetentionDays, settings.BackupMinimumCopies, ct);
+
+        // 5. Cleanup stale manifest entries
+        await _manifest.CleanupEntriesAsync(settings.BackupPath);
 
         sw.Stop();
         _logger.LogInformation(
-            "═══ Backup process completed in {Elapsed} ═══ DB: {DbStatus}, Files: {FileStatus}",
+            "═══ Backup process completed in {Elapsed} ═══ DB: {DbStatus} (Verified: {DbVerified}), Files: {FileStatus}",
             sw.Elapsed.ToString(@"hh\:mm\:ss"),
-            dbResult != null ? "OK" : "FAILED",
+            dbPath != null ? "OK" : "FAILED",
+            dbVerified,
             fileResult != null ? "OK" : "FAILED/SKIPPED");
     }
 

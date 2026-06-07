@@ -558,6 +558,14 @@ else
                         </div>
                     }
 
+                    @if (!string.IsNullOrWhiteSpace(selectedComplaint.ResolutionEvidence))
+                    {
+                        <div class="mb-4">
+                            <h6 class="fw-bold text-secondary mb-2"><i class="bi bi-envelope-check me-2"></i>Evidencia de Resolución</h6>
+                            <p class="bg-warning bg-opacity-10 rounded-3 p-3 mb-0">@selectedComplaint.ResolutionEvidence</p>
+                        </div>
+                    }
+
                     <!-- Status Change for Complaint -->
                     @if (canEdit && selectedComplaint.Status != ComplaintStatus.CLOSED)
                     {
@@ -817,6 +825,10 @@ else
                             <div class="col-12">
                                 <label class="form-label fw-semibold">Acción Correctiva</label>
                                 <InputTextArea class="form-control form-control-premium" @bind-Value="complaintModel.CorrectiveAction" rows="2" placeholder="Acciones correctivas aplicadas..." />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-semibold">Evidencia de Resolución (Comunicación al Cliente)</label>
+                                <InputTextArea class="form-control form-control-premium" @bind-Value="complaintModel.ResolutionEvidence" rows="2" placeholder="Pegue aquí el contenido del email o referencia al archivo de comunicación al cliente..." />
                             </div>
                         </div>
                         <div class="d-flex justify-content-end gap-2 mt-4">
@@ -1124,7 +1136,8 @@ else
             Description = c.Description,
             Category = c.Category.ToString(),
             InvestigationResult = c.InvestigationResult,
-            CorrectiveAction = c.CorrectiveAction
+            CorrectiveAction = c.CorrectiveAction,
+            ResolutionEvidence = c.ResolutionEvidence
         };
         showComplaintModal = true;
     }
@@ -1146,7 +1159,8 @@ else
         Enum.TryParse<ComplaintCategory>(complaintModel.Category, out var cat);
         var req = new CreateComplaintRequest(
             complaintModel.Source, complaintModel.Description, cat,
-            complaintModel.InvestigationResult, complaintModel.CorrectiveAction
+            complaintModel.InvestigationResult, complaintModel.CorrectiveAction,
+            complaintModel.ResolutionEvidence
         );
         if (isEditingComplaint && editingComplaintId.HasValue)
         {
@@ -1233,6 +1247,7 @@ else
         public string Category { get; set; } = "OTHER";
         public string? InvestigationResult { get; set; }
         public string? CorrectiveAction { get; set; }
+        public string? ResolutionEvidence { get; set; }
     }
 
     // Verification modal properties

@@ -63,5 +63,6 @@ public record CreateComplaintRequest(
     string Description,
     ComplaintCategory Category,
     string? InvestigationResult,
-    string? CorrectiveAction
+    string? CorrectiveAction,
+    string? ResolutionEvidence = null
 );

@@ -11,6 +11,8 @@ var builder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<SqlBackupService>();
         services.AddSingleton<FileBackupService>();
         services.AddSingleton<RetentionService>();
+        services.AddSingleton<SqlRestoreService>();
+        services.AddSingleton<BackupManifestService>();
         services.AddHostedService<Worker>();
     })
     .ConfigureLogging(logging =>

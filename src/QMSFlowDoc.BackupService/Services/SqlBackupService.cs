@@ -6,6 +6,7 @@ namespace QMSFlowDoc.BackupService.Services;
 /// <summary>
 /// Performs SQL Server database backups using BACKUP DATABASE T-SQL command.
 /// Generates timestamped .bak files in the configured backup directory.
+/// Automatically verifies backup integrity with RESTORE VERIFYONLY.
 /// </summary>
 public class SqlBackupService
 {
@@ -17,10 +18,10 @@ public class SqlBackupService
     }
 
     /// <summary>
-    /// Executes a full database backup.
-    /// Returns the path to the generated .bak file, or null on failure.
+    /// Executes a full database backup and verifies it with RESTORE VERIFYONLY.
+    /// Returns (path, verified) tuple. Path is null on backup failure.
     /// </summary>
-    public async Task<string?> BackupDatabaseAsync(
+    public async Task<(string? Path, bool Verified)> BackupDatabaseAsync(
         string connectionString, string databaseName, string backupDirectory, CancellationToken ct = default)
     {
         var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm");
@@ -50,18 +51,45 @@ public class SqlBackupService
             if (fi.Exists)
             {
                 _logger.LogInformation("SQL backup completed: {Path} ({Size:N0} bytes)", backupPath, fi.Length);
-                return backupPath;
+
+                // Verify backup integrity with RESTORE VERIFYONLY
+                var verified = await VerifyBackupIntegrityAsync(connection, backupPath, ct);
+                return (backupPath, verified);
             }
             else
             {
                 _logger.LogError("SQL backup command succeeded but file not found: {Path}", backupPath);
-                return null;
+                return (null, false);
             }
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "SQL backup failed for database {Database}", databaseName);
-            return null;
+            return (null, false);
+        }
+    }
+
+    /// <summary>
+    /// Verifies a backup file using RESTORE VERIFYONLY on an existing connection.
+    /// </summary>
+    private async Task<bool> VerifyBackupIntegrityAsync(SqlConnection connection, string backupPath, CancellationToken ct)
+    {
+        _logger.LogInformation("Verifying backup integrity with RESTORE VERIFYONLY: {Path}", backupPath);
+        try
+        {
+            var sql = "RESTORE VERIFYONLY FROM DISK = @path";
+            using var cmd = new SqlCommand(sql, connection);
+            cmd.CommandTimeout = 600;
+            cmd.Parameters.AddWithValue("@path", backupPath);
+            await cmd.ExecuteNonQueryAsync(ct);
+
+            _logger.LogInformation("✅ Backup integrity verification PASSED: {Path}", backupPath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogCritical(ex, "❌ Backup integrity verification FAILED: {Path}. The backup file may be corrupt!", backupPath);
+            return false;
         }
     }
 }

@@ -99,12 +99,19 @@
                     <Label Content="Retención (días):"/>
                     <TextBox x:Name="TxtRetentionDays" Text="30" Width="80" HorizontalAlignment="Left"/>
 
+                    <Label Content="Mínimo de copias a conservar (protección contra borrado total):"/>
+                    <TextBox x:Name="TxtMinCopies" Text="3" Width="80" HorizontalAlignment="Left"/>
+
                     <CheckBox x:Name="ChkFullDocBackup" Content="Backup documental completo (no incremental)" IsChecked="True" Margin="0,12"/>
 
                     <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
                         <Button x:Name="BtnBackupNow" Content="▶️ Ejecutar Backup Ahora" Click="BtnBackupNow_Click" Margin="0,0,10,0"/>
+                        <Button x:Name="BtnVerifyBackup" Content="🔍 Verificar Último Backup" Click="BtnVerifyBackup_Click" Margin="0,0,10,0"/>
                         <Button x:Name="BtnViewLogs" Content="📋 Ver Logs" Click="BtnViewLogs_Click"/>
                     </StackPanel>
+                    <Button x:Name="BtnRestoreDb" Content="⚠️ Restaurar Base de Datos desde Backup" Click="BtnRestoreDb_Click"
+                            Margin="0,10,0,0" HorizontalAlignment="Left"
+                            Background="#FF7F1D1D" Foreground="#FFFCA5A5" BorderBrush="#FFEF4444"/>
                     <TextBlock x:Name="TxtBackupStatus" Foreground="#FFA6E3A1" Margin="0,10" TextWrapping="Wrap"/>
                 </StackPanel>
             </TabItem>

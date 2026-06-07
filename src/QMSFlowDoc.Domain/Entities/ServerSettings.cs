@@ -1,4 +1,5 @@
 using QMSFlowDoc.Domain.Identity;
+using QMSFlowDoc.Shared.Services;
 using System.Text.Json;
 
 namespace QMSFlowDoc.Domain.Entities;
@@ -38,6 +39,9 @@ public class ServerSettings
     /// <summary>True = full copy of document folder. False = incremental (future).</summary>
     public bool BackupDocumentsFull { get; set; } = true;
 
+    /// <summary>Minimum number of backup copies to retain regardless of age. Prevents accidental deletion of all backups.</summary>
+    public int BackupMinimumCopies { get; set; } = 3;
+
     // ── Logging ──
     public string LogPath { get; set; } = string.Empty;
 
@@ -53,7 +57,8 @@ public class ServerSettings
         }
         else
         {
-            builder.Append($"ApplicationUser Id={SqlUsername};Password={SqlPassword};");
+            var decryptedPwd = CredentialProtection.DecryptPassword(SqlPassword ?? string.Empty);
+            builder.Append($"ApplicationUser Id={SqlUsername};Password={decryptedPwd};");
         }
         builder.Append("TrustServerCertificate=True;MultipleActiveResultSets=True;");
         return builder.ToString();
@@ -99,6 +104,20 @@ public static class ServerSettingsService
         var filePath = path ?? DefaultSettingsPath;
         var dir = Path.GetDirectoryName(filePath);
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
+
+        // Encrypt SQL password before saving if not already encrypted
+        if (!string.IsNullOrEmpty(settings.SqlPassword) &&
+            !CredentialProtection.IsEncrypted(settings.SqlPassword))
+        {
+            try
+            {
+                settings.SqlPassword = CredentialProtection.EncryptPassword(settings.SqlPassword);
+            }
+            catch
+            {
+                // If DPAPI fails (e.g., non-Windows), save as-is
+            }
+        }
 
         var json = JsonSerializer.Serialize(settings, JsonOptions);
         File.WriteAllText(filePath, json);

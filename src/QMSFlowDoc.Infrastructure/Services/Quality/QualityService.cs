@@ -385,6 +385,7 @@ public class QualityService : IQualityService
             Category = (DomainEntities.ComplaintCategory)request.Category,
             InvestigationResult = request.InvestigationResult,
             CorrectiveAction = request.CorrectiveAction,
+            ResolutionEvidence = request.ResolutionEvidence,
             Date = DateTime.UtcNow,
             Status = DomainEntities.ComplaintStatus.OPEN
         };
@@ -408,6 +409,7 @@ public class QualityService : IQualityService
         complaint.Category = (DomainEntities.ComplaintCategory)request.Category;
         complaint.InvestigationResult = request.InvestigationResult;
         complaint.CorrectiveAction = request.CorrectiveAction;
+        complaint.ResolutionEvidence = request.ResolutionEvidence;
 
         await LogAuditAsync("EDIT", "Complaint", complaint.Id, $"Queja de '{complaint.Source}' editada", userId, userName);
         return await _context.SaveChangesAsync() > 0;

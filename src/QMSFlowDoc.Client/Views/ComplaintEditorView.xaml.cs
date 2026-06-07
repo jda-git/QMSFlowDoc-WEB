@@ -156,7 +156,8 @@ public sealed partial class ComplaintEditorView : Page
                     _currentComplaint.Description,
                     _currentComplaint.Category,
                     _currentComplaint.InvestigationResult,
-                    null // CorrectiveAction handled via Actions list now
+                    null, // CorrectiveAction handled via Actions list now
+                    _currentComplaint.ResolutionEvidence
                 );
                 
                 var created = await store.CreateComplaintAsync(req);
