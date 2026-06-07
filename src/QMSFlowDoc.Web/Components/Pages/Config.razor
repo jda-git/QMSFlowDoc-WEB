@@ -14,6 +14,7 @@
 @inject IPermissionService PermissionService
 @inject QmsDbContext DbContext
 @inject Microsoft.AspNetCore.Identity.UserManager<QMSFlowDoc.Domain.Identity.ApplicationUser> UserManager
+@inject IConfiguration Configuration
 @inject IJSRuntime JS
 
 <PageTitle>Configuración del Sistema - QMSFlowDoc</PageTitle>
@@ -1169,7 +1170,7 @@
             await Task.Delay(1500);
 
             showRestoreModal = false;
-            restoreSuccessMessage = "Autorización validada. Para restaurar, abra QMSFlowDoc ServerConfigurator en el servidor, seleccione el .bak verificado y confirme la operación con estas credenciales de Administrador.";
+            restoreSuccessMessage = "Autorización validada. Para restaurar, abra QMSFlowDoc ServerConfigurator en el servidor, seleccione la copia verificada (.db para SQLite o .bak para SQL Server) y confirme la operación con estas credenciales de Administrador.";
         }
         catch (Exception ex)
         {
@@ -1368,47 +1369,10 @@
             // Save settings first
             QMSFlowDoc.Shared.Models.ServerSettingsService.Save(serverSettings);
             
-            var connStr = serverSettings.BuildConnectionString();
             var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm");
-            
+
             // 1. Database Backup
-            var dbBackupDir = Path.Combine(serverSettings.BackupPath, "DB");
-            Directory.CreateDirectory(dbBackupDir);
-            var bakPath = Path.Combine(dbBackupDir, $"{serverSettings.DatabaseName}_{timestamp}.bak");
-            
-            using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connStr))
-            {
-                await conn.OpenAsync();
-                var sql = $"BACKUP DATABASE [{serverSettings.DatabaseName}] TO DISK = @path WITH FORMAT, INIT, COMPRESSION";
-                using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(sql, conn))
-                {
-                    cmd.CommandTimeout = 600;
-                    cmd.Parameters.AddWithValue("@path", bakPath);
-                    await cmd.ExecuteNonQueryAsync();
-                }
-                
-                // RESTORE VERIFYONLY
-                var verifySql = "RESTORE VERIFYONLY FROM DISK = @path";
-                using (var verifyCmd = new Microsoft.Data.SqlClient.SqlCommand(verifySql, conn))
-                {
-                    verifyCmd.Parameters.AddWithValue("@path", bakPath);
-                    await verifyCmd.ExecuteNonQueryAsync();
-                }
-            }
-            
-            var dbFile = new FileInfo(bakPath);
-            var dbSha = await ComputeSha256Async(bakPath);
-            
-            var dbEntry = new BackupManifestEntry
-            {
-                Timestamp = DateTime.Now,
-                Type = "DB",
-                Path = bakPath,
-                SizeBytes = dbFile.Length,
-                Sha256 = dbSha,
-                VerifyOnlyPassed = true,
-                Status = "OK"
-            };
+            var dbEntry = await BackupDatabaseAsync(timestamp);
             
             await AddManifestEntryAsync(serverSettings.BackupPath, dbEntry);
             
@@ -1465,6 +1429,154 @@
             isExecutingBackup = false;
             StateHasChanged();
         }
+    }
+
+    private async Task<BackupManifestEntry> BackupDatabaseAsync(string timestamp)
+    {
+        var providerName = DbContext.Database.ProviderName ?? string.Empty;
+        var appConnectionString = Configuration.GetConnectionString("DefaultConnection") ?? string.Empty;
+        var dbBackupDir = Path.Combine(serverSettings.BackupPath, "DB");
+        Directory.CreateDirectory(dbBackupDir);
+
+        if (providerName.Contains("Sqlite", StringComparison.OrdinalIgnoreCase) ||
+            LooksLikeSqliteConnectionString(appConnectionString))
+        {
+            return await BackupSqliteDatabaseAsync(appConnectionString, dbBackupDir, timestamp);
+        }
+
+        return await BackupSqlServerDatabaseAsync(serverSettings.BuildConnectionString(), serverSettings.DatabaseName, dbBackupDir, timestamp);
+    }
+
+    private async Task<BackupManifestEntry> BackupSqliteDatabaseAsync(string connectionString, string dbBackupDir, string timestamp)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new InvalidOperationException("No se ha encontrado la cadena de conexión SQLite de la aplicación.");
+        }
+
+        var sourceBuilder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString);
+        if (string.IsNullOrWhiteSpace(sourceBuilder.DataSource) ||
+            string.Equals(sourceBuilder.DataSource, ":memory:", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("La base de datos SQLite configurada no apunta a un archivo respaldable.");
+        }
+
+        var sourcePath = ResolveSqliteDataSourcePath(sourceBuilder.DataSource);
+        if (!File.Exists(sourcePath))
+        {
+            throw new FileNotFoundException($"No se encuentra el archivo SQLite configurado para la aplicación: {sourcePath}");
+        }
+
+        var safeName = SanitizeFileName(Path.GetFileNameWithoutExtension(sourcePath));
+        var backupPath = Path.Combine(dbBackupDir, $"{safeName}_{timestamp}.db");
+        var backupBuilder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = backupPath };
+
+        await using (var source = new Microsoft.Data.Sqlite.SqliteConnection(connectionString))
+        {
+            await source.OpenAsync();
+            await using var destination = new Microsoft.Data.Sqlite.SqliteConnection(backupBuilder.ToString());
+            await destination.OpenAsync();
+            source.BackupDatabase(destination);
+        }
+
+        var integrityOk = await VerifySqliteBackupAsync(backupBuilder.ToString());
+        var dbFile = new FileInfo(backupPath);
+        var dbSha = await ComputeSha256Async(backupPath);
+
+        var dbEntry = new BackupManifestEntry
+        {
+            Timestamp = DateTime.Now,
+            Type = "DB",
+            Path = backupPath,
+            SizeBytes = dbFile.Length,
+            Sha256 = dbSha,
+            VerifyOnlyPassed = integrityOk,
+            Status = integrityOk ? "OK" : "VERIFY_FAILED"
+        };
+
+        return dbEntry;
+    }
+
+    private async Task<BackupManifestEntry> BackupSqlServerDatabaseAsync(string connectionString, string databaseName, string dbBackupDir, string timestamp)
+    {
+        var bakPath = Path.Combine(dbBackupDir, $"{SanitizeFileName(databaseName)}_{timestamp}.bak");
+
+        using (var conn = new Microsoft.Data.SqlClient.SqlConnection(connectionString))
+        {
+            await conn.OpenAsync();
+            var sql = $"BACKUP DATABASE [{databaseName}] TO DISK = @path WITH FORMAT, INIT, COMPRESSION";
+            using (var cmd = new Microsoft.Data.SqlClient.SqlCommand(sql, conn))
+            {
+                cmd.CommandTimeout = 600;
+                cmd.Parameters.AddWithValue("@path", bakPath);
+                await cmd.ExecuteNonQueryAsync();
+            }
+
+            var verifySql = "RESTORE VERIFYONLY FROM DISK = @path";
+            using (var verifyCmd = new Microsoft.Data.SqlClient.SqlCommand(verifySql, conn))
+            {
+                verifyCmd.Parameters.AddWithValue("@path", bakPath);
+                await verifyCmd.ExecuteNonQueryAsync();
+            }
+        }
+
+        var dbFile = new FileInfo(bakPath);
+        var dbSha = await ComputeSha256Async(bakPath);
+
+        var dbEntry = new BackupManifestEntry
+        {
+            Timestamp = DateTime.Now,
+            Type = "DB",
+            Path = bakPath,
+            SizeBytes = dbFile.Length,
+            Sha256 = dbSha,
+            VerifyOnlyPassed = true,
+            Status = "OK"
+        };
+
+        return dbEntry;
+    }
+
+    private static async Task<bool> VerifySqliteBackupAsync(string connectionString)
+    {
+        await using var conn = new Microsoft.Data.Sqlite.SqliteConnection(connectionString);
+        await conn.OpenAsync();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "PRAGMA integrity_check;";
+        var result = (await cmd.ExecuteScalarAsync())?.ToString();
+        return string.Equals(result, "ok", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool LooksLikeSqliteConnectionString(string connectionString)
+    {
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            return false;
+        }
+
+        try
+        {
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString);
+            return !string.IsNullOrWhiteSpace(builder.DataSource);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string ResolveSqliteDataSourcePath(string dataSource)
+    {
+        return Path.IsPathRooted(dataSource)
+            ? dataSource
+            : Path.GetFullPath(dataSource);
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var chars = value.Select(c => invalidChars.Contains(c) ? '_' : c).ToArray();
+        return new string(chars);
     }
 
     private void CopyDirectory(string sourceDir, string destinationDir)
