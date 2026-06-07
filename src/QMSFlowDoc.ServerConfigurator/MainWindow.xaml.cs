@@ -410,11 +410,11 @@ public partial class MainWindow : Window
 
         if (openFile.ShowDialog() != true) return;
 
-        // Step 3: Double confirmation - must type CONFIRMAR
+        // Step 3: Double confirmation - must provide admin credentials + CONFIRMAR
         var confirmWindow = new Window
         {
-            Title = "Confirmación de Restauración",
-            Width = 500, Height = 250,
+            Title = "Autorización de Restauración (Administrador)",
+            Width = 520, Height = 350,
             WindowStartupLocation = WindowStartupLocation.CenterOwner,
             Owner = this,
             Background = new System.Windows.Media.SolidColorBrush(
@@ -424,24 +424,77 @@ public partial class MainWindow : Window
         var sp = new System.Windows.Controls.StackPanel { Margin = new Thickness(20) };
         sp.Children.Add(new System.Windows.Controls.TextBlock
         {
-            Text = $"⚠️ Para confirmar la restauración de:\n{openFile.FileName}\n\nEscriba CONFIRMAR en el campo de texto:",
+            Text = $"⚠️ Se requiere autorización de un Administrador para restaurar:\n{Path.GetFileName(openFile.FileName)}",
             Foreground = System.Windows.Media.Brushes.Salmon,
             FontSize = 14,
+            FontWeight = FontWeights.Bold,
             TextWrapping = TextWrapping.Wrap,
-            Margin = new Thickness(0, 0, 0, 12)
+            Margin = new Thickness(0, 0, 0, 15)
         });
-        var confirmBox = new System.Windows.Controls.TextBox
+
+        // Grid for Form fields
+        var grid = new System.Windows.Controls.Grid { Margin = new Thickness(0, 0, 0, 15) };
+        grid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(160) });
+        grid.ColumnDefinitions.Add(new System.Windows.Controls.ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+        grid.RowDefinitions.Add(new System.Windows.Controls.RowDefinition { Height = GridLength.Auto });
+
+        // Row 0: Username
+        var lblUser = new System.Windows.Controls.Label { Content = "Usuario Administrador:", VerticalAlignment = VerticalAlignment.Center, Foreground = System.Windows.Media.Brushes.White };
+        System.Windows.Controls.Grid.SetRow(lblUser, 0);
+        System.Windows.Controls.Grid.SetColumn(lblUser, 0);
+        grid.Children.Add(lblUser);
+
+        var txtUser = new System.Windows.Controls.TextBox
         {
-            FontSize = 16, Padding = new Thickness(8, 4, 8, 4),
-            Background = new System.Windows.Media.SolidColorBrush(
-                (System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF313244")),
+            Margin = new Thickness(0, 4, 0, 4),
+            Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF313244")),
             Foreground = System.Windows.Media.Brushes.White
         };
-        sp.Children.Add(confirmBox);
+        System.Windows.Controls.Grid.SetRow(txtUser, 0);
+        System.Windows.Controls.Grid.SetColumn(txtUser, 1);
+        grid.Children.Add(txtUser);
+
+        // Row 1: Password
+        var lblPass = new System.Windows.Controls.Label { Content = "Contraseña:", VerticalAlignment = VerticalAlignment.Center, Foreground = System.Windows.Media.Brushes.White };
+        System.Windows.Controls.Grid.SetRow(lblPass, 1);
+        System.Windows.Controls.Grid.SetColumn(lblPass, 0);
+        grid.Children.Add(lblPass);
+
+        var txtPass = new System.Windows.Controls.PasswordBox
+        {
+            Margin = new Thickness(0, 4, 0, 4),
+            Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF313244")),
+            Foreground = System.Windows.Media.Brushes.White,
+            Padding = new Thickness(6, 4, 6, 4)
+        };
+        System.Windows.Controls.Grid.SetRow(txtPass, 1);
+        System.Windows.Controls.Grid.SetColumn(txtPass, 1);
+        grid.Children.Add(txtPass);
+
+        // Row 2: CONFIRMAR text check
+        var lblConfirm = new System.Windows.Controls.Label { Content = "Escriba 'CONFIRMAR':", VerticalAlignment = VerticalAlignment.Center, Foreground = System.Windows.Media.Brushes.White };
+        System.Windows.Controls.Grid.SetRow(lblConfirm, 2);
+        System.Windows.Controls.Grid.SetColumn(lblConfirm, 0);
+        grid.Children.Add(lblConfirm);
+
+        var txtConfirm = new System.Windows.Controls.TextBox
+        {
+            Margin = new Thickness(0, 4, 0, 4),
+            Background = new System.Windows.Media.SolidColorBrush((System.Windows.Media.Color)System.Windows.Media.ColorConverter.ConvertFromString("#FF313244")),
+            Foreground = System.Windows.Media.Brushes.White
+        };
+        System.Windows.Controls.Grid.SetRow(txtConfirm, 2);
+        System.Windows.Controls.Grid.SetColumn(txtConfirm, 1);
+        grid.Children.Add(txtConfirm);
+
+        sp.Children.Add(grid);
+
         var confirmBtn = new System.Windows.Controls.Button
         {
-            Content = "Restaurar",
-            Margin = new Thickness(0, 16, 0, 0),
+            Content = "Autorizar y Restaurar",
             Padding = new Thickness(20, 8, 20, 8),
             HorizontalAlignment = System.Windows.HorizontalAlignment.Center,
             Background = new System.Windows.Media.SolidColorBrush(
@@ -449,13 +502,44 @@ public partial class MainWindow : Window
             Foreground = System.Windows.Media.Brushes.White,
             FontWeight = FontWeights.Bold
         };
-        confirmBtn.Click += (_, _) => { confirmWindow.DialogResult = true; confirmWindow.Close(); };
+        
+        confirmBtn.Click += async (s, ev) =>
+        {
+            if (txtConfirm.Text.Trim() != "CONFIRMAR")
+            {
+                WpfMessageBox.Show("Debe escribir exactamente 'CONFIRMAR' para proceder.", "Verificación Requerida", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            var username = txtUser.Text.Trim();
+            var password = txtPass.Password;
+
+            if (string.IsNullOrEmpty(username) || string.IsNullOrEmpty(password))
+            {
+                WpfMessageBox.Show("Por favor, ingrese el usuario y la contraseña del administrador.", "Datos Incompletos", MessageBoxButton.OK, MessageBoxImage.Warning);
+                return;
+            }
+
+            confirmBtn.IsEnabled = false;
+            var isAuthorized = await VerifyAdminCredentialsAsync(username, password);
+            confirmBtn.IsEnabled = true;
+
+            if (!isAuthorized)
+            {
+                WpfMessageBox.Show("Credenciales inválidas o el usuario no tiene permisos de Administrador.", "Acceso Denegado", MessageBoxButton.OK, MessageBoxImage.Error);
+                return;
+            }
+
+            confirmWindow.DialogResult = true;
+            confirmWindow.Close();
+        };
+
         sp.Children.Add(confirmBtn);
         confirmWindow.Content = sp;
 
-        if (confirmWindow.ShowDialog() != true || confirmBox.Text.Trim() != "CONFIRMAR")
+        if (confirmWindow.ShowDialog() != true)
         {
-            WpfMessageBox.Show("Restauración cancelada. No se escribió CONFIRMAR.",
+            WpfMessageBox.Show("Restauración cancelada. No se completó la confirmación de administrador.",
                 "Cancelado", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
@@ -504,6 +588,54 @@ public partial class MainWindow : Window
         finally
         {
             BtnRestoreDb.IsEnabled = true;
+        }
+    }
+
+    private async Task<bool> VerifyAdminCredentialsAsync(string username, string password)
+    {
+        try
+        {
+            var connStr = _settings.BuildConnectionString();
+            
+            var optionsBuilder = new DbContextOptionsBuilder<QmsFlowDocDbContext>();
+            optionsBuilder.UseSqlServer(connStr);
+            
+            using var context = new QmsFlowDocDbContext(optionsBuilder.Options);
+            
+            // Retrieve user and their roles
+            var user = await context.Users
+                .Include(u => u.Roles)
+                .FirstOrDefaultAsync(u => u.Username == username);
+                
+            if (user == null || !user.IsActive)
+                return false;
+                
+            // Check if user is in "Administrador" role
+            var isAdmin = user.Roles.Any(r => r.RoleName.Equals("Administrador", StringComparison.OrdinalIgnoreCase));
+            if (!isAdmin)
+                return false;
+                
+            // Verify password
+            var hashedPassword = user.PasswordHash;
+            if (string.IsNullOrEmpty(hashedPassword))
+                return false;
+                
+            // Check BCrypt format (starts with $2a$, $2b$, or $2y$)
+            if (hashedPassword.StartsWith("$2a$") || hashedPassword.StartsWith("$2b$") || hashedPassword.StartsWith("$2y$"))
+            {
+                return BCrypt.Net.BCrypt.Verify(password, hashedPassword);
+            }
+            
+            // Fallback to Microsoft.AspNetCore.Identity.PasswordHasher
+            var hasher = new Microsoft.AspNetCore.Identity.PasswordHasher<User>();
+            var result = hasher.VerifyHashedPassword(user, hashedPassword, password);
+            return result == Microsoft.AspNetCore.Identity.PasswordVerificationResult.Success ||
+                   result == Microsoft.AspNetCore.Identity.PasswordVerificationResult.SuccessRehashNeeded;
+        }
+        catch (Exception ex)
+        {
+            WpfMessageBox.Show($"Error de conexión o validación con la base de datos:\n{ex.Message}", "Error de Autenticación", MessageBoxButton.OK, MessageBoxImage.Error);
+            return false;
         }
     }
 
