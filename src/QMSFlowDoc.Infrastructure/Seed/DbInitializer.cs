@@ -15,12 +15,31 @@ namespace QMSFlowDoc.Infrastructure.Seed
 {
     public static class DbInitializer
     {
+        private const string PreviousIsoImprovementMigrationId = "20260606190714_AddCanApproveToRolePermission";
+        private const string IsoImprovementMigrationId = "20260607134000_AddIsoImprovementControls";
+        private const string EfProductVersion = "9.0.0";
+
         public static async Task SeedIdentityAsync(IServiceProvider serviceProvider)
         {
             var context = serviceProvider.GetRequiredService<QmsDbContext>();
             
             // 1. Apply EF migrations to target database
-            await context.Database.MigrateAsync();
+            if (IsSqlite(context))
+            {
+                if (!await IsMigrationAppliedAsync(context, IsoImprovementMigrationId))
+                {
+                    await context.Database.MigrateAsync(PreviousIsoImprovementMigrationId);
+                    await EnsureIsoImprovementSqliteSchemaAsync(context);
+                    await MarkMigrationAppliedAsync(context, IsoImprovementMigrationId, EfProductVersion);
+                }
+
+                await context.Database.MigrateAsync();
+                await EnsureIsoImprovementSqliteSchemaAsync(context);
+            }
+            else
+            {
+                await context.Database.MigrateAsync();
+            }
 
             // Fix invalid Guid values in database from older legacy seeds
             try
@@ -692,5 +711,167 @@ namespace QMSFlowDoc.Infrastructure.Seed
 
             await context.SaveChangesAsync();
         }
+
+        private static async Task EnsureIsoImprovementSqliteSchemaAsync(QmsDbContext context)
+        {
+            if (!IsSqlite(context))
+                return;
+
+            await EnsureColumnAsync(context, "Risks", "Opportunity", "TEXT");
+            await EnsureColumnAsync(context, "Risks", "ActionPlan", "TEXT");
+            await EnsureColumnAsync(context, "Risks", "Responsible", "TEXT");
+            await EnsureColumnAsync(context, "Risks", "DueDate", "TEXT");
+            await EnsureColumnAsync(context, "Risks", "ResidualLikelihood", "INTEGER");
+            await EnsureColumnAsync(context, "Risks", "ResidualImpact", "INTEGER");
+            await EnsureColumnAsync(context, "Risks", "EffectivenessReview", "TEXT");
+            await EnsureColumnAsync(context, "Risks", "EffectivenessReviewDate", "TEXT");
+
+            await EnsureColumnAsync(context, "AuditPlans", "Objectives", "TEXT");
+            await EnsureColumnAsync(context, "AuditPlans", "Criteria", "TEXT");
+            await EnsureColumnAsync(context, "AuditPlans", "Conclusions", "TEXT");
+            await EnsureColumnAsync(context, "AuditPlans", "FollowUpActions", "TEXT");
+            await EnsureColumnAsync(context, "AuditPlans", "CompletedAt", "TEXT");
+
+            await EnsureColumnAsync(context, "AuditFindings", "Responsible", "TEXT");
+            await EnsureColumnAsync(context, "AuditFindings", "DueDate", "TEXT");
+            await EnsureColumnAsync(context, "AuditFindings", "EffectivenessReview", "TEXT");
+
+            await EnsureColumnAsync(context, "ManagementReviews", "PreviousActionsReview", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "ChangesAffectingQms", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "ResourceNeeds", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "QualityIndicatorsReview", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "ExternalProviderPerformance", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "Decisions", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "ImprovementOpportunities", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "ActionOwner", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "ActionDueDate", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "EffectivenessReview", "TEXT");
+
+            await EnsureColumnAsync(context, "SupplierEvaluations", "EvaluatorName", "TEXT");
+            await EnsureColumnAsync(context, "SupplierEvaluations", "Criticality", "TEXT NOT NULL DEFAULT 'Media'");
+            await EnsureColumnAsync(context, "SupplierEvaluations", "Scope", "TEXT NOT NULL DEFAULT ''");
+            await EnsureColumnAsync(context, "SupplierEvaluations", "Decision", "TEXT NOT NULL DEFAULT 'Aprobado'");
+            await EnsureColumnAsync(context, "SupplierEvaluations", "CorrectiveActions", "TEXT");
+            await EnsureColumnAsync(context, "SupplierEvaluations", "NextEvaluationDate", "TEXT");
+
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS QualityIndicators (
+                    Id TEXT NOT NULL CONSTRAINT PK_QualityIndicators PRIMARY KEY,
+                    Name TEXT NOT NULL,
+                    Area TEXT NOT NULL,
+                    Period TEXT NOT NULL,
+                    TargetValue TEXT NOT NULL,
+                    TargetRule TEXT NOT NULL,
+                    ActualValue TEXT NOT NULL,
+                    Unit TEXT NOT NULL,
+                    Trend TEXT NOT NULL,
+                    MeetsTarget INTEGER NOT NULL,
+                    Analysis TEXT NULL,
+                    ActionPlan TEXT NULL,
+                    Responsible TEXT NULL,
+                    DueDate TEXT NULL,
+                    CreatedAt TEXT NOT NULL
+                );
+                """);
+            await context.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS IX_QualityIndicators_Name_Period ON QualityIndicators (Name, Period);");
+        }
+
+        private static async Task EnsureColumnAsync(QmsDbContext context, string table, string column, string definition)
+        {
+            var connection = context.Database.GetDbConnection();
+            if (connection.State != System.Data.ConnectionState.Open)
+                await connection.OpenAsync();
+
+            await using (var command = connection.CreateCommand())
+            {
+                command.CommandText = $"PRAGMA table_info({QuoteSqliteIdentifier(table)});";
+                await using var reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    if (string.Equals(reader.GetString(1), column, StringComparison.OrdinalIgnoreCase))
+                        return;
+                }
+            }
+
+            await using var alterCommand = connection.CreateCommand();
+            alterCommand.CommandText = $"ALTER TABLE {QuoteSqliteIdentifier(table)} ADD COLUMN {QuoteSqliteIdentifier(column)} {definition};";
+            await alterCommand.ExecuteNonQueryAsync();
+        }
+
+        private static bool IsSqlite(QmsDbContext context) =>
+            string.Equals(context.Database.ProviderName, "Microsoft.EntityFrameworkCore.Sqlite", StringComparison.OrdinalIgnoreCase);
+
+        private static async Task<bool> IsMigrationAppliedAsync(QmsDbContext context, string migrationId)
+        {
+            var connection = context.Database.GetDbConnection();
+            if (connection.State != System.Data.ConnectionState.Open)
+                await connection.OpenAsync();
+
+            if (!await TableExistsAsync(connection, "__EFMigrationsHistory"))
+                return false;
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT COUNT(1)
+                FROM "__EFMigrationsHistory"
+                WHERE "MigrationId" = @migrationId;
+                """;
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@migrationId";
+            parameter.Value = migrationId;
+            command.Parameters.Add(parameter);
+
+            var result = await command.ExecuteScalarAsync();
+            return Convert.ToInt32(result) > 0;
+        }
+
+        private static async Task<bool> TableExistsAsync(System.Data.Common.DbConnection connection, string tableName)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT COUNT(1)
+                FROM sqlite_master
+                WHERE type = 'table' AND name = @tableName;
+                """;
+
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = "@tableName";
+            parameter.Value = tableName;
+            command.Parameters.Add(parameter);
+
+            var result = await command.ExecuteScalarAsync();
+            return Convert.ToInt32(result) > 0;
+        }
+
+        private static async Task MarkMigrationAppliedAsync(QmsDbContext context, string migrationId, string productVersion)
+        {
+            if (await IsMigrationAppliedAsync(context, migrationId))
+                return;
+
+            var connection = context.Database.GetDbConnection();
+            if (connection.State != System.Data.ConnectionState.Open)
+                await connection.OpenAsync();
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+                VALUES (@migrationId, @productVersion);
+                """;
+
+            var migrationParameter = command.CreateParameter();
+            migrationParameter.ParameterName = "@migrationId";
+            migrationParameter.Value = migrationId;
+            command.Parameters.Add(migrationParameter);
+
+            var versionParameter = command.CreateParameter();
+            versionParameter.ParameterName = "@productVersion";
+            versionParameter.Value = productVersion;
+            command.Parameters.Add(versionParameter);
+
+            await command.ExecuteNonQueryAsync();
+        }
+
+        private static string QuoteSqliteIdentifier(string value) => $"\"{value.Replace("\"", "\"\"")}\"";
     }
 }

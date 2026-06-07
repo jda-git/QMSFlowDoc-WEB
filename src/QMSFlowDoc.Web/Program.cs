@@ -104,7 +104,8 @@ using (var scope = app.Services.CreateScope())
     catch (Exception ex)
     {
         var logger = services.GetRequiredService<ILogger<Program>>();
-        logger.LogError(ex, "An error occurred while seeding the database.");
+        logger.LogCritical(ex, "An error occurred while migrating or seeding the database.");
+        throw;
     }
 }
 
