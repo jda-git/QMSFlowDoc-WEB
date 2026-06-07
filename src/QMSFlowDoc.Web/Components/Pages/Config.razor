@@ -910,6 +910,11 @@
         {
             // Load ServerSettings
             serverSettings = QMSFlowDoc.Shared.Models.ServerSettingsService.Load();
+            var configuredDocumentRepositoryPath = GetConfiguredDocumentRepositoryPath();
+            if (!string.IsNullOrWhiteSpace(configuredDocumentRepositoryPath))
+            {
+                serverSettings.DocumentRepositoryPath = configuredDocumentRepositoryPath;
+            }
             
             // Load manifest entries
             try
@@ -1258,9 +1263,8 @@
 
             var filesEntry = GetRestorableFileEntries().FirstOrDefault(e => string.Equals(e.Path, selectedRestoreFilesPath, StringComparison.OrdinalIgnoreCase));
             var targetDatabasePath = PendingRestoreService.GetSqliteDatabasePath(Configuration);
-            var targetDocumentPath = !string.IsNullOrWhiteSpace(serverSettings.DocumentRepositoryPath)
-                ? serverSettings.DocumentRepositoryPath
-                : Configuration["DocumentStorage:RootPath"];
+            var targetDocumentPath = GetDocumentRepositoryPathForBackup()
+                ?? throw new InvalidOperationException("No se ha configurado la ruta real del repositorio documental.");
 
             var request = new PendingRestoreRequest
             {
@@ -1459,6 +1463,12 @@
         
         try
         {
+            var documentRepositoryPath = GetDocumentRepositoryPathForBackup();
+            if (!string.IsNullOrWhiteSpace(documentRepositoryPath))
+            {
+                serverSettings.DocumentRepositoryPath = documentRepositoryPath;
+            }
+
             QMSFlowDoc.Shared.Models.ServerSettingsService.Save(serverSettings);
             backupSuccessMessage = "Configuración de copias de seguridad guardada con éxito.";
             await LoadData();
@@ -1479,6 +1489,13 @@
             backupErrorMessage = "Defina primero la ruta de destino de backups.";
             return;
         }
+
+        var documentRepositoryPath = GetDocumentRepositoryPathForBackup();
+        if (string.IsNullOrWhiteSpace(documentRepositoryPath) || !Directory.Exists(documentRepositoryPath))
+        {
+            backupErrorMessage = "No se encuentra la ruta real del repositorio documental configurado en DocumentStorage:RootPath.";
+            return;
+        }
         
         isExecutingBackup = true;
         StateHasChanged();
@@ -1486,6 +1503,7 @@
         try
         {
             // Save settings first
+            serverSettings.DocumentRepositoryPath = documentRepositoryPath;
             QMSFlowDoc.Shared.Models.ServerSettingsService.Save(serverSettings);
             
             var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
@@ -1497,10 +1515,10 @@
             
             // 2. Documents Backup
             BackupManifestEntry? docEntry = null;
-            if (!string.IsNullOrEmpty(serverSettings.DocumentRepositoryPath) && Directory.Exists(serverSettings.DocumentRepositoryPath))
+            if (!string.IsNullOrEmpty(documentRepositoryPath) && Directory.Exists(documentRepositoryPath))
             {
                 var docBackupDir = Path.Combine(serverSettings.BackupPath, "Documents", $"Docs_{timestamp}");
-                CopyDirectory(serverSettings.DocumentRepositoryPath, docBackupDir);
+                CopyDirectory(documentRepositoryPath, docBackupDir);
                 
                 var fileManifest = await FileBackupManifestService.BuildManifestAsync(docBackupDir);
                 var fileManifestPath = await FileBackupManifestService.WriteManifestAsync(docBackupDir, fileManifest);
@@ -1564,6 +1582,27 @@
         }
 
         return await BackupSqlServerDatabaseAsync(serverSettings.BuildConnectionString(), serverSettings.DatabaseName, dbBackupDir, timestamp);
+    }
+
+    private string? GetDocumentRepositoryPathForBackup()
+    {
+        var configuredPath = GetConfiguredDocumentRepositoryPath();
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            return configuredPath;
+        }
+
+        return !string.IsNullOrWhiteSpace(serverSettings.DocumentRepositoryPath)
+            ? serverSettings.DocumentRepositoryPath
+            : null;
+    }
+
+    private string? GetConfiguredDocumentRepositoryPath()
+    {
+        var rootPath = Configuration["DocumentStorage:RootPath"];
+        return string.IsNullOrWhiteSpace(rootPath)
+            ? null
+            : Path.GetFullPath(rootPath);
     }
 
     private async Task<BackupManifestEntry> BackupSqliteDatabaseAsync(string connectionString, string dbBackupDir, string timestamp)
@@ -1766,9 +1805,21 @@
 
         foreach (var subDir in dir.GetDirectories())
         {
+            if (ShouldSkipDocumentBackupDirectory(subDir.Name))
+            {
+                continue;
+            }
+
             var newDestinationDir = Path.Combine(destinationDir, subDir.Name);
             CopyDirectory(subDir.FullName, newDestinationDir);
         }
+    }
+
+    private static bool ShouldSkipDocumentBackupDirectory(string directoryName)
+    {
+        return directoryName.Equals("Base_datos", StringComparison.OrdinalIgnoreCase) ||
+               directoryName.Equals("DataProtection-Keys", StringComparison.OrdinalIgnoreCase) ||
+               directoryName.Equals("Temp", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<string> ComputeSha256Async(string filePath)

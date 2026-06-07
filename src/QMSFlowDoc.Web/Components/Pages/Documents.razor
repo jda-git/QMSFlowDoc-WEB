@@ -1158,40 +1158,27 @@ else
                 newDocVersionLabel
             );
 
-            var createdDoc = await DocumentService.CreateDocumentAsync(request, currentUserId);
-            if (createdDoc != null)
-            {
-                // 2. Upload file bytes
-                using var stream = newDocFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024); // 10MB limit
-                using var ms = new MemoryStream();
-                await stream.CopyToAsync(ms);
-                
-                var fileBytes = ms.ToArray();
-                var uploadSuccess = await DocumentService.UploadFileAsync(
-                    createdDoc.Id, 
-                    fileBytes, 
-                    newDocFile.Name, 
-                    newDocFile.ContentType, 
-                    newDocVersionLabel, 
-                    "Archivo de versión inicial", 
-                    currentUserId, 
-                    currentUsername);
+            using var stream = newDocFile.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024); // 10MB limit
+            using var ms = new MemoryStream();
+            await stream.CopyToAsync(ms);
 
-                if (uploadSuccess)
-                {
-                    showAddDocumentModal = false;
-                    await LoadDocumentsAsync();
-                    await LoadFoldersAsync(); // Recalculate document counts
-                }
-                else
-                {
-                    addDocError = "Se guardaron los metadatos pero falló la subida del archivo PDF.";
-                }
-            }
-            else
+            var createdDoc = await DocumentService.CreateDocumentWithInitialFileAsync(
+                request,
+                ms.ToArray(),
+                newDocFile.Name,
+                newDocFile.ContentType,
+                currentUserId,
+                currentUsername);
+
+            if (createdDoc == null)
             {
                 addDocError = "No se pudo crear el documento.";
+                return;
             }
+
+            showAddDocumentModal = false;
+            await LoadDocumentsAsync();
+            await LoadFoldersAsync(); // Recalculate document counts
         }
         catch (Exception ex)
         {

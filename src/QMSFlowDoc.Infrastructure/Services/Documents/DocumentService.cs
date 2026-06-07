@@ -131,6 +131,97 @@ public class DocumentService : IDocumentService
     }
 
     /// <inheritdoc/>
+    public async Task<Document?> CreateDocumentWithInitialFileAsync(
+        CreateDocumentRequest request,
+        byte[] fileData,
+        string fileName,
+        string contentType,
+        Guid? ownerUserId,
+        string username)
+    {
+        if (await _context.Documents.AnyAsync(d => d.DocCode == request.DocCode && !d.IsDeleted))
+        {
+            throw new InvalidOperationException($"Ya existe un documento activo registrado con el código '{request.DocCode}'.");
+        }
+
+        if (!Path.GetExtension(fileName).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Solo se permiten archivos .PDF en el gestor documental.");
+        }
+
+        var doc = new Document
+        {
+            Id = Guid.NewGuid(),
+            DocCode = request.DocCode,
+            Title = request.Title,
+            DocumentTypeId = request.DocumentTypeId,
+            FolderId = request.FolderId,
+            Area = request.Area,
+            Process = request.Process,
+            OwnerUserId = ownerUserId,
+            Status = DocumentStatus.DRAFT,
+            ReviewIntervalMonths = request.ReviewIntervalMonths ?? 12,
+            CreatedAt = DateTime.UtcNow,
+            UpdatedAt = DateTime.UtcNow
+        };
+
+        if (doc.ReviewIntervalMonths > 0)
+        {
+            doc.NextReviewDue = DateTime.UtcNow.AddMonths(doc.ReviewIntervalMonths.Value);
+        }
+
+        var folderName = "General";
+        if (request.FolderId.HasValue)
+        {
+            folderName = await _context.Folders
+                .Where(f => f.Id == request.FolderId.Value)
+                .Select(f => f.Name)
+                .FirstOrDefaultAsync() ?? "General";
+        }
+
+        DocumentStorageResult? storageResult = null;
+        try
+        {
+            using var stream = new MemoryStream(fileData);
+            storageResult = await _storageService.SaveFileAsync(stream, fileName, $"Documentos\\{folderName}");
+
+            var (major, minor, label) = ParseVersionLabel(request.VersionLabel, 1, 0);
+            var initialVersion = new DocumentVersion
+            {
+                Id = Guid.NewGuid(),
+                DocumentId = doc.Id,
+                VersionMajor = major,
+                VersionMinor = minor,
+                VersionLabel = label,
+                ChangeSummary = "Archivo de versión inicial",
+                CreatedByUserId = ownerUserId,
+                CreatedAt = DateTime.UtcNow,
+                FileName = fileName,
+                LocalFilePath = storageResult.RelativePath,
+                MimeType = contentType,
+                Sha256 = storageResult.Sha256Hash,
+                IsCurrent = true
+            };
+
+            doc.Versions.Add(initialVersion);
+            _context.Documents.Add(doc);
+            await LogAuditAsync("CREATE", "Document", doc.Id, $"Registró documento con versión inicial: '{doc.Title}' ({doc.DocCode})", ownerUserId, username);
+            await LogAuditAsync("UPLOAD", "Document", doc.Id, $"Cargada versión inicial {initialVersion.VersionLabel} del archivo: {fileName}", ownerUserId, username);
+            await _context.SaveChangesAsync();
+            return doc;
+        }
+        catch
+        {
+            if (storageResult != null)
+            {
+                await _storageService.ArchiveFileAsync(storageResult.RelativePath);
+            }
+
+            throw;
+        }
+    }
+
+    /// <inheritdoc/>
     public async Task<bool> UpdateDocumentAsync(Guid id, CreateDocumentRequest request, Guid? userId, string username)
     {
         var doc = await _context.Documents.FindAsync(id);
@@ -279,19 +370,9 @@ public class DocumentService : IDocumentService
             minor = latest.VersionMinor + 1;
         }
 
-        if (!string.IsNullOrWhiteSpace(versionLabel))
-        {
-            var parts = versionLabel.Replace("v", "").Replace("V", "").Split('.');
-            if (parts.Length >= 1 && int.TryParse(parts[0], out int maj))
-            {
-                major = maj;
-                minor = 0;
-                if (parts.Length >= 2 && int.TryParse(parts[1], out int min))
-                {
-                    minor = min;
-                }
-            }
-        }
+        var parsedVersion = ParseVersionLabel(versionLabel, major, minor);
+        major = parsedVersion.Major;
+        minor = parsedVersion.Minor;
 
         var newVersion = new DocumentVersion
         {
@@ -299,7 +380,7 @@ public class DocumentService : IDocumentService
             DocumentId = doc.Id,
             VersionMajor = major,
             VersionMinor = minor,
-            VersionLabel = string.IsNullOrWhiteSpace(versionLabel) ? $"{major}.{minor}" : versionLabel,
+            VersionLabel = parsedVersion.Label,
             ChangeSummary = changeSummary ?? "Nueva versión cargada",
             CreatedByUserId = userId,
             CreatedAt = DateTime.UtcNow,
@@ -382,5 +463,28 @@ public class DocumentService : IDocumentService
             Result = "Success"
         };
         _context.AuditLogs.Add(audit);
+    }
+
+    private static (int Major, int Minor, string Label) ParseVersionLabel(string? versionLabel, int defaultMajor, int defaultMinor)
+    {
+        var major = defaultMajor;
+        var minor = defaultMinor;
+
+        if (!string.IsNullOrWhiteSpace(versionLabel))
+        {
+            var parts = versionLabel.Replace("v", "").Replace("V", "").Split('.');
+            if (parts.Length >= 1 && int.TryParse(parts[0], out var parsedMajor))
+            {
+                major = parsedMajor;
+                minor = 0;
+                if (parts.Length >= 2 && int.TryParse(parts[1], out var parsedMinor))
+                {
+                    minor = parsedMinor;
+                }
+            }
+        }
+
+        var label = string.IsNullOrWhiteSpace(versionLabel) ? $"{major}.{minor}" : versionLabel;
+        return (major, minor, label);
     }
 }

@@ -29,6 +29,17 @@ public interface IDocumentService
     Task<Document?> CreateDocumentAsync(CreateDocumentRequest request, Guid? ownerUserId);
 
     /// <summary>
+    /// Crea un documento con su versión inicial y archivo físico en una operación consistente.
+    /// </summary>
+    Task<Document?> CreateDocumentWithInitialFileAsync(
+        CreateDocumentRequest request,
+        byte[] fileData,
+        string fileName,
+        string contentType,
+        Guid? ownerUserId,
+        string username);
+
+    /// <summary>
     /// Cambia el estado de aprobación de un documento.
     /// </summary>
     Task<bool> UpdateStatusAsync(Guid id, DocumentStatus newStatus, string comments, Guid? userId, string username, string? confirmPassword = null);
