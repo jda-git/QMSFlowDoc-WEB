@@ -374,13 +374,27 @@ else
                         </div>
                     </div>
 
-                    @if (!string.IsNullOrWhiteSpace(selectedNC.RootCauseAnalysis))
-                    {
-                        <div class="mb-4">
-                            <h6 class="fw-bold text-secondary mb-2"><i class="bi bi-diagram-3 me-2"></i>Análisis de Causa Raíz</h6>
-                            <p class="bg-warning bg-opacity-10 border border-warning border-opacity-25 rounded-3 p-3 mb-0">@selectedNC.RootCauseAnalysis</p>
+                    <div class="mb-4">
+                        <div class="d-flex justify-content-between align-items-center mb-2 gap-2 flex-wrap">
+                            <h6 class="fw-bold text-secondary mb-0"><i class="bi bi-diagram-3 me-2"></i>Análisis de Causa Raíz</h6>
+                            @if (canEdit && selectedNC.Status != NCStatus.CLOSED)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-secondary rounded-pill px-3" @onclick="() => OpenEditNCModal(selectedNC)">
+                                    <i class="bi bi-pencil-square me-1"></i>Registrar/editar causa raíz
+                                </button>
+                            }
                         </div>
-                    }
+                        @if (!string.IsNullOrWhiteSpace(selectedNC.RootCauseAnalysis))
+                        {
+                            <p class="bg-warning bg-opacity-10 border border-warning border-opacity-25 rounded-3 p-3 mb-0">@selectedNC.RootCauseAnalysis</p>
+                        }
+                        else
+                        {
+                            <div class="alert alert-warning py-2 mb-0 rounded-3">
+                                <i class="bi bi-info-circle me-1"></i>Registre aquí la causa raíz antes de cerrar la no conformidad.
+                            </div>
+                        }
+                    </div>
 
                     <!-- Status Change -->
                     @if (canEdit && selectedNC.Status != NCStatus.CLOSED)
@@ -997,17 +1011,27 @@ else
         showNCModal = true;
     }
 
-    private void OpenEditNCModal(NCListDto nc)
+    private async Task OpenEditNCModal(NCListDto nc)
+    {
+        var fullNC = await QualityService.GetNCByIdAsync(nc.Id);
+        if (fullNC != null)
+        {
+            OpenEditNCModal(fullNC);
+        }
+    }
+
+    private void OpenEditNCModal(Nonconformity nc)
     {
         isEditingNC = true;
         editingNCId = nc.Id;
         ncModel = new NCFormModel
         {
             Title = nc.Title,
-            Description = "",
+            Description = nc.Description,
             Severity = nc.Severity.ToString(),
             Origin = nc.Origin ?? "",
             ImpactPatient = nc.ImpactPatient,
+            Containment = nc.Containment ?? "",
             RootCauseAnalysis = nc.RootCauseAnalysis ?? ""
         };
         ncErrorMessage = null;
@@ -1026,9 +1050,15 @@ else
         );
 
         if (isEditingNC && editingNCId.HasValue)
+        {
             await QualityService.UpdateNCAsync(editingNCId.Value, req, currentUserId, currentUserName);
+            if (selectedNC?.Id == editingNCId.Value)
+                selectedNC = await QualityService.GetNCByIdAsync(editingNCId.Value);
+        }
         else
+        {
             await QualityService.CreateNCAsync(req, currentUserId, currentUserName);
+        }
 
         showNCModal = false;
         await LoadData();
