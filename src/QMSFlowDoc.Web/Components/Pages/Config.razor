@@ -3,6 +3,7 @@
 @using QMSFlowDoc.Application.Services.Identity
 @using Microsoft.AspNetCore.Authorization
 @using QMSFlowDoc.Shared.Models
+@using QMSFlowDoc.Shared.Services
 @using System.Text.Json
 @attribute [Authorize]
 @inject IUserService UserService
@@ -257,7 +258,7 @@
                     <span class="text-muted small">Configure las políticas de retención, las rutas de almacenamiento y ejecute respaldos periódicos de base de datos y documentos (ISO 15189 §8.8).</span>
                 </div>
                 <button class="btn btn-danger text-white px-4 py-2 fw-semibold shadow-sm" @onclick="OpenRestoreModal">
-                    <i class="bi bi-arrow-counterclockwise me-2"></i>⚠️ Restaurar BD
+                    <i class="bi bi-arrow-counterclockwise me-2"></i>Preparar restauración
                 </button>
             </div>
 
@@ -670,7 +671,8 @@
                     <div class="alert alert-warning border-warning border-opacity-50 shadow-sm p-3 mb-4 rounded-3 text-dark small">
                         <i class="bi bi-shield-lock-fill me-2 text-danger fs-5"></i>
                         <strong class="d-block mb-1">Requiere credenciales de un Administrador</strong>
-                        Esta operación reemplazará la base de datos actual con la última copia de seguridad válida. Todos los cambios recientes se perderán.
+                        La web valida la autorización, pero la restauración real debe ejecutarse desde QMSFlowDoc ServerConfigurator en modo mantenimiento.
+                        No se restaura la base de datos desde el proceso web para evitar cortar sus propias conexiones activas.
                     </div>
                     
                     @if (!string.IsNullOrEmpty(restoreError))
@@ -704,7 +706,7 @@
                             }
                             else
                             {
-                                <i class="bi bi-shield-check me-2"></i><span>Autorizar y Restaurar</span>
+                                <i class="bi bi-shield-check me-2"></i><span>Validar autorización</span>
                             }
                         </button>
                     </div>
@@ -965,12 +967,11 @@
                 return;
             }
 
-            // Wait a bit to simulate processing/stopping services
+            // Keep the destructive restore in ServerConfigurator, where it can run in maintenance mode.
             await Task.Delay(1500);
 
-            // Notify user that restore was authorized
             showRestoreModal = false;
-            restoreSuccessMessage = "Autorización exitosa. El sistema ha programado la restauración para el próximo reinicio (modo seguro SQLite).";
+            restoreSuccessMessage = "Autorización validada. Para restaurar, abra QMSFlowDoc ServerConfigurator en el servidor, seleccione el .bak verificado y confirme la operación con estas credenciales de Administrador.";
         }
         catch (Exception ex)
         {
@@ -1205,23 +1206,22 @@
                 var docBackupDir = Path.Combine(serverSettings.BackupPath, "Documents", $"Docs_{timestamp}");
                 CopyDirectory(serverSettings.DocumentRepositoryPath, docBackupDir);
                 
-                // Get directory size
-                long dirSize = 0;
-                var di = new DirectoryInfo(docBackupDir);
-                foreach (var f in di.GetFiles("*", SearchOption.AllDirectories))
-                {
-                    dirSize += f.Length;
-                }
+                var fileManifest = await FileBackupManifestService.BuildManifestAsync(docBackupDir);
+                var fileManifestPath = await FileBackupManifestService.WriteManifestAsync(docBackupDir, fileManifest);
+                var fileManifestSha = FileBackupManifestService.ComputeManifestSha256(fileManifest);
+                var fileBackupVerified = await FileBackupManifestService.VerifyManifestAsync(docBackupDir, fileManifest);
                 
                 docEntry = new BackupManifestEntry
                 {
                     Timestamp = DateTime.Now,
                     Type = "Files",
                     Path = docBackupDir,
-                    SizeBytes = dirSize,
-                    Sha256 = "N/A (Directory)",
-                    VerifyOnlyPassed = true,
-                    Status = "OK"
+                    SizeBytes = fileManifest.Sum(f => f.SizeBytes),
+                    Sha256 = fileManifestSha,
+                    FileCount = fileManifest.Count,
+                    FileManifestPath = fileManifestPath,
+                    VerifyOnlyPassed = fileBackupVerified,
+                    Status = fileBackupVerified ? "OK" : "VERIFY_FAILED"
                 };
                 
                 await AddManifestEntryAsync(serverSettings.BackupPath, docEntry);
@@ -1234,7 +1234,7 @@
                 LastRun = DateTime.Now,
                 Database = new { dbEntry.Status, dbEntry.Path, dbEntry.SizeBytes, dbEntry.VerifyOnlyPassed },
                 Files = docEntry != null
-                    ? new { docEntry.Status, docEntry.Path, docEntry.SizeBytes, VerifyOnlyPassed = true }
+                    ? new { docEntry.Status, docEntry.Path, docEntry.SizeBytes, docEntry.FileCount, docEntry.FileManifestPath, docEntry.VerifyOnlyPassed }
                     : null
             };
             var statusJson = JsonSerializer.Serialize(status, new JsonSerializerOptions { WriteIndented = true });
@@ -1311,6 +1311,8 @@
         public string Path { get; set; } = string.Empty;
         public long SizeBytes { get; set; }
         public string? Sha256 { get; set; }
+        public int? FileCount { get; set; }
+        public string? FileManifestPath { get; set; }
         public bool VerifyOnlyPassed { get; set; }
         public string Status { get; set; } = "OK"; // "OK", "FAILED", "VERIFY_FAILED"
         public string? ErrorMessage { get; set; }

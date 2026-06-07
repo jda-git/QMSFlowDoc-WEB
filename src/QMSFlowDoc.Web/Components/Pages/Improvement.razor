@@ -1,0 +1,645 @@
+@page "/improvement"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using QMSFlowDoc.Application.Services.Identity
+@using QMSFlowDoc.Application.Services.Quality
+@using QMSFlowDoc.Domain.Entities
+@using QMSFlowDoc.Infrastructure.Persistence
+@using QMSFlowDoc.Shared.DTOs
+@inject QmsDbContext DbContext
+@inject IPermissionService PermissionService
+@inject IQualityService QualityService
+
+<PageTitle>Mejora Continua ISO - QMSFlowDoc</PageTitle>
+
+<div class="container-fluid py-4 px-4">
+    @if (!isAuthorized)
+    {
+        <div class="alert alert-danger rounded-4 shadow-sm p-4">
+            <h4 class="fw-bold mb-1">Acceso denegado</h4>
+            <p class="mb-0">Solo perfiles de calidad, dirección o administración pueden gestionar mejora continua ISO 15189.</p>
+        </div>
+    }
+    else
+    {
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div>
+                <h2 class="fw-bold text-dark mb-1"><i class="bi bi-clipboard2-check text-primary me-2"></i>Mejora Continua ISO</h2>
+                <p class="text-muted mb-0">Riesgos, auditorías internas, revisión por dirección y evaluación de proveedores.</p>
+            </div>
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(successMessage))
+        {
+            <div class="alert alert-success py-2 small">@successMessage</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(errorMessage))
+        {
+            <div class="alert alert-danger py-2 small">@errorMessage</div>
+        }
+
+        <ul class="nav nav-tabs custom-tabs mb-4 border-bottom-0">
+            <li class="nav-item"><button class="nav-link @(activeTab == "risks" ? "active" : "")" @onclick='() => activeTab = "risks"'>Riesgos</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "audits" ? "active" : "")" @onclick='() => activeTab = "audits"'>Auditorías internas</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "reviews" ? "active" : "")" @onclick='() => activeTab = "reviews"'>Revisión dirección</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "suppliers" ? "active" : "")" @onclick='() => activeTab = "suppliers"'>Proveedores</button></li>
+        </ul>
+
+        @if (activeTab == "risks")
+        {
+            <section class="row g-4">
+                <div class="col-lg-4">
+                    <div class="p-3 border rounded-3 bg-light">
+                        <h5 class="fw-bold mb-3">Nuevo riesgo</h5>
+                        <input class="form-control mb-2" placeholder="Título" @bind="riskModel.Title" />
+                        <textarea class="form-control mb-2" rows="3" placeholder="Descripción" @bind="riskModel.Description"></textarea>
+                        <input class="form-control mb-2" placeholder="Categoría" @bind="riskModel.Category" />
+                        <label class="form-label small fw-semibold text-secondary mb-1">Probabilidad</label>
+                        <select class="form-select mb-2" @bind="riskModel.Likelihood">
+                            @foreach (var v in Enum.GetValues<RiskLikelihood>()) { <option value="@v">@GetRiskLikelihoodLabel(v)</option> }
+                        </select>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Impacto</label>
+                        <select class="form-select mb-2" @bind="riskModel.Impact">
+                            @foreach (var v in Enum.GetValues<RiskImpact>()) { <option value="@v">@GetRiskImpactLabel(v)</option> }
+                        </select>
+                        <textarea class="form-control mb-3" rows="2" placeholder="Plan de mitigación" @bind="riskModel.MitigationPlan"></textarea>
+                        <button class="btn btn-primary w-100" @onclick="CreateRisk">Registrar riesgo</button>
+                    </div>
+                </div>
+                <div class="col-lg-8">
+                    <TableCard Title="Matriz de riesgos">
+                        <thead><tr><th>Riesgo</th><th>Categoría</th><th>Probabilidad</th><th>Impacto</th><th>Score</th><th>Estado</th><th>Mitigación</th><th>Actualizar</th></tr></thead>
+                        <tbody>
+                        @foreach (var r in risks)
+                        {
+                            <tr>
+                                <td>@r.Title</td>
+                                <td>@r.Category</td>
+                                <td>@GetRiskLikelihoodLabel(r.Likelihood)</td>
+                                <td>@GetRiskImpactLabel(r.Impact)</td>
+                                <td><span class="badge @GetRiskScoreBadgeClass(r.RiskScore)">@r.RiskScore - @GetRiskScoreLevel(r.RiskScore)</span></td>
+                                <td>@GetRiskStatusLabel(r.Status)</td>
+                                <td>@r.MitigationPlan</td>
+                                <td>
+                                    <select class="form-select form-select-sm" value="@r.Status" @onchange="e => UpdateRiskStatus(r, e.Value?.ToString())">
+                                        @foreach (var v in Enum.GetValues<RiskStatus>()) { <option value="@v">@GetRiskStatusLabel(v)</option> }
+                                    </select>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </TableCard>
+                </div>
+            </section>
+        }
+
+        @if (activeTab == "audits")
+        {
+            <section class="row g-4">
+                <div class="col-lg-4">
+                    <div class="p-3 border rounded-3 bg-light">
+                        <h5 class="fw-bold mb-3">Planificar auditoría</h5>
+                        <input class="form-control mb-2" placeholder="Título" @bind="auditModel.Title" />
+                        <input type="date" class="form-control mb-2" @bind="auditModel.ScheduledDate" />
+                        <textarea class="form-control mb-2" rows="2" placeholder="Alcance" @bind="auditModel.Scope"></textarea>
+                        <input class="form-control mb-3" placeholder="Auditor líder" @bind="auditModel.LeadAuditor" />
+                        <button class="btn btn-primary w-100" @onclick="CreateAudit">Crear plan</button>
+
+                        <hr class="my-4" />
+
+                        <h5 class="fw-bold mb-3">Registrar hallazgo</h5>
+                        <select class="form-select mb-2" @bind="findingModel.AuditPlanId">
+                            <option value="@Guid.Empty">Seleccione auditoría</option>
+                            @foreach (var a in audits) { <option value="@a.Id">@a.Title</option> }
+                        </select>
+                        <textarea class="form-control mb-2" rows="2" placeholder="Descripción del hallazgo" @bind="findingModel.Description"></textarea>
+                        <input class="form-control mb-2" placeholder="Requisito ISO 15189, ej. 8.8" @bind="findingModel.IsoRequirement" />
+                        <select class="form-select mb-3" @bind="findingModel.Type">
+                            @foreach (var v in Enum.GetValues<FindingType>()) { <option value="@v">@GetFindingTypeLabel(v)</option> }
+                        </select>
+                        <button class="btn btn-outline-primary w-100" @onclick="CreateAuditFinding" disabled="@(findingModel.AuditPlanId == Guid.Empty)">Registrar hallazgo</button>
+                    </div>
+                </div>
+                <div class="col-lg-8">
+                    <TableCard Title="Programa de auditorías">
+                        <thead><tr><th>Fecha</th><th>Título</th><th>Alcance</th><th>Auditor</th><th>Estado</th><th>Actualizar</th></tr></thead>
+                        <tbody>
+                        @foreach (var a in audits)
+                        {
+                            <tr>
+                                <td>@a.ScheduledDate.ToString("dd/MM/yyyy")</td>
+                                <td>@a.Title</td>
+                                <td>@a.Scope</td>
+                                <td>@a.LeadAuditor</td>
+                                <td>
+                                    @GetAuditStatusLabel(a.Status)
+                                    @if (AuditHasUnlinkedNonconformityFindings(a.Id))
+                                    {
+                                        <span class="badge bg-danger ms-2">NC pendiente</span>
+                                    }
+                                </td>
+                                <td>
+                                    <select class="form-select form-select-sm" value="@a.Status" @onchange="e => UpdateAuditStatus(a, e.Value?.ToString())">
+                                        @foreach (var v in Enum.GetValues<AuditStatus>()) { <option value="@v">@GetAuditStatusLabel(v)</option> }
+                                    </select>
+                                </td>
+                            </tr>
+                        }
+                        </tbody>
+                    </TableCard>
+
+                    <div class="mt-4">
+                        <TableCard Title="Hallazgos de auditoría">
+                            <thead><tr><th>Auditoría</th><th>Tipo</th><th>ISO</th><th>Descripción</th><th>NC vinculada</th><th>Acción</th></tr></thead>
+                            <tbody>
+                            @foreach (var f in auditFindings)
+                            {
+                                <tr>
+                                    <td>@GetAuditTitle(f.AuditPlanId)</td>
+                                    <td>@GetFindingTypeLabel(f.Type)</td>
+                                    <td>@f.IsoRequirement</td>
+                                    <td>@f.Description</td>
+                                    <td>
+                                        @if (f.RelatedNCId.HasValue)
+                                        {
+                                            <span class="badge bg-success">NC creada</span>
+                                        }
+                                        else if (IsNonconformityFinding(f.Type))
+                                        {
+                                            <span class="badge bg-warning text-dark">Pendiente</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">No aplica</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (IsNonconformityFinding(f.Type) && !f.RelatedNCId.HasValue)
+                                        {
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => CreateNCFromFinding(f)">Crear NC</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                            </tbody>
+                        </TableCard>
+                    </div>
+                </div>
+            </section>
+        }
+
+        @if (activeTab == "reviews")
+        {
+            <section class="row g-4">
+                <div class="col-lg-4">
+                    <div class="p-3 border rounded-3 bg-light">
+                        <h5 class="fw-bold mb-3">Nueva revisión por dirección</h5>
+                        <input type="date" class="form-control mb-2" @bind="reviewModel.ReviewDate" />
+                        <textarea class="form-control mb-2" rows="2" placeholder="Participantes" @bind="reviewModel.Participants"></textarea>
+                        <textarea class="form-control mb-2" rows="2" placeholder="Agenda" @bind="reviewModel.Agenda"></textarea>
+                        <button type="button" class="btn btn-outline-secondary btn-sm w-100 mb-2" @onclick="UseIsoInputsInReviewAgenda">Usar entradas ISO en agenda</button>
+                        <textarea class="form-control mb-2" rows="3" placeholder="Resumen" @bind="reviewModel.Summary"></textarea>
+                        <textarea class="form-control mb-3" rows="2" placeholder="Acciones acordadas" @bind="reviewModel.Actions"></textarea>
+                        <button class="btn btn-primary w-100" @onclick="CreateReview">Registrar revisión</button>
+                    </div>
+                </div>
+                <div class="col-lg-8">
+                    <div class="mb-4">
+                        <TableCard Title="Entradas ISO para revisión">
+                            <thead><tr><th>Entrada</th><th>Situación actual</th></tr></thead>
+                            <tbody>
+                                <tr><td>Riesgos activos</td><td><span class="badge bg-secondary">@activeRiskCount</span></td></tr>
+                                <tr><td>Riesgos altos o críticos</td><td><span class="badge @GetWarningBadgeClass(highRiskCount)">@highRiskCount</span></td></tr>
+                                <tr><td>No conformidades abiertas</td><td><span class="badge @GetWarningBadgeClass(openNcCount)">@openNcCount</span></td></tr>
+                                <tr><td>Reclamaciones abiertas</td><td><span class="badge @GetWarningBadgeClass(openComplaintCount)">@openComplaintCount</span></td></tr>
+                                <tr><td>CAPA abiertas / vencidas</td><td><span class="badge @GetWarningBadgeClass(openCapaCount)">@openCapaCount / @overdueCapaCount</span></td></tr>
+                                <tr><td>Equipos no aptos o restringidos</td><td><span class="badge @GetWarningBadgeClass(equipmentAttentionCount)">@equipmentAttentionCount</span></td></tr>
+                                <tr><td>EQA con revisión o acción pendiente</td><td><span class="badge @GetWarningBadgeClass(eqaAttentionCount)">@eqaAttentionCount</span></td></tr>
+                                <tr><td>Desviaciones EQA abiertas</td><td><span class="badge @GetWarningBadgeClass(openEqaDeviationCount)">@openEqaDeviationCount</span></td></tr>
+                                <tr><td>Auditorías planificadas/en curso</td><td><span class="badge bg-info text-dark">@plannedOrInProgressAuditCount</span></td></tr>
+                                <tr><td>Hallazgos NC sin vincular</td><td><span class="badge @GetWarningBadgeClass(pendingAuditNcFindingCount)">@pendingAuditNcFindingCount</span></td></tr>
+                                <tr><td>Proveedores no aprobados</td><td><span class="badge @GetWarningBadgeClass(failedSupplierEvaluationCount)">@failedSupplierEvaluationCount</span></td></tr>
+                            </tbody>
+                        </TableCard>
+                    </div>
+                    <TableCard Title="Revisiones por dirección">
+                        <thead><tr><th>Fecha</th><th>Participantes</th><th>Resumen</th><th>Acciones</th></tr></thead>
+                        <tbody>
+                        @foreach (var r in reviews)
+                        {
+                            <tr><td>@r.ReviewDate.ToString("dd/MM/yyyy")</td><td>@r.Participants</td><td>@r.Summary</td><td>@r.Actions</td></tr>
+                        }
+                        </tbody>
+                    </TableCard>
+                </div>
+            </section>
+        }
+
+        @if (activeTab == "suppliers")
+        {
+            <section class="row g-4">
+                <div class="col-lg-4">
+                    <div class="p-3 border rounded-3 bg-light">
+                        <h5 class="fw-bold mb-3">Evaluar proveedor</h5>
+                        <select class="form-select mb-2" @bind="supplierEvalModel.SupplierId">
+                            <option value="@Guid.Empty">Seleccione proveedor</option>
+                            @foreach (var s in suppliers) { <option value="@s.Id">@s.Name</option> }
+                        </select>
+                        <input class="form-control mb-2" placeholder="Periodo evaluado" @bind="supplierEvalModel.EvaluatedPeriod" />
+                        <input type="date" class="form-control mb-2" @bind="supplierEvalModel.EvaluationDate" />
+                        <div class="row g-2 mb-2">
+                            <div class="col">
+                                <label class="form-label small fw-semibold text-secondary mb-1">Plazos</label>
+                                <input type="number" min="1" max="5" class="form-control" @bind="supplierEvalModel.ScorePlazos" />
+                            </div>
+                            <div class="col">
+                                <label class="form-label small fw-semibold text-secondary mb-1">Calidad</label>
+                                <input type="number" min="1" max="5" class="form-control" @bind="supplierEvalModel.ScoreCalidad" />
+                            </div>
+                            <div class="col">
+                                <label class="form-label small fw-semibold text-secondary mb-1">Servicio</label>
+                                <input type="number" min="1" max="5" class="form-control" @bind="supplierEvalModel.ScoreServicio" />
+                            </div>
+                            <div class="col">
+                                <label class="form-label small fw-semibold text-secondary mb-1">Incidencias</label>
+                                <input type="number" min="1" max="5" class="form-control" @bind="supplierEvalModel.ScoreIncidencias" />
+                            </div>
+                        </div>
+                        <textarea class="form-control mb-3" rows="2" placeholder="Observaciones" @bind="supplierEvalModel.Observations"></textarea>
+                        <button class="btn btn-primary w-100" @onclick="CreateSupplierEvaluation" disabled="@(supplierEvalModel.SupplierId == Guid.Empty)">Registrar evaluación</button>
+                    </div>
+                </div>
+                <div class="col-lg-8">
+                    <TableCard Title="Evaluaciones de proveedores">
+                        <thead><tr><th>Fecha</th><th>Proveedor</th><th>Periodo</th><th>Media</th><th>Resultado</th></tr></thead>
+                        <tbody>
+                        @foreach (var e in supplierEvaluations)
+                        {
+                            <tr><td>@e.EvaluationDate.ToString("dd/MM/yyyy")</td><td>@e.Supplier?.Name</td><td>@e.EvaluatedPeriod</td><td>@e.AverageScore.ToString("N1")</td><td><span class="badge @GetSupplierResultBadgeClass(e.IsApproved)">@(e.IsApproved ? "Aprobado" : "No aprobado")</span></td></tr>
+                        }
+                        </tbody>
+                    </TableCard>
+                </div>
+            </section>
+        }
+    }
+</div>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private bool isAuthorized;
+    private string activeTab = "risks";
+    private string? successMessage;
+    private string? errorMessage;
+    private Guid? currentUserId;
+    private string currentUserName = "Sistema";
+
+    private List<Risk> risks = new();
+    private List<AuditPlan> audits = new();
+    private List<AuditFinding> auditFindings = new();
+    private List<ManagementReview> reviews = new();
+    private List<Supplier> suppliers = new();
+    private List<SupplierEvaluation> supplierEvaluations = new();
+
+    private int activeRiskCount;
+    private int highRiskCount;
+    private int openNcCount;
+    private int openComplaintCount;
+    private int openCapaCount;
+    private int overdueCapaCount;
+    private int equipmentAttentionCount;
+    private int eqaAttentionCount;
+    private int openEqaDeviationCount;
+    private int plannedOrInProgressAuditCount;
+    private int pendingAuditNcFindingCount;
+    private int failedSupplierEvaluationCount;
+
+    private Risk riskModel = NewRisk();
+    private AuditPlan auditModel = NewAudit();
+    private AuditFinding findingModel = NewFinding();
+    private ManagementReview reviewModel = NewReview();
+    private SupplierEvaluation supplierEvalModel = NewSupplierEvaluation();
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask != null)
+        {
+            var user = (await AuthStateTask).User;
+            currentUserName = user.Identity?.Name ?? "Usuario";
+            if (Guid.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var userId))
+                currentUserId = userId;
+            var hasQualityRole = (await PermissionService.GetPermissionsForUserAsync(user, "Quality")).CanRead;
+            isAuthorized = user.IsInRole("Administrador") || user.IsInRole("Director") || user.IsInRole("Responsable calidad") || hasQualityRole;
+        }
+
+        if (isAuthorized)
+            await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        risks = await DbContext.Risks
+            .OrderByDescending(r => (int)r.Likelihood * (int)r.Impact)
+            .ThenBy(r => r.Title)
+            .ToListAsync();
+        audits = await DbContext.AuditPlans.OrderByDescending(a => a.ScheduledDate).ToListAsync();
+        auditFindings = await DbContext.AuditFindings.OrderBy(f => f.AuditPlanId).ThenBy(f => f.Type).ToListAsync();
+        reviews = await DbContext.ManagementReviews.OrderByDescending(r => r.ReviewDate).ToListAsync();
+        suppliers = await DbContext.Suppliers.OrderBy(s => s.Name).ToListAsync();
+        supplierEvaluations = await DbContext.SupplierEvaluations.Include(e => e.Supplier).OrderByDescending(e => e.EvaluationDate).ToListAsync();
+
+        var today = DateTime.Today;
+        activeRiskCount = risks.Count(r => r.Status == RiskStatus.ACTIVE);
+        highRiskCount = risks.Count(r => r.Status == RiskStatus.ACTIVE && r.RiskScore >= 12);
+        openNcCount = await DbContext.Nonconformities.CountAsync(nc => !nc.IsDeleted && nc.Status != NCStatus.CLOSED);
+        openComplaintCount = await DbContext.Complaints.CountAsync(c => !c.IsDeleted && c.Status != ComplaintStatus.CLOSED);
+        openCapaCount = await DbContext.CapaActions.CountAsync(ca => !ca.IsDeleted && ca.Status != CAPAStatus.DONE && ca.Status != CAPAStatus.VERIFIED && ca.Status != CAPAStatus.CANCELLED);
+        overdueCapaCount = await DbContext.CapaActions.CountAsync(ca => !ca.IsDeleted && ca.DueDate.HasValue && ca.DueDate.Value.Date < today && ca.Status != CAPAStatus.DONE && ca.Status != CAPAStatus.VERIFIED && ca.Status != CAPAStatus.CANCELLED);
+        equipmentAttentionCount = await DbContext.Equipments.CountAsync(e => !e.IsDeleted && (e.Aptitude != EquipmentAptitude.APTO || e.Status == EquipmentStatus.OUT_OF_SERVICE || e.Status == EquipmentStatus.IN_SERVICE_WITH_RESTRICTIONS || e.Status == EquipmentStatus.QC_NON_CONFORMING || e.Status == EquipmentStatus.IN_REPAIR || e.Status == EquipmentStatus.IN_QUARANTINE));
+        eqaAttentionCount = await DbContext.EQARounds.CountAsync(r => !r.IsDeleted && (r.RequiresAction || r.GlobalOutcome == EQAPerformance.UNSATISFACTORY || r.GlobalOutcome == EQAPerformance.PENDING_REVIEW));
+        openEqaDeviationCount = await DbContext.EQADeviations.CountAsync(d => !d.IsDeleted && d.Status != "Cerrada" && d.Status != "Eficaz");
+        plannedOrInProgressAuditCount = audits.Count(a => a.Status is AuditStatus.PLANNED or AuditStatus.IN_PROGRESS);
+        pendingAuditNcFindingCount = auditFindings.Count(f => IsNonconformityFinding(f.Type) && !f.RelatedNCId.HasValue);
+        failedSupplierEvaluationCount = supplierEvaluations.Count(e => !e.IsApproved);
+    }
+
+    private async Task CreateRisk()
+    {
+        if (string.IsNullOrWhiteSpace(riskModel.Title)) return;
+        riskModel.Id = Guid.NewGuid();
+        riskModel.CreatedAt = DateTime.UtcNow;
+        riskModel.UpdatedAt = DateTime.UtcNow;
+        DbContext.Risks.Add(riskModel);
+        AddAuditLog("CREATE", "Risk", riskModel.Id, $"Riesgo registrado: {riskModel.Title}");
+        await SaveAndReload("Riesgo registrado.");
+        riskModel = NewRisk();
+    }
+
+    private async Task CreateAudit()
+    {
+        if (string.IsNullOrWhiteSpace(auditModel.Title)) return;
+        auditModel.Id = Guid.NewGuid();
+        auditModel.Status = AuditStatus.PLANNED;
+        DbContext.AuditPlans.Add(auditModel);
+        AddAuditLog("CREATE", "AuditPlan", auditModel.Id, $"Plan de auditoría registrado: {auditModel.Title}");
+        await SaveAndReload("Plan de auditoría registrado.");
+        auditModel = NewAudit();
+    }
+
+    private async Task CreateAuditFinding()
+    {
+        if (findingModel.AuditPlanId == Guid.Empty || string.IsNullOrWhiteSpace(findingModel.Description)) return;
+        findingModel.Id = Guid.NewGuid();
+        DbContext.AuditFindings.Add(findingModel);
+
+        var audit = await DbContext.AuditPlans.FindAsync(findingModel.AuditPlanId);
+        if (audit != null && audit.Status == AuditStatus.PLANNED)
+        {
+            audit.Status = AuditStatus.IN_PROGRESS;
+        }
+
+        AddAuditLog("CREATE", "AuditFinding", findingModel.Id, $"Hallazgo de auditoría registrado: {findingModel.Description}");
+        await SaveAndReload("Hallazgo de auditoría registrado.");
+        findingModel = NewFinding();
+    }
+
+    private async Task CreateNCFromFinding(AuditFinding finding)
+    {
+        if (!IsNonconformityFinding(finding.Type) || finding.RelatedNCId.HasValue) return;
+
+        var severity = finding.Type == FindingType.MAJOR_NC
+            ? QMSFlowDoc.Shared.Models.NCSeverity.HIGH
+            : QMSFlowDoc.Shared.Models.NCSeverity.MEDIUM;
+
+        var request = new CreateNCRequest(
+            $"Hallazgo auditoría: {GetAuditTitle(finding.AuditPlanId)}",
+            $"{finding.Description}\n\nRequisito ISO 15189: {finding.IsoRequirement ?? "No especificado"}",
+            severity,
+            QMSFlowDoc.Shared.Models.NCStatus.OPEN,
+            ImpactPatient: false,
+            Containment: "Pendiente de definir tras análisis del hallazgo de auditoría.",
+            Origin: "Auditoría interna",
+            RootCauseAnalysis: null,
+            DetectedByUserId: currentUserId
+        );
+
+        var ncId = await QualityService.CreateNCAsync(request, currentUserId, currentUserName);
+        finding.RelatedNCId = ncId;
+        AddAuditLog("LINK", "AuditFinding", finding.Id, $"Hallazgo vinculado a NC {ncId}");
+        await SaveAndReload("NC creada y vinculada al hallazgo.");
+    }
+
+    private async Task UpdateRiskStatus(Risk risk, string? rawStatus)
+    {
+        if (!Enum.TryParse<RiskStatus>(rawStatus, out var status) || risk.Status == status) return;
+        risk.Status = status;
+        risk.UpdatedAt = DateTime.UtcNow;
+        AddAuditLog("STATUS_CHANGE", "Risk", risk.Id, $"Estado de riesgo cambiado a {GetRiskStatusLabel(status)}: {risk.Title}");
+        await SaveAndReload("Estado de riesgo actualizado.");
+    }
+
+    private async Task UpdateAuditStatus(AuditPlan audit, string? rawStatus)
+    {
+        if (!Enum.TryParse<AuditStatus>(rawStatus, out var status) || audit.Status == status) return;
+
+        if (status == AuditStatus.COMPLETED && AuditHasUnlinkedNonconformityFindings(audit.Id))
+        {
+            errorMessage = "No se puede completar la auditoría: existen hallazgos NC menor/mayor sin una no conformidad vinculada.";
+            successMessage = null;
+            return;
+        }
+
+        audit.Status = status;
+        AddAuditLog("STATUS_CHANGE", "AuditPlan", audit.Id, $"Estado de auditoría cambiado a {GetAuditStatusLabel(status)}: {audit.Title}");
+        await SaveAndReload("Estado de auditoría actualizado.");
+    }
+
+    private async Task CreateReview()
+    {
+        if (string.IsNullOrWhiteSpace(reviewModel.Summary)) return;
+        reviewModel.Id = Guid.NewGuid();
+        DbContext.ManagementReviews.Add(reviewModel);
+        AddAuditLog("CREATE", "ManagementReview", reviewModel.Id, $"Revisión por dirección registrada: {reviewModel.ReviewDate:yyyy-MM-dd}");
+        await SaveAndReload("Revisión por dirección registrada.");
+        reviewModel = NewReview();
+    }
+
+    private async Task CreateSupplierEvaluation()
+    {
+        if (supplierEvalModel.SupplierId == Guid.Empty) return;
+        ClampSupplierScores();
+        supplierEvalModel.Id = Guid.NewGuid();
+        supplierEvalModel.IsApproved = supplierEvalModel.AverageScore >= 3.5;
+        supplierEvalModel.CreatedAt = DateTime.UtcNow;
+        DbContext.SupplierEvaluations.Add(supplierEvalModel);
+        AddAuditLog("CREATE", "SupplierEvaluation", supplierEvalModel.Id, $"Evaluación de proveedor registrada. Media: {supplierEvalModel.AverageScore:N1}");
+        await SaveAndReload("Evaluación de proveedor registrada.");
+        supplierEvalModel = NewSupplierEvaluation();
+    }
+
+    private void UseIsoInputsInReviewAgenda()
+    {
+        reviewModel.Agenda = BuildManagementReviewAgenda();
+    }
+
+    private async Task SaveAndReload(string message)
+    {
+        await DbContext.SaveChangesAsync();
+        successMessage = message;
+        errorMessage = null;
+        await LoadData();
+    }
+
+    private void AddAuditLog(string action, string entityType, Guid entityId, string details)
+    {
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Timestamp = DateTime.UtcNow,
+            UserName = currentUserName,
+            Action = action,
+            EntityType = entityType,
+            EntityId = entityId,
+            Details = details,
+            Result = "Success",
+            MachineName = Environment.MachineName
+        });
+    }
+
+    private static Risk NewRisk() => new()
+    {
+        Category = "OPERATIONAL",
+        Likelihood = RiskLikelihood.POSSIBLE,
+        Impact = RiskImpact.MODERATE,
+        Status = RiskStatus.ACTIVE
+    };
+
+    private static AuditPlan NewAudit() => new() { ScheduledDate = DateTime.Today, Status = AuditStatus.PLANNED };
+    private static AuditFinding NewFinding() => new() { Type = FindingType.OBSERVATION };
+    private static ManagementReview NewReview() => new() { ReviewDate = DateTime.Today };
+    private static SupplierEvaluation NewSupplierEvaluation() => new()
+    {
+        EvaluationDate = DateTime.Today,
+        EvaluatedPeriod = $"{DateTime.Today.Year}",
+        ScorePlazos = 3,
+        ScoreCalidad = 3,
+        ScoreServicio = 3,
+        ScoreIncidencias = 3
+    };
+
+    private string BuildManagementReviewAgenda()
+    {
+        return string.Join(Environment.NewLine,
+            "Entradas ISO 15189 para revisión por dirección:",
+            $"- Riesgos activos: {activeRiskCount}; altos o críticos: {highRiskCount}.",
+            $"- No conformidades abiertas: {openNcCount}; reclamaciones abiertas: {openComplaintCount}.",
+            $"- CAPA abiertas: {openCapaCount}; CAPA vencidas: {overdueCapaCount}.",
+            $"- Equipos no aptos o restringidos: {equipmentAttentionCount}.",
+            $"- EQA con revisión/acción pendiente: {eqaAttentionCount}; desviaciones EQA abiertas: {openEqaDeviationCount}.",
+            $"- Auditorías planificadas/en curso: {plannedOrInProgressAuditCount}; hallazgos NC sin vincular: {pendingAuditNcFindingCount}.",
+            $"- Evaluaciones de proveedores no aprobadas: {failedSupplierEvaluationCount}.",
+            "- Revisión de acciones, recursos, cambios que afectan al sistema de gestión y oportunidades de mejora.");
+    }
+
+    private void ClampSupplierScores()
+    {
+        supplierEvalModel.ScorePlazos = ClampScore(supplierEvalModel.ScorePlazos);
+        supplierEvalModel.ScoreCalidad = ClampScore(supplierEvalModel.ScoreCalidad);
+        supplierEvalModel.ScoreServicio = ClampScore(supplierEvalModel.ScoreServicio);
+        supplierEvalModel.ScoreIncidencias = ClampScore(supplierEvalModel.ScoreIncidencias);
+    }
+
+    private static int ClampScore(int value) => Math.Clamp(value, 1, 5);
+
+    private static string GetRiskLikelihoodLabel(RiskLikelihood value) => value switch
+    {
+        RiskLikelihood.RARE => "Rara",
+        RiskLikelihood.UNLIKELY => "Improbable",
+        RiskLikelihood.POSSIBLE => "Posible",
+        RiskLikelihood.LIKELY => "Probable",
+        RiskLikelihood.ALMOST_CERTAIN => "Casi segura",
+        _ => value.ToString()
+    };
+
+    private static string GetRiskImpactLabel(RiskImpact value) => value switch
+    {
+        RiskImpact.INSIGNIFICANT => "Insignificante",
+        RiskImpact.MINOR => "Menor",
+        RiskImpact.MODERATE => "Moderado",
+        RiskImpact.MAJOR => "Mayor",
+        RiskImpact.CATASTROPHIC => "Catastrófico",
+        _ => value.ToString()
+    };
+
+    private static string GetRiskStatusLabel(RiskStatus value) => value switch
+    {
+        RiskStatus.ACTIVE => "Activo",
+        RiskStatus.MITIGATED => "Mitigado",
+        RiskStatus.ACCEPTED => "Aceptado",
+        RiskStatus.RETIRED => "Retirado",
+        _ => value.ToString()
+    };
+
+    private static string GetAuditStatusLabel(AuditStatus value) => value switch
+    {
+        AuditStatus.PLANNED => "Planificada",
+        AuditStatus.IN_PROGRESS => "En curso",
+        AuditStatus.COMPLETED => "Completada",
+        AuditStatus.CANCELLED => "Cancelada",
+        _ => value.ToString()
+    };
+
+    private static string GetFindingTypeLabel(FindingType value) => value switch
+    {
+        FindingType.OBSERVATION => "Observación",
+        FindingType.MINOR_NC => "NC menor",
+        FindingType.MAJOR_NC => "NC mayor",
+        FindingType.OPPORTUNITY_FOR_IMPROVEMENT => "Oportunidad de mejora",
+        _ => value.ToString()
+    };
+
+    private static string GetRiskScoreLevel(int score) => score switch
+    {
+        >= 16 => "Crítico",
+        >= 12 => "Alto",
+        >= 6 => "Medio",
+        _ => "Bajo"
+    };
+
+    private static string GetRiskScoreBadgeClass(int score) => score switch
+    {
+        >= 16 => "bg-danger",
+        >= 12 => "bg-warning text-dark",
+        >= 6 => "bg-info text-dark",
+        _ => "bg-success"
+    };
+
+    private static string GetWarningBadgeClass(int count)
+    {
+        return count > 0 ? "bg-warning text-dark" : "bg-success";
+    }
+
+    private static string GetSupplierResultBadgeClass(bool isApproved)
+    {
+        return isApproved ? "bg-success" : "bg-warning text-dark";
+    }
+
+    private string GetAuditTitle(Guid auditPlanId)
+    {
+        return audits.FirstOrDefault(a => a.Id == auditPlanId)?.Title ?? "Auditoría no encontrada";
+    }
+
+    private static bool IsNonconformityFinding(FindingType value)
+    {
+        return value == FindingType.MINOR_NC || value == FindingType.MAJOR_NC;
+    }
+
+    private bool AuditHasUnlinkedNonconformityFindings(Guid auditPlanId)
+    {
+        return auditFindings.Any(f =>
+            f.AuditPlanId == auditPlanId &&
+            IsNonconformityFinding(f.Type) &&
+            !f.RelatedNCId.HasValue);
+    }
+}

@@ -1,4 +1,6 @@
 using Microsoft.Extensions.Logging;
+using QMSFlowDoc.Shared.Models;
+using QMSFlowDoc.Shared.Services;
 
 namespace QMSFlowDoc.BackupService.Services;
 
@@ -17,9 +19,9 @@ public class FileBackupService
 
     /// <summary>
     /// Copies all files from sourcePath to a timestamped subfolder under backupBasePath/Files/.
-    /// Returns the backup folder path, or null on failure.
+    /// Returns verifiable manifest evidence for the backup, or null on failure.
     /// </summary>
-    public async Task<string?> BackupFilesAsync(
+    public async Task<FileBackupResult?> BackupFilesAsync(
         string sourcePath, string backupBasePath, CancellationToken ct = default)
     {
         if (!Directory.Exists(sourcePath))
@@ -47,7 +49,25 @@ public class FileBackupService
             _logger.LogInformation("File backup completed: {Count} files, {Bytes:N0} bytes → {Path}",
                 fileCount, totalBytes, destDir);
 
-            return destDir;
+            var manifestEntries = await FileBackupManifestService.BuildManifestAsync(destDir, ct);
+            var manifestPath = await FileBackupManifestService.WriteManifestAsync(destDir, manifestEntries, ct);
+            var manifestSha = FileBackupManifestService.ComputeManifestSha256(manifestEntries);
+            var verified = await FileBackupManifestService.VerifyManifestAsync(destDir, manifestEntries, ct);
+
+            if (!verified)
+            {
+                _logger.LogError("File backup verification failed after copy: {Path}", destDir);
+            }
+
+            return new FileBackupResult
+            {
+                Path = destDir,
+                FileCount = manifestEntries.Count,
+                SizeBytes = manifestEntries.Sum(e => e.SizeBytes),
+                ManifestPath = manifestPath,
+                ManifestSha256 = manifestSha,
+                Verified = verified
+            };
         }
         catch (OperationCanceledException)
         {

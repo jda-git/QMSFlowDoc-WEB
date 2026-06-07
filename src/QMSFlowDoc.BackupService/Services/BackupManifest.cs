@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using QMSFlowDoc.Shared.Services;
 
 namespace QMSFlowDoc.BackupService.Services;
 
@@ -14,6 +15,8 @@ public class BackupManifestEntry
     public string Path { get; set; } = string.Empty;
     public long SizeBytes { get; set; }
     public string? Sha256 { get; set; }
+    public int? FileCount { get; set; }
+    public string? FileManifestPath { get; set; }
     public bool VerifyOnlyPassed { get; set; }
     public string Status { get; set; } = "OK"; // "OK", "FAILED", "VERIFY_FAILED"
     public string? ErrorMessage { get; set; }
@@ -83,10 +86,7 @@ public class BackupManifestService
     /// </summary>
     public static async Task<string> ComputeSha256Async(string filePath)
     {
-        using var sha = SHA256.Create();
-        using var stream = File.OpenRead(filePath);
-        var hash = await sha.ComputeHashAsync(stream);
-        return Convert.ToHexString(hash).ToLowerInvariant();
+        return await FileBackupManifestService.ComputeSha256Async(filePath);
     }
 
     /// <summary>
@@ -100,7 +100,7 @@ public class BackupManifestService
             LastRun = DateTime.Now,
             Database = new { dbEntry.Status, dbEntry.Path, dbEntry.SizeBytes, dbEntry.VerifyOnlyPassed },
             Files = fileEntry != null
-                ? new { fileEntry.Status, fileEntry.Path, fileEntry.SizeBytes, VerifyOnlyPassed = true }
+                ? new { fileEntry.Status, fileEntry.Path, fileEntry.SizeBytes, fileEntry.FileCount, fileEntry.FileManifestPath, VerifyOnlyPassed = fileEntry.VerifyOnlyPassed }
                 : null
         };
         var json = JsonSerializer.Serialize(status, JsonOpts);

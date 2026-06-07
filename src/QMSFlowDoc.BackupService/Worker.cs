@@ -126,7 +126,7 @@ public class Worker : BackgroundService
         await _manifest.AddEntryAsync(settings.BackupPath, dbEntry);
 
         // 2. Document files backup
-        string? fileResult = null;
+        QMSFlowDoc.Shared.Models.FileBackupResult? fileResult = null;
         BackupManifestEntry? fileEntry = null;
         if (!string.IsNullOrWhiteSpace(settings.DocumentRepositoryPath))
         {
@@ -137,20 +137,17 @@ public class Worker : BackgroundService
             {
                 Timestamp = DateTime.Now,
                 Type = "Files",
-                Path = fileResult ?? string.Empty,
-                Status = fileResult != null ? "OK" : "FAILED",
-                VerifyOnlyPassed = fileResult != null
+                Path = fileResult?.Path ?? string.Empty,
+                Status = fileResult != null ? (fileResult.Verified ? "OK" : "VERIFY_FAILED") : "FAILED",
+                VerifyOnlyPassed = fileResult?.Verified == true,
+                FileCount = fileResult?.FileCount,
+                FileManifestPath = fileResult?.ManifestPath,
+                Sha256 = fileResult?.ManifestSha256
             };
 
-            if (fileResult != null && Directory.Exists(fileResult))
+            if (fileResult != null && Directory.Exists(fileResult.Path))
             {
-                // Calculate total size of backed-up files
-                try
-                {
-                    var dirInfo = new DirectoryInfo(fileResult);
-                    fileEntry.SizeBytes = dirInfo.EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length);
-                }
-                catch { /* best effort */ }
+                fileEntry.SizeBytes = fileResult.SizeBytes;
             }
 
             await _manifest.AddEntryAsync(settings.BackupPath, fileEntry);
@@ -175,7 +172,7 @@ public class Worker : BackgroundService
             sw.Elapsed.ToString(@"hh\:mm\:ss"),
             dbPath != null ? "OK" : "FAILED",
             dbVerified,
-            fileResult != null ? "OK" : "FAILED/SKIPPED");
+            fileResult != null ? fileEntry?.Status : "FAILED/SKIPPED");
     }
 
     /// <summary>

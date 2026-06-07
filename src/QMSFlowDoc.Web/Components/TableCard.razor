@@ -1,0 +1,17 @@
+<div class="card border-0 shadow-sm rounded-4">
+    <div class="card-body p-0">
+        <div class="px-3 py-3 border-bottom bg-light rounded-top-4">
+            <h5 class="fw-bold mb-0">@Title</h5>
+        </div>
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0 small">
+                @ChildContent
+            </table>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Title { get; set; } = string.Empty;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+}
