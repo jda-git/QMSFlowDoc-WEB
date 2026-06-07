@@ -85,19 +85,8 @@ public static class PendingRestoreService
             {
                 var targetDocumentPath = request.TargetDocumentPath;
                 var parent = Path.GetDirectoryName(targetDocumentPath) ?? AppContext.BaseDirectory;
-                safetyDocumentPath = Path.Combine(parent, $"{Path.GetFileName(targetDocumentPath)}_before_restore_{safetySuffix}");
-
-                if (Directory.Exists(targetDocumentPath))
-                {
-                    if (Directory.Exists(safetyDocumentPath))
-                    {
-                        Directory.Delete(safetyDocumentPath, recursive: true);
-                    }
-
-                    Directory.Move(targetDocumentPath, safetyDocumentPath);
-                }
-
-                CopyDirectory(request.DocumentBackupPath, targetDocumentPath);
+                safetyDocumentPath = Path.Combine(parent, $"{Path.GetFileName(targetDocumentPath)}_documents_before_restore_{safetySuffix}");
+                RestoreDocumentRepository(request.DocumentBackupPath, targetDocumentPath, safetyDocumentPath);
             }
 
             await WriteRestoreStatusAsync(new RestoreStatus
@@ -213,12 +202,7 @@ public static class PendingRestoreService
                 Directory.Exists(safetyDocumentPath) &&
                 !string.IsNullOrWhiteSpace(request.TargetDocumentPath))
             {
-                if (Directory.Exists(request.TargetDocumentPath))
-                {
-                    Directory.Delete(request.TargetDocumentPath, recursive: true);
-                }
-
-                Directory.Move(safetyDocumentPath, request.TargetDocumentPath);
+                RestoreDocumentSafetySnapshot(safetyDocumentPath, request.TargetDocumentPath);
             }
         }
         catch
@@ -270,6 +254,97 @@ public static class PendingRestoreService
         {
             CopyDirectory(subDir.FullName, Path.Combine(destinationDir, subDir.Name));
         }
+    }
+
+    private static void RestoreDocumentRepository(string backupRootPath, string targetRootPath, string safetyRootPath)
+    {
+        var backupRoot = new DirectoryInfo(backupRootPath);
+        if (!backupRoot.Exists)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(targetRootPath);
+        Directory.CreateDirectory(safetyRootPath);
+
+        foreach (var sourceDir in backupRoot.GetDirectories())
+        {
+            if (ShouldSkipRootRestoreItem(sourceDir.Name))
+            {
+                continue;
+            }
+
+            var targetDir = Path.Combine(targetRootPath, sourceDir.Name);
+            var safetyDir = Path.Combine(safetyRootPath, sourceDir.Name);
+            if (Directory.Exists(targetDir))
+            {
+                if (Directory.Exists(safetyDir))
+                {
+                    Directory.Delete(safetyDir, recursive: true);
+                }
+
+                Directory.Move(targetDir, safetyDir);
+            }
+
+            CopyDirectory(sourceDir.FullName, targetDir);
+        }
+
+        foreach (var sourceFile in backupRoot.GetFiles())
+        {
+            if (ShouldSkipRootRestoreItem(sourceFile.Name))
+            {
+                continue;
+            }
+
+            var targetFile = Path.Combine(targetRootPath, sourceFile.Name);
+            var safetyFile = Path.Combine(safetyRootPath, sourceFile.Name);
+            if (File.Exists(targetFile))
+            {
+                File.Move(targetFile, safetyFile, overwrite: true);
+            }
+
+            sourceFile.CopyTo(targetFile, overwrite: true);
+        }
+    }
+
+    private static void RestoreDocumentSafetySnapshot(string safetyRootPath, string targetRootPath)
+    {
+        var safetyRoot = new DirectoryInfo(safetyRootPath);
+        if (!safetyRoot.Exists)
+        {
+            return;
+        }
+
+        Directory.CreateDirectory(targetRootPath);
+
+        foreach (var safetyDir in safetyRoot.GetDirectories())
+        {
+            var targetDir = Path.Combine(targetRootPath, safetyDir.Name);
+            if (Directory.Exists(targetDir))
+            {
+                Directory.Delete(targetDir, recursive: true);
+            }
+
+            Directory.Move(safetyDir.FullName, targetDir);
+        }
+
+        foreach (var safetyFile in safetyRoot.GetFiles())
+        {
+            var targetFile = Path.Combine(targetRootPath, safetyFile.Name);
+            if (File.Exists(targetFile))
+            {
+                File.Delete(targetFile);
+            }
+
+            File.Move(safetyFile.FullName, targetFile);
+        }
+    }
+
+    private static bool ShouldSkipRootRestoreItem(string name)
+    {
+        return name.Equals("Base_datos", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("DataProtection-Keys", StringComparison.OrdinalIgnoreCase) ||
+               name.Equals("Temp", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<string> ComputeSha256Async(string filePath, CancellationToken ct)
