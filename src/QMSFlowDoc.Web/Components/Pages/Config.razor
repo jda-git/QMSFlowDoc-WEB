@@ -7,6 +7,7 @@
 @using QMSFlowDoc.Infrastructure.Persistence
 @using QMSFlowDoc.Shared.Models
 @using QMSFlowDoc.Shared.Services
+@using QMSFlowDoc.Web.Services
 @using System.Security.Claims
 @using System.Text.Json
 @attribute [Authorize]
@@ -15,6 +16,7 @@
 @inject QmsDbContext DbContext
 @inject Microsoft.AspNetCore.Identity.UserManager<QMSFlowDoc.Domain.Identity.ApplicationUser> UserManager
 @inject IConfiguration Configuration
+@inject IHostApplicationLifetime AppLifetime
 @inject IJSRuntime JS
 
 <PageTitle>Configuración del Sistema - QMSFlowDoc</PageTitle>
@@ -449,7 +451,7 @@
                                     @foreach (var entry in backupEntries)
                                     {
                                         <tr>
-                                            <td class="fw-medium">@entry.Timestamp.ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td class="fw-medium">@entry.Timestamp.ToString("dd/MM/yyyy HH:mm:ss")</td>
                                             <td>
                                                 <span class="badge @(entry.Type == "DB" ? "bg-info text-white" : "bg-secondary text-white")">
                                                     @entry.Type
@@ -727,7 +729,7 @@
 @if (showRestoreModal)
 {
     <div class="modal fade show d-block" style="background: rgba(0,0,0,0.6)">
-        <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
             <div class="modal-content card shadow-lg border-0 rounded-4 w-100">
                 <div class="card-header bg-danger text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
                     <h5 class="mb-0 fw-bold">
@@ -739,8 +741,7 @@
                     <div class="alert alert-warning border-warning border-opacity-50 shadow-sm p-3 mb-4 rounded-3 text-dark small">
                         <i class="bi bi-shield-lock-fill me-2 text-danger fs-5"></i>
                         <strong class="d-block mb-1">Requiere credenciales de un Administrador</strong>
-                        La web valida la autorización, pero la restauración real debe ejecutarse desde QMSFlowDoc ServerConfigurator en modo mantenimiento.
-                        No se restaura la base de datos desde el proceso web para evitar cortar sus propias conexiones activas.
+                        La web prepara una restauración verificada para el próximo arranque. La base SQLite se sustituye antes de abrir conexiones activas y se conserva una copia de seguridad previa.
                     </div>
                     
                     @if (!string.IsNullOrEmpty(restoreError))
@@ -751,18 +752,55 @@
                     }
 
                     <div class="card bg-white border-0 shadow-sm rounded-3 p-3 mb-3">
+                        <h6 class="fw-bold text-dark mb-3">Copias verificadas a restaurar</h6>
                         <div class="mb-3">
-                            <label class="form-label fw-bold text-dark small">Usuario Administrador</label>
-                            <input type="text" class="form-control form-control-premium" @bind="restoreAdminUsername" placeholder="Nombre de usuario" />
+                            <label class="form-label fw-bold text-dark small">Base de datos</label>
+                            <select class="form-select form-select-premium" @bind="selectedRestoreDbPath">
+                                <option value="">-- Seleccione una copia DB verificada --</option>
+                                @foreach (var entry in GetRestorableDbEntries())
+                                {
+                                    <option value="@entry.Path">@FormatRestoreOption(entry)</option>
+                                }
+                            </select>
                         </div>
                         <div class="mb-3">
-                            <label class="form-label fw-bold text-dark small">Contraseña</label>
-                            <input type="password" class="form-control form-control-premium" @bind="restoreAdminPassword" placeholder="Contraseña de administrador" />
+                            <label class="form-label fw-bold text-dark small">Repositorio documental</label>
+                            <select class="form-select form-select-premium" @bind="selectedRestoreFilesPath">
+                                <option value="">-- No restaurar documentos --</option>
+                                @foreach (var entry in GetRestorableFileEntries())
+                                {
+                                    <option value="@entry.Path">@FormatRestoreOption(entry)</option>
+                                }
+                            </select>
                         </div>
-                        <div class="mb-0">
-                            <label class="form-label fw-bold text-danger small">Escriba textualmente "CONFIRMAR"</label>
-                            <input type="text" class="form-control form-control-premium border-danger" @bind="restoreConfirmText" placeholder="CONFIRMAR" />
+                        <div class="alert alert-info py-2 small mb-0">
+                            <i class="bi bi-info-circle me-2"></i>La restauración se aplicará al siguiente arranque. La copia actual se conserva como respaldo previo a la restauración.
                         </div>
+                    </div>
+
+                    <div class="card bg-white border-0 shadow-sm rounded-3 p-3 mb-3">
+                        <h6 class="fw-bold text-dark mb-3">Autorización</h6>
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold text-dark small">Usuario Administrador</label>
+                                <input type="text" class="form-control form-control-premium" @bind="restoreAdminUsername" placeholder="Nombre de usuario" />
+                            </div>
+                            <div class="col-md-6">
+                                <label class="form-label fw-bold text-dark small">Contraseña</label>
+                                <input type="password" class="form-control form-control-premium" @bind="restoreAdminPassword" placeholder="Contraseña de administrador" />
+                            </div>
+                            <div class="col-12">
+                                <label class="form-label fw-bold text-danger small">Escriba textualmente "CONFIRMAR RESTAURACION"</label>
+                                <input type="text" class="form-control form-control-premium border-danger" @bind="restoreConfirmText" placeholder="CONFIRMAR RESTAURACION" />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-check form-switch mb-0">
+                        <input type="checkbox" class="form-check-input" id="stopAfterRestoreSwitch" @bind="stopAfterRestorePreparation" />
+                        <label class="form-check-label text-muted small" for="stopAfterRestoreSwitch">
+                            Detener la web tras preparar la restauración para aplicarla al volver a arrancar
+                        </label>
                     </div>
 
                     <div class="d-flex gap-2 justify-content-end mt-4">
@@ -770,11 +808,11 @@
                         <button type="button" class="btn btn-danger px-4 shadow-sm" @onclick="ExecuteRestoreAsync" disabled="@isRestoring">
                             @if (isRestoring)
                             {
-                                <span class="spinner-border spinner-border-sm me-2" role="status"></span><span>Autorizando...</span>
+                                <span class="spinner-border spinner-border-sm me-2" role="status"></span><span>Preparando...</span>
                             }
                             else
                             {
-                                <i class="bi bi-shield-check me-2"></i><span>Validar autorización</span>
+                                <i class="bi bi-shield-check me-2"></i><span>Preparar restauración</span>
                             }
                         </button>
                     </div>
@@ -844,6 +882,9 @@
     private string restoreError = string.Empty;
     private string? restoreSuccessMessage;
     private bool isRestoring = false;
+    private string selectedRestoreDbPath = string.Empty;
+    private string selectedRestoreFilesPath = string.Empty;
+    private bool stopAfterRestorePreparation = true;
 
     [CascadingParameter]
     private Task<AuthenticationState>? AuthStateTask { get; set; }
@@ -1118,16 +1159,65 @@
         restoreConfirmText = string.Empty;
         restoreError = string.Empty;
         restoreSuccessMessage = null;
+        var latestDb = GetRestorableDbEntries().FirstOrDefault();
+        selectedRestoreDbPath = latestDb?.Path ?? string.Empty;
+        selectedRestoreFilesPath = FindMatchingFilesEntry(latestDb)?.Path ?? GetRestorableFileEntries().FirstOrDefault()?.Path ?? string.Empty;
+        stopAfterRestorePreparation = true;
         showRestoreModal = true;
+    }
+
+    private IEnumerable<BackupManifestEntry> GetRestorableDbEntries()
+    {
+        return backupEntries
+            .Where(e => string.Equals(e.Type, "DB", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(e.Status, "OK", StringComparison.OrdinalIgnoreCase) &&
+                        e.VerifyOnlyPassed &&
+                        File.Exists(e.Path))
+            .OrderByDescending(e => e.Timestamp);
+    }
+
+    private IEnumerable<BackupManifestEntry> GetRestorableFileEntries()
+    {
+        return backupEntries
+            .Where(e => string.Equals(e.Type, "Files", StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(e.Status, "OK", StringComparison.OrdinalIgnoreCase) &&
+                        e.VerifyOnlyPassed &&
+                        Directory.Exists(e.Path))
+            .OrderByDescending(e => e.Timestamp);
+    }
+
+    private BackupManifestEntry? FindMatchingFilesEntry(BackupManifestEntry? dbEntry)
+    {
+        if (dbEntry == null)
+        {
+            return null;
+        }
+
+        return GetRestorableFileEntries()
+            .OrderBy(e => Math.Abs((e.Timestamp - dbEntry.Timestamp).TotalSeconds))
+            .FirstOrDefault(e => Math.Abs((e.Timestamp - dbEntry.Timestamp).TotalMinutes) <= 2);
+    }
+
+    private static string FormatRestoreOption(BackupManifestEntry entry)
+    {
+        var sizeMb = (entry.SizeBytes / 1024.0 / 1024.0).ToString("N2");
+        return $"{entry.Timestamp:dd/MM/yyyy HH:mm:ss} - {entry.Type} - {sizeMb} MB - {entry.Path}";
     }
 
     private async Task ExecuteRestoreAsync()
     {
         restoreError = string.Empty;
         
-        if (restoreConfirmText != "CONFIRMAR")
+        if (restoreConfirmText != "CONFIRMAR RESTAURACION")
         {
-            restoreError = "Debe escribir exactamente 'CONFIRMAR' para proceder.";
+            restoreError = "Debe escribir exactamente 'CONFIRMAR RESTAURACION' para proceder.";
+            return;
+        }
+
+        var dbEntry = GetRestorableDbEntries().FirstOrDefault(e => string.Equals(e.Path, selectedRestoreDbPath, StringComparison.OrdinalIgnoreCase));
+        if (dbEntry == null)
+        {
+            restoreError = "Seleccione una copia verificada de base de datos.";
             return;
         }
 
@@ -1166,15 +1256,44 @@
                 return;
             }
 
-            // Keep the destructive restore in ServerConfigurator, where it can run in maintenance mode.
-            await Task.Delay(1500);
+            var filesEntry = GetRestorableFileEntries().FirstOrDefault(e => string.Equals(e.Path, selectedRestoreFilesPath, StringComparison.OrdinalIgnoreCase));
+            var targetDatabasePath = PendingRestoreService.GetSqliteDatabasePath(Configuration);
+            var targetDocumentPath = !string.IsNullOrWhiteSpace(serverSettings.DocumentRepositoryPath)
+                ? serverSettings.DocumentRepositoryPath
+                : Configuration["DocumentStorage:RootPath"];
+
+            var request = new PendingRestoreRequest
+            {
+                RequestedAt = DateTime.Now,
+                RequestedBy = adminUser.UserName ?? adminUser.Email ?? restoreAdminUsername,
+                DatabaseBackupPath = dbEntry.Path,
+                DatabaseSha256 = dbEntry.Sha256,
+                DocumentBackupPath = filesEntry?.Path,
+                DocumentManifestPath = filesEntry?.FileManifestPath,
+                TargetDatabasePath = targetDatabasePath,
+                TargetDocumentPath = targetDocumentPath
+            };
+
+            await PendingRestoreService.VerifyPendingRestoreAsync(request);
+            await PendingRestoreService.ScheduleRestoreAsync(request);
 
             showRestoreModal = false;
-            restoreSuccessMessage = "Autorización validada. Para restaurar, abra QMSFlowDoc ServerConfigurator en el servidor, seleccione la copia verificada (.db para SQLite o .bak para SQL Server) y confirme la operación con estas credenciales de Administrador.";
+            restoreSuccessMessage = stopAfterRestorePreparation
+                ? "Restauración preparada y verificada. La web se detendrá ahora; vuelva a arrancarla para aplicar la copia antes de abrir la base de datos."
+                : "Restauración preparada y verificada. Se aplicará automáticamente en el próximo arranque de la web.";
+
+            if (stopAfterRestorePreparation)
+            {
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(1500);
+                    AppLifetime.StopApplication();
+                });
+            }
         }
         catch (Exception ex)
         {
-            restoreError = $"Error interno de validación: {ex.Message}";
+            restoreError = $"Error al preparar la restauración: {ex.Message}";
         }
         finally
         {

@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using QMSFlowDoc.Domain.Identity;
 using QMSFlowDoc.Infrastructure.Persistence;
 using QMSFlowDoc.Web.Components;
+using QMSFlowDoc.Web.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,8 @@ builder.Logging.AddDebug();
 // Add services to the container.
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+
+await PendingRestoreService.ApplyPendingRestoreAsync(builder.Configuration);
 
 builder.Services.AddDbContext<QmsDbContext>(options =>
     options.UseSqlite(connectionString, b => b.MigrationsAssembly("QMSFlowDoc.Infrastructure")));
