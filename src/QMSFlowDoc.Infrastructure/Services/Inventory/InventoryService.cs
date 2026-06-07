@@ -428,7 +428,60 @@ public class InventoryService : IInventoryService
 
     public async Task<IEnumerable<Supplier>> GetSuppliersAsync()
     {
+        await SyncSuppliersFromLatestEvaluationsAsync();
         return await _context.Suppliers.Where(s => !s.IsDeleted).OrderBy(s => s.Name).ToListAsync();
+    }
+
+    private async Task SyncSuppliersFromLatestEvaluationsAsync()
+    {
+        var suppliers = await _context.Suppliers.Where(s => !s.IsDeleted).ToListAsync();
+        if (!suppliers.Any()) return;
+
+        var supplierIds = suppliers.Select(s => s.Id).ToList();
+        var evaluations = await _context.SupplierEvaluations
+            .Where(e => supplierIds.Contains(e.SupplierId))
+            .ToListAsync();
+
+        var bySupplierId = evaluations
+            .GroupBy(e => e.SupplierId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderByDescending(e => e.EvaluationDate).ThenByDescending(e => e.CreatedAt).First());
+        var hasChanges = false;
+        foreach (var supplier in suppliers)
+        {
+            if (!bySupplierId.TryGetValue(supplier.Id, out var evaluation))
+            {
+                if (supplier.LastEvaluationDate.HasValue ||
+                    supplier.NextEvaluationDate.HasValue ||
+                    supplier.QualityStatus != SupplierQualityStatus.PENDIENTE)
+                {
+                    supplier.LastEvaluationDate = null;
+                    supplier.NextEvaluationDate = null;
+                    supplier.QualityStatus = SupplierQualityStatus.PENDIENTE;
+                    supplier.UpdatedAt = DateTime.UtcNow;
+                    hasChanges = true;
+                }
+                continue;
+            }
+
+            var status = MapSupplierDecisionToQualityStatus(evaluation.Decision);
+            if (supplier.LastEvaluationDate != evaluation.EvaluationDate ||
+                supplier.NextEvaluationDate != evaluation.NextEvaluationDate ||
+                supplier.QualityStatus != status)
+            {
+                supplier.LastEvaluationDate = evaluation.EvaluationDate;
+                supplier.NextEvaluationDate = evaluation.NextEvaluationDate;
+                supplier.QualityStatus = status;
+                supplier.UpdatedAt = DateTime.UtcNow;
+                hasChanges = true;
+            }
+        }
+
+        if (hasChanges)
+        {
+            await _context.SaveChangesAsync();
+        }
     }
 
     public async Task<Supplier?> CreateSupplierAsync(Supplier supplier)
@@ -455,6 +508,9 @@ public class InventoryService : IInventoryService
         supplier.CreatedAt = DateTime.UtcNow;
         supplier.UpdatedAt = DateTime.UtcNow;
         supplier.IsDeleted = false;
+        supplier.QualityStatus = SupplierQualityStatus.PENDIENTE;
+        supplier.LastEvaluationDate = null;
+        supplier.NextEvaluationDate = null;
 
         _context.Suppliers.Add(supplier);
         await LogAuditAsync("CREATE", "Supplier", supplier.Id, $"Proveedor creado: {supplier.Name}", null, "Sistema");
@@ -490,8 +546,6 @@ public class InventoryService : IInventoryService
         existing.Address = NormalizeText(supplier.Address);
         existing.Notes = NormalizeText(supplier.Notes);
         existing.Type = supplier.Type;
-        existing.QualityStatus = supplier.QualityStatus;
-        existing.NextEvaluationDate = supplier.NextEvaluationDate;
         existing.UpdatedAt = DateTime.UtcNow;
 
         await LogAuditAsync("EDIT", "Supplier", existing.Id, $"Proveedor actualizado: {existing.Name}", null, "Sistema");
@@ -515,6 +569,15 @@ public class InventoryService : IInventoryService
 
     private static string? NormalizeText(string? value)
         => string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static SupplierQualityStatus MapSupplierDecisionToQualityStatus(string? decision) => decision switch
+    {
+        "Aprobado" => SupplierQualityStatus.APTO,
+        "Aprobado con restricciones" => SupplierQualityStatus.EN_OBSERVACION,
+        "Reevaluar" => SupplierQualityStatus.EVALUACION_CADUCADA,
+        "No aprobado" => SupplierQualityStatus.NO_APTO,
+        _ => SupplierQualityStatus.PENDIENTE
+    };
 
     private async Task LogAuditAsync(string action, string entityType, Guid? entityId, string details, Guid? userId, string username)
     {

@@ -682,13 +682,13 @@ else
                                             </select>
                                         </div>
                                         <div class="col-md-6">
-                                            <label class="form-label fw-medium text-secondary">Estado de calidad</label>
-                                            <select class="form-select form-select-premium" @bind="supplierModel.QualityStatus">
-                                                @foreach (var status in Enum.GetValues<SupplierQualityStatus>())
-                                                {
-                                                    <option value="@status">@GetSupplierQualityStatusLabel(status)</option>
-                                                }
-                                            </select>
+                                            <label class="form-label fw-medium text-secondary">Estado de evaluación</label>
+                                            <div class="form-control form-control-premium bg-white d-flex align-items-center">
+                                                <span class="badge @GetSupplierStatusBadgeClass(supplierModel.CurrentQualityStatus)">
+                                                    @GetSupplierQualityStatusLabel(supplierModel.CurrentQualityStatus)
+                                                </span>
+                                            </div>
+                                            <small class="text-muted">Se actualiza desde Mejora continua &gt; Proveedores.</small>
                                         </div>
                                         <div class="col-md-6">
                                             <label class="form-label fw-medium text-secondary">Contacto</label>
@@ -704,7 +704,8 @@ else
                                         </div>
                                         <div class="col-md-6">
                                             <label class="form-label fw-medium text-secondary">Próxima evaluación</label>
-                                            <InputDate class="form-control form-control-premium" @bind-Value="supplierModel.NextEvaluationDate" />
+                                            <input class="form-control form-control-premium bg-white" value="@(supplierModel.CurrentNextEvaluationDate?.ToString("dd/MM/yyyy") ?? "Pendiente de evaluación")" readonly />
+                                            <small class="text-muted">Valor tomado de la última evaluación registrada.</small>
                                         </div>
                                         <div class="col-12">
                                             <label class="form-label fw-medium text-secondary">Dirección</label>
@@ -747,6 +748,7 @@ else
                                             <th>Proveedor</th>
                                             <th>Tipo</th>
                                             <th>Estado</th>
+                                            <th>Próxima evaluación</th>
                                             <th>Contacto</th>
                                             <th class="text-end">Acciones</th>
                                         </tr>
@@ -755,7 +757,7 @@ else
                                         @if (!suppliers.Any())
                                         {
                                             <tr>
-                                                <td colspan="5" class="text-center text-muted py-4">No hay proveedores registrados.</td>
+                                                <td colspan="6" class="text-center text-muted py-4">No hay proveedores registrados.</td>
                                             </tr>
                                         }
                                         else
@@ -772,6 +774,7 @@ else
                                                     </td>
                                                     <td><span class="badge bg-light text-secondary border">@GetSupplierTypeLabel(supplier.Type)</span></td>
                                                     <td><span class="badge @GetSupplierStatusBadgeClass(supplier.QualityStatus)">@GetSupplierQualityStatusLabel(supplier.QualityStatus)</span></td>
+                                                    <td class="small text-secondary">@(supplier.NextEvaluationDate?.ToString("dd/MM/yyyy") ?? "-")</td>
                                                     <td class="small text-secondary">
                                                         <div>@(supplier.ContactName ?? "-")</div>
                                                         @if (!string.IsNullOrWhiteSpace(supplier.Phone))
@@ -1490,8 +1493,8 @@ else
             Address = supplier.Address,
             Notes = supplier.Notes,
             Type = supplier.Type,
-            QualityStatus = supplier.QualityStatus,
-            NextEvaluationDate = supplier.NextEvaluationDate
+            CurrentQualityStatus = supplier.QualityStatus,
+            CurrentNextEvaluationDate = supplier.NextEvaluationDate
         };
         isEditingSupplier = true;
         supplierError = string.Empty;
@@ -1680,9 +1683,7 @@ else
                 Phone = supplierModel.Phone,
                 Address = supplierModel.Address,
                 Notes = supplierModel.Notes,
-                Type = supplierModel.Type,
-                QualityStatus = supplierModel.QualityStatus,
-                NextEvaluationDate = supplierModel.NextEvaluationDate
+                Type = supplierModel.Type
             };
 
             if (isEditingSupplier && supplierModel.Id.HasValue)
@@ -2042,8 +2043,8 @@ else
         public string? Address { get; set; }
         public string? Notes { get; set; }
         public SupplierType Type { get; set; } = SupplierType.SUMINISTROS_REACTIVOS;
-        public SupplierQualityStatus QualityStatus { get; set; } = SupplierQualityStatus.PENDIENTE;
-        public DateTime? NextEvaluationDate { get; set; }
+        public SupplierQualityStatus CurrentQualityStatus { get; set; } = SupplierQualityStatus.PENDIENTE;
+        public DateTime? CurrentNextEvaluationDate { get; set; }
     }
 
     public class LotFormModel
@@ -2079,11 +2080,11 @@ else
 
     private static string GetSupplierQualityStatusLabel(SupplierQualityStatus status) => status switch
     {
-        SupplierQualityStatus.PENDIENTE => "Pendiente",
-        SupplierQualityStatus.APTO => "Apto",
-        SupplierQualityStatus.NO_APTO => "No apto",
-        SupplierQualityStatus.EN_OBSERVACION => "En observación",
-        SupplierQualityStatus.EVALUACION_CADUCADA => "Evaluación caducada",
+        SupplierQualityStatus.PENDIENTE => "Pendiente de evaluación",
+        SupplierQualityStatus.APTO => "Aprobado",
+        SupplierQualityStatus.NO_APTO => "No aprobado",
+        SupplierQualityStatus.EN_OBSERVACION => "Aprobado con restricciones",
+        SupplierQualityStatus.EVALUACION_CADUCADA => "Reevaluar",
         _ => status.ToString()
     };
 

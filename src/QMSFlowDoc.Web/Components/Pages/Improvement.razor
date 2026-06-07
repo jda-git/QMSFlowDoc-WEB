@@ -477,7 +477,7 @@
                         <tbody>
                         @foreach (var e in supplierEvaluations)
                         {
-                            <tr><td>@e.EvaluationDate.ToString("dd/MM/yyyy")</td><td>@e.Supplier?.Name</td><td>@e.EvaluatedPeriod</td><td>@e.Criticality</td><td>@e.AverageScore.ToString("N1")</td><td><span class="badge @GetSupplierResultBadgeClass(e.IsApproved)">@e.Decision</span></td><td>@(e.NextEvaluationDate?.ToString("dd/MM/yyyy") ?? "-")</td></tr>
+                            <tr><td>@e.EvaluationDate.ToString("dd/MM/yyyy")</td><td>@e.Supplier?.Name</td><td>@e.EvaluatedPeriod</td><td>@e.Criticality</td><td>@e.AverageScore.ToString("N1")</td><td><span class="badge @GetSupplierDecisionBadgeClass(e.Decision)">@e.Decision</span></td><td>@(e.NextEvaluationDate?.ToString("dd/MM/yyyy") ?? "-")</td></tr>
                         }
                         </tbody>
                     </TableCard>
@@ -710,9 +710,21 @@
         }
         supplierEvalModel.CreatedAt = DateTime.UtcNow;
         DbContext.SupplierEvaluations.Add(supplierEvalModel);
+        await SyncSupplierFromEvaluation(supplierEvalModel);
         AddAuditLog("CREATE", "SupplierEvaluation", supplierEvalModel.Id, $"Evaluación de proveedor registrada. Media: {supplierEvalModel.AverageScore:N1}");
         await SaveAndReload("Evaluación de proveedor registrada.");
         supplierEvalModel = NewSupplierEvaluation();
+    }
+
+    private async Task SyncSupplierFromEvaluation(SupplierEvaluation evaluation)
+    {
+        var supplier = await DbContext.Suppliers.FirstOrDefaultAsync(s => s.Id == evaluation.SupplierId);
+        if (supplier == null) return;
+
+        supplier.LastEvaluationDate = evaluation.EvaluationDate;
+        supplier.NextEvaluationDate = evaluation.NextEvaluationDate;
+        supplier.QualityStatus = MapSupplierDecisionToQualityStatus(evaluation.Decision);
+        supplier.UpdatedAt = DateTime.UtcNow;
     }
 
     private async Task CreateQualityIndicator()
@@ -896,9 +908,25 @@
         return count > 0 ? "bg-warning text-dark" : "bg-success";
     }
 
-    private static string GetSupplierResultBadgeClass(bool isApproved)
+    private static SupplierQualityStatus MapSupplierDecisionToQualityStatus(string? decision) => decision switch
     {
-        return isApproved ? "bg-success" : "bg-warning text-dark";
+        "Aprobado" => SupplierQualityStatus.APTO,
+        "Aprobado con restricciones" => SupplierQualityStatus.EN_OBSERVACION,
+        "Reevaluar" => SupplierQualityStatus.EVALUACION_CADUCADA,
+        "No aprobado" => SupplierQualityStatus.NO_APTO,
+        _ => SupplierQualityStatus.PENDIENTE
+    };
+
+    private static string GetSupplierDecisionBadgeClass(string? decision)
+    {
+        return MapSupplierDecisionToQualityStatus(decision) switch
+        {
+            SupplierQualityStatus.APTO => "bg-success",
+            SupplierQualityStatus.EN_OBSERVACION => "bg-warning text-dark",
+            SupplierQualityStatus.EVALUACION_CADUCADA => "bg-warning text-dark",
+            SupplierQualityStatus.NO_APTO => "bg-danger",
+            _ => "bg-secondary"
+        };
     }
 
     private static bool IndicatorMeetsTarget(QualityIndicator indicator)
