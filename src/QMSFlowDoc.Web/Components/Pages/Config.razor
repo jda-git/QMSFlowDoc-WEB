@@ -210,15 +210,33 @@
                     <h5 class="fw-bold mb-0 text-dark">Matriz de Configuración de Accesos</h5>
                     <span class="text-muted small">Configure las acciones permitidas para cada rol en los módulos principales del gestor.</span>
                 </div>
-                <button class="btn btn-outline-success btn-sm px-3" @onclick="OpenAddRoleModal">
-                    <i class="bi bi-shield-plus me-1"></i> Crear Rol Personalizado
-                </button>
+                <div class="d-flex gap-2">
+                    <button class="btn btn-outline-success btn-sm px-3" @onclick="OpenAddRoleModal">
+                        <i class="bi bi-shield-plus me-1"></i> Crear Rol Personalizado
+                    </button>
+                    <button class="btn btn-premium btn-sm px-3" @onclick="SavePermissionsMatrix" disabled="@isSavingPermissions">
+                        @if (isSavingPermissions)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status"></span><span>Guardando...</span>
+                        }
+                        else
+                        {
+                            <i class="bi bi-save-fill me-1"></i><span>Guardar cambios</span>
+                        }
+                    </button>
+                </div>
             </div>
 
             @if (!string.IsNullOrEmpty(permissionsSuccessMessage))
             {
                 <div class="alert alert-success py-2 small mb-3">
                     <i class="bi bi-check-circle-fill me-2"></i>@permissionsSuccessMessage
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(permissionsErrorMessage))
+            {
+                <div class="alert alert-danger py-2 small mb-3">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>@permissionsErrorMessage
                 </div>
             }
 
@@ -282,6 +300,19 @@
                         </table>
                     </div>
                 }
+            </div>
+
+            <div class="d-flex justify-content-end mt-3">
+                <button class="btn btn-premium px-4" @onclick="SavePermissionsMatrix" disabled="@isSavingPermissions">
+                    @if (isSavingPermissions)
+                    {
+                        <span class="spinner-border spinner-border-sm me-2" role="status"></span><span>Guardando matriz...</span>
+                    }
+                    else
+                    {
+                        <i class="bi bi-save-fill me-2"></i><span>Guardar matriz de permisos</span>
+                    }
+                </button>
             </div>
 
         }
@@ -778,11 +809,13 @@
     // Success and error messages
     private string? userSuccessMessage;
     private string? permissionsSuccessMessage;
+    private string? permissionsErrorMessage;
     private string? userModalError;
     private string? roleModalError;
     private string? labSettingsSuccessMessage;
     private string? labSettingsErrorMessage;
     private bool isSavingLabSettings = false;
+    private bool isSavingPermissions = false;
 
     // Form Models
     private LaboratorySettingsModel labSettings = new();
@@ -881,6 +914,7 @@
         activeTab = tab;
         userSuccessMessage = null;
         permissionsSuccessMessage = null;
+        permissionsErrorMessage = null;
         labSettingsSuccessMessage = null;
         labSettingsErrorMessage = null;
     }
@@ -1207,6 +1241,10 @@
 
     private async Task SavePermissionsMatrix()
     {
+        permissionsSuccessMessage = null;
+        permissionsErrorMessage = null;
+        isSavingPermissions = true;
+
         try
         {
             var dtos = permissions.Select(p => new RolePermissionDto(
@@ -1227,7 +1265,11 @@
         }
         catch (Exception ex)
         {
-            permissionsSuccessMessage = $"Error al guardar la matriz: {ex.Message}";
+            permissionsErrorMessage = $"Error al guardar la matriz: {ex.Message}";
+        }
+        finally
+        {
+            isSavingPermissions = false;
         }
     }
 
