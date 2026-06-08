@@ -465,7 +465,7 @@ public class InventoryService : IInventoryService
                 continue;
             }
 
-            var status = MapSupplierDecisionToQualityStatus(evaluation.Decision);
+            var status = MapSupplierEvaluationToQualityStatus(evaluation);
             if (supplier.LastEvaluationDate != evaluation.EvaluationDate ||
                 supplier.NextEvaluationDate != evaluation.NextEvaluationDate ||
                 supplier.QualityStatus != status)
@@ -578,6 +578,26 @@ public class InventoryService : IInventoryService
         "No aprobado" => SupplierQualityStatus.NO_APTO,
         _ => SupplierQualityStatus.PENDIENTE
     };
+
+    private static SupplierQualityStatus MapSupplierEvaluationToQualityStatus(SupplierEvaluation evaluation)
+    {
+        if (evaluation.Decision == "Aprobado con restricciones" && evaluation.IsApproved)
+        {
+            return SupplierQualityStatus.EN_OBSERVACION;
+        }
+
+        if (!evaluation.IsApproved && evaluation.Decision == "Reevaluar")
+        {
+            return SupplierQualityStatus.EVALUACION_CADUCADA;
+        }
+
+        if (!evaluation.IsApproved)
+        {
+            return SupplierQualityStatus.NO_APTO;
+        }
+
+        return MapSupplierDecisionToQualityStatus(evaluation.Decision);
+    }
 
     private async Task LogAuditAsync(string action, string entityType, Guid? entityId, string details, Guid? userId, string username)
     {

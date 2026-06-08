@@ -104,7 +104,11 @@
                         <textarea class="form-control mb-2" rows="2" placeholder="Revisión de eficacia / aceptación" @bind="riskModel.EffectivenessReview"></textarea>
                         <label class="form-label small fw-semibold text-secondary mb-1">Fecha de revisión de eficacia</label>
                         <input type="date" class="form-control mb-3" @bind="riskModel.EffectivenessReviewDate" />
-                        <button class="btn btn-primary w-100" @onclick="CreateRisk">Registrar riesgo</button>
+                        <button class="btn btn-primary w-100" @onclick="SaveRisk">@(riskModel.Id == Guid.Empty ? "Registrar riesgo" : "Actualizar riesgo")</button>
+                        @if (riskModel.Id != Guid.Empty)
+                        {
+                            <button class="btn btn-outline-secondary w-100 mt-2" @onclick="CancelRiskEdit">Cancelar edicion</button>
+                        }
                     </div>
                 </div>
                 <div class="col-lg-8">
@@ -129,9 +133,12 @@
                                     }
                                 </td>
                                 <td>
-                                    <select class="form-select form-select-sm" value="@r.Status" @onchange="e => UpdateRiskStatus(r, e.Value?.ToString())">
-                                        @foreach (var v in Enum.GetValues<RiskStatus>()) { <option value="@v">@GetRiskStatusLabel(v)</option> }
-                                    </select>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => EditRisk(r)">Editar</button>
+                                        <select class="form-select form-select-sm" value="@r.Status" @onchange="e => UpdateRiskStatus(r, e.Value?.ToString())">
+                                            @foreach (var v in Enum.GetValues<RiskStatus>()) { <option value="@v">@GetRiskStatusLabel(v)</option> }
+                                        </select>
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -167,7 +174,11 @@
                         <textarea class="form-control mb-2" rows="2" placeholder="Conclusiones" @bind="auditModel.Conclusions"></textarea>
                         <label class="form-label small fw-semibold text-secondary mb-1">Seguimiento de acciones</label>
                         <textarea class="form-control mb-3" rows="2" placeholder="Seguimiento de acciones" @bind="auditModel.FollowUpActions"></textarea>
-                        <button class="btn btn-primary w-100" @onclick="CreateAudit">Crear plan</button>
+                        <button class="btn btn-primary w-100" @onclick="SaveAudit">@(auditModel.Id == Guid.Empty ? "Crear plan" : "Actualizar auditoria")</button>
+                        @if (auditModel.Id != Guid.Empty)
+                        {
+                            <button class="btn btn-outline-secondary w-100 mt-2" @onclick="CancelAuditEdit">Cancelar edicion</button>
+                        }
 
                         <hr class="my-4" />
 
@@ -223,9 +234,12 @@
                                     }
                                 </td>
                                 <td>
-                                    <select class="form-select form-select-sm" value="@a.Status" @onchange="e => UpdateAuditStatus(a, e.Value?.ToString())">
-                                        @foreach (var v in Enum.GetValues<AuditStatus>()) { <option value="@v">@GetAuditStatusLabel(v)</option> }
-                                    </select>
+                                    <div class="d-flex gap-2">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => EditAudit(a)">Editar</button>
+                                        <select class="form-select form-select-sm" value="@a.Status" @onchange="e => UpdateAuditStatus(a, e.Value?.ToString())">
+                                            @foreach (var v in Enum.GetValues<AuditStatus>()) { <option value="@v">@GetAuditStatusLabel(v)</option> }
+                                        </select>
+                                    </div>
                                 </td>
                             </tr>
                         }
@@ -309,7 +323,11 @@
                         <input type="date" class="form-control mb-2" @bind="reviewModel.ActionDueDate" />
                         <label class="form-label small fw-semibold text-secondary mb-1">Seguimiento / eficacia de acciones de dirección</label>
                         <textarea class="form-control mb-3" rows="2" placeholder="Seguimiento / eficacia de acciones de dirección" @bind="reviewModel.EffectivenessReview"></textarea>
-                        <button class="btn btn-primary w-100" @onclick="CreateReview">Registrar revisión</button>
+                        <button class="btn btn-primary w-100" @onclick="SaveReview">@(reviewModel.Id == Guid.Empty ? "Registrar revision" : "Actualizar revision")</button>
+                        @if (reviewModel.Id != Guid.Empty)
+                        {
+                            <button class="btn btn-outline-secondary w-100 mt-2" @onclick="CancelReviewEdit">Cancelar edicion</button>
+                        }
                     </div>
                 </div>
                 <div class="col-lg-8">
@@ -328,16 +346,16 @@
                                 <tr><td>Desviaciones EQA abiertas</td><td><span class="badge @GetWarningBadgeClass(openEqaDeviationCount)">@openEqaDeviationCount</span></td></tr>
                                 <tr><td>Auditorías planificadas/en curso</td><td><span class="badge bg-info text-dark">@plannedOrInProgressAuditCount</span></td></tr>
                                 <tr><td>Hallazgos NC sin vincular</td><td><span class="badge @GetWarningBadgeClass(pendingAuditNcFindingCount)">@pendingAuditNcFindingCount</span></td></tr>
-                                <tr><td>Proveedores no aprobados</td><td><span class="badge @GetWarningBadgeClass(failedSupplierEvaluationCount)">@failedSupplierEvaluationCount</span></td></tr>
+                                <tr><td>Proveedores con atencion</td><td><span class="badge @GetWarningBadgeClass(failedSupplierEvaluationCount)">@failedSupplierEvaluationCount</span></td></tr>
                             </tbody>
                         </TableCard>
                     </div>
                     <TableCard Title="Revisiones por dirección">
-                        <thead><tr><th>Fecha</th><th>Participantes</th><th>Resumen</th><th>Decisiones</th><th>Acciones</th><th>Responsable/Plazo</th></tr></thead>
+                        <thead><tr><th>Fecha</th><th>Participantes</th><th>Resumen</th><th>Decisiones</th><th>Acciones</th><th>Responsable/Plazo</th><th>Seguimiento</th></tr></thead>
                         <tbody>
                         @foreach (var r in reviews)
                         {
-                            <tr><td>@r.ReviewDate.ToString("dd/MM/yyyy")</td><td>@r.Participants</td><td>@r.Summary</td><td>@r.Decisions</td><td>@r.Actions</td><td>@r.ActionOwner @(r.ActionDueDate.HasValue ? $"({r.ActionDueDate.Value:dd/MM/yyyy})" : "")</td></tr>
+                            <tr><td>@r.ReviewDate.ToString("dd/MM/yyyy")</td><td>@r.Participants</td><td>@r.Summary</td><td>@r.Decisions</td><td>@r.Actions</td><td>@r.ActionOwner @(r.ActionDueDate.HasValue ? $"({r.ActionDueDate.Value:dd/MM/yyyy})" : "")</td><td><button class="btn btn-sm btn-outline-primary" @onclick="() => EditReview(r)">Editar</button></td></tr>
                         }
                         </tbody>
                     </TableCard>
@@ -389,12 +407,16 @@
                         <input class="form-control mb-2" placeholder="Responsable" @bind="indicatorModel.Responsible" />
                         <label class="form-label small fw-semibold text-secondary mb-1">Fecha límite</label>
                         <input type="date" class="form-control mb-3" @bind="indicatorModel.DueDate" />
-                        <button class="btn btn-primary w-100" @onclick="CreateQualityIndicator">Registrar indicador</button>
+                        <button class="btn btn-primary w-100" @onclick="SaveQualityIndicator">@(indicatorModel.Id == Guid.Empty ? "Registrar indicador" : "Actualizar indicador")</button>
+                        @if (indicatorModel.Id != Guid.Empty)
+                        {
+                            <button class="btn btn-outline-secondary w-100 mt-2" @onclick="CancelIndicatorEdit">Cancelar edicion</button>
+                        }
                     </div>
                 </div>
                 <div class="col-lg-8">
                     <TableCard Title="Indicadores de calidad">
-                        <thead><tr><th>Periodo</th><th>Indicador</th><th>Área</th><th>Objetivo</th><th>Resultado</th><th>Tendencia</th><th>Análisis / Acción</th></tr></thead>
+                        <thead><tr><th>Periodo</th><th>Indicador</th><th>Área</th><th>Objetivo</th><th>Resultado</th><th>Tendencia</th><th>Análisis / Acción</th><th>Seguimiento</th></tr></thead>
                         <tbody>
                         @foreach (var i in qualityIndicators)
                         {
@@ -412,6 +434,7 @@
                                         <small class="text-primary">@i.ActionPlan</small>
                                     }
                                 </td>
+                                <td><button class="btn btn-sm btn-outline-primary" @onclick="() => EditIndicator(i)">Editar</button></td>
                             </tr>
                         }
                         </tbody>
@@ -577,10 +600,10 @@
         indicatorOutOfTargetCount = qualityIndicators.Count(i => !i.MeetsTarget);
         plannedOrInProgressAuditCount = audits.Count(a => a.Status is AuditStatus.PLANNED or AuditStatus.IN_PROGRESS);
         pendingAuditNcFindingCount = auditFindings.Count(f => IsNonconformityFinding(f.Type) && !f.RelatedNCId.HasValue);
-        failedSupplierEvaluationCount = supplierEvaluations.Count(e => !e.IsApproved);
+        failedSupplierEvaluationCount = supplierEvaluations.Count(e => SupplierNeedsManagementAttention(e));
     }
 
-    private async Task CreateRisk()
+    private async Task SaveRisk()
     {
         if (string.IsNullOrWhiteSpace(riskModel.Title)) return;
         if (riskModel.ResidualLikelihood.HasValue != riskModel.ResidualImpact.HasValue)
@@ -593,13 +616,84 @@
             SetError("Los riesgos altos o críticos deben tener acción o mitigación planificada.");
             return;
         }
-        riskModel.Id = Guid.NewGuid();
-        riskModel.CreatedAt = DateTime.UtcNow;
-        riskModel.UpdatedAt = DateTime.UtcNow;
-        DbContext.Risks.Add(riskModel);
-        AddAuditLog("CREATE", "Risk", riskModel.Id, $"Riesgo registrado: {riskModel.Title}");
-        await SaveAndReload("Riesgo registrado.");
+        if (riskModel.Id == Guid.Empty)
+        {
+            riskModel.Id = Guid.NewGuid();
+            riskModel.CreatedAt = DateTime.UtcNow;
+            riskModel.UpdatedAt = DateTime.UtcNow;
+            DbContext.Risks.Add(riskModel);
+            AddAuditLog("CREATE", "Risk", riskModel.Id, $"Riesgo registrado: {riskModel.Title}");
+            await SaveAndReload("Riesgo registrado.");
+        }
+        else
+        {
+            var existing = await DbContext.Risks.FindAsync(riskModel.Id);
+            if (existing == null)
+            {
+                SetError("No se encontro el riesgo que se intenta actualizar.");
+                return;
+            }
+
+            CopyRiskFields(riskModel, existing);
+            existing.UpdatedAt = DateTime.UtcNow;
+            AddAuditLog("EDIT", "Risk", existing.Id, $"Riesgo actualizado: {existing.Title}");
+            await SaveAndReload("Riesgo actualizado.");
+        }
         riskModel = NewRisk();
+    }
+
+    private void EditRisk(Risk risk)
+    {
+        riskModel = new Risk
+        {
+            Id = risk.Id,
+            Title = risk.Title,
+            Description = risk.Description,
+            Category = risk.Category,
+            Likelihood = risk.Likelihood,
+            Impact = risk.Impact,
+            MitigationPlan = risk.MitigationPlan,
+            Opportunity = risk.Opportunity,
+            ActionPlan = risk.ActionPlan,
+            Responsible = risk.Responsible,
+            DueDate = risk.DueDate,
+            ResidualLikelihood = risk.ResidualLikelihood,
+            ResidualImpact = risk.ResidualImpact,
+            EffectivenessReview = risk.EffectivenessReview,
+            EffectivenessReviewDate = risk.EffectivenessReviewDate,
+            OwnerUserId = risk.OwnerUserId,
+            OwnerName = risk.OwnerName,
+            Status = risk.Status,
+            CreatedAt = risk.CreatedAt,
+            UpdatedAt = risk.UpdatedAt
+        };
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private void CancelRiskEdit()
+    {
+        riskModel = NewRisk();
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private static void CopyRiskFields(Risk source, Risk target)
+    {
+        target.Title = source.Title;
+        target.Description = source.Description;
+        target.Category = source.Category;
+        target.Likelihood = source.Likelihood;
+        target.Impact = source.Impact;
+        target.MitigationPlan = source.MitigationPlan;
+        target.Opportunity = source.Opportunity;
+        target.ActionPlan = source.ActionPlan;
+        target.Responsible = source.Responsible;
+        target.DueDate = source.DueDate;
+        target.ResidualLikelihood = source.ResidualLikelihood;
+        target.ResidualImpact = source.ResidualImpact;
+        target.EffectivenessReview = source.EffectivenessReview;
+        target.EffectivenessReviewDate = source.EffectivenessReviewDate;
     }
 
     private void OnResidualLikelihoodChanged(ChangeEventArgs e)
@@ -612,15 +706,76 @@
         riskModel.ResidualImpact = TryParseNullableEnum<RiskImpact>(e.Value?.ToString());
     }
 
-    private async Task CreateAudit()
+    private async Task SaveAudit()
     {
         if (string.IsNullOrWhiteSpace(auditModel.Title)) return;
-        auditModel.Id = Guid.NewGuid();
-        auditModel.Status = AuditStatus.PLANNED;
-        DbContext.AuditPlans.Add(auditModel);
-        AddAuditLog("CREATE", "AuditPlan", auditModel.Id, $"Plan de auditoría registrado: {auditModel.Title}");
-        await SaveAndReload("Plan de auditoría registrado.");
+        if (auditModel.Id == Guid.Empty)
+        {
+            auditModel.Id = Guid.NewGuid();
+            auditModel.Status = AuditStatus.PLANNED;
+            DbContext.AuditPlans.Add(auditModel);
+            AddAuditLog("CREATE", "AuditPlan", auditModel.Id, $"Plan de auditoría registrado: {auditModel.Title}");
+            await SaveAndReload("Plan de auditoría registrado.");
+        }
+        else
+        {
+            var existing = await DbContext.AuditPlans.FindAsync(auditModel.Id);
+            if (existing == null)
+            {
+                SetError("No se encontro la auditoria que se intenta actualizar.");
+                return;
+            }
+
+            CopyAuditFields(auditModel, existing);
+            AddAuditLog("EDIT", "AuditPlan", existing.Id, $"Plan de auditoría actualizado: {existing.Title}");
+            await SaveAndReload("Plan de auditoría actualizado.");
+        }
         auditModel = NewAudit();
+    }
+
+    private void EditAudit(AuditPlan audit)
+    {
+        auditModel = new AuditPlan
+        {
+            Id = audit.Id,
+            Title = audit.Title,
+            ScheduledDate = audit.ScheduledDate,
+            Scope = audit.Scope,
+            Objectives = audit.Objectives,
+            Criteria = audit.Criteria,
+            LeadAuditor = audit.LeadAuditor,
+            Status = audit.Status,
+            SummaryReport = audit.SummaryReport,
+            Conclusions = audit.Conclusions,
+            FollowUpActions = audit.FollowUpActions,
+            CompletedAt = audit.CompletedAt,
+            ReportDocumentId = audit.ReportDocumentId,
+            ChecklistJson = audit.ChecklistJson
+        };
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private void CancelAuditEdit()
+    {
+        auditModel = NewAudit();
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private static void CopyAuditFields(AuditPlan source, AuditPlan target)
+    {
+        target.Title = source.Title;
+        target.ScheduledDate = source.ScheduledDate;
+        target.Scope = source.Scope;
+        target.Objectives = source.Objectives;
+        target.Criteria = source.Criteria;
+        target.LeadAuditor = source.LeadAuditor;
+        target.SummaryReport = source.SummaryReport;
+        target.Conclusions = source.Conclusions;
+        target.FollowUpActions = source.FollowUpActions;
+        target.ChecklistJson = source.ChecklistJson;
+        target.ReportDocumentId = source.ReportDocumentId;
     }
 
     private async Task CreateAuditFinding()
@@ -703,7 +858,7 @@
         await SaveAndReload("Estado de auditoría actualizado.");
     }
 
-    private async Task CreateReview()
+    private async Task SaveReview()
     {
         if (string.IsNullOrWhiteSpace(reviewModel.Summary) ||
             string.IsNullOrWhiteSpace(reviewModel.Decisions) ||
@@ -712,11 +867,81 @@
             SetError("La revisión por dirección debe incluir resumen, decisiones y acciones acordadas.");
             return;
         }
-        reviewModel.Id = Guid.NewGuid();
-        DbContext.ManagementReviews.Add(reviewModel);
-        AddAuditLog("CREATE", "ManagementReview", reviewModel.Id, $"Revisión por dirección registrada: {reviewModel.ReviewDate:yyyy-MM-dd}");
-        await SaveAndReload("Revisión por dirección registrada.");
+        if (reviewModel.Id == Guid.Empty)
+        {
+            reviewModel.Id = Guid.NewGuid();
+            DbContext.ManagementReviews.Add(reviewModel);
+            AddAuditLog("CREATE", "ManagementReview", reviewModel.Id, $"Revisión por dirección registrada: {reviewModel.ReviewDate:yyyy-MM-dd}");
+            await SaveAndReload("Revisión por dirección registrada.");
+        }
+        else
+        {
+            var existing = await DbContext.ManagementReviews.FindAsync(reviewModel.Id);
+            if (existing == null)
+            {
+                SetError("No se encontro la revision que se intenta actualizar.");
+                return;
+            }
+
+            CopyReviewFields(reviewModel, existing);
+            AddAuditLog("EDIT", "ManagementReview", existing.Id, $"Revisión por dirección actualizada: {existing.ReviewDate:yyyy-MM-dd}");
+            await SaveAndReload("Revisión por dirección actualizada.");
+        }
+
         reviewModel = NewReview();
+    }
+
+    private void EditReview(ManagementReview review)
+    {
+        reviewModel = new ManagementReview
+        {
+            Id = review.Id,
+            ReviewDate = review.ReviewDate,
+            Participants = review.Participants,
+            Agenda = review.Agenda,
+            PreviousActionsReview = review.PreviousActionsReview,
+            ChangesAffectingQms = review.ChangesAffectingQms,
+            ResourceNeeds = review.ResourceNeeds,
+            QualityIndicatorsReview = review.QualityIndicatorsReview,
+            ExternalProviderPerformance = review.ExternalProviderPerformance,
+            Summary = review.Summary,
+            Decisions = review.Decisions,
+            ImprovementOpportunities = review.ImprovementOpportunities,
+            Actions = review.Actions,
+            ActionOwner = review.ActionOwner,
+            ActionDueDate = review.ActionDueDate,
+            EffectivenessReview = review.EffectivenessReview,
+            MinutesDocumentId = review.MinutesDocumentId
+        };
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private void CancelReviewEdit()
+    {
+        reviewModel = NewReview();
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private static void CopyReviewFields(ManagementReview source, ManagementReview target)
+    {
+        target.ReviewDate = source.ReviewDate;
+        target.Participants = source.Participants;
+        target.Agenda = source.Agenda;
+        target.PreviousActionsReview = source.PreviousActionsReview;
+        target.ChangesAffectingQms = source.ChangesAffectingQms;
+        target.ResourceNeeds = source.ResourceNeeds;
+        target.QualityIndicatorsReview = source.QualityIndicatorsReview;
+        target.ExternalProviderPerformance = source.ExternalProviderPerformance;
+        target.Summary = source.Summary;
+        target.Decisions = source.Decisions;
+        target.ImprovementOpportunities = source.ImprovementOpportunities;
+        target.Actions = source.Actions;
+        target.ActionOwner = source.ActionOwner;
+        target.ActionDueDate = source.ActionDueDate;
+        target.EffectivenessReview = source.EffectivenessReview;
+        target.MinutesDocumentId = source.MinutesDocumentId;
     }
 
     private async Task CreateSupplierEvaluation()
@@ -725,11 +950,31 @@
         ClampSupplierScores();
         supplierEvalModel.EvaluatorUserId = currentUserId;
         supplierEvalModel.EvaluatorName = string.IsNullOrWhiteSpace(supplierEvalModel.EvaluatorName) ? currentUserName : supplierEvalModel.EvaluatorName;
-        supplierEvalModel.Id = Guid.NewGuid();
-        supplierEvalModel.IsApproved = supplierEvalModel.AverageScore >= 3.5 && supplierEvalModel.Decision != "No aprobado" && supplierEvalModel.Decision != "Reevaluar";
-        if (!supplierEvalModel.IsApproved && (string.IsNullOrWhiteSpace(supplierEvalModel.CorrectiveActions) || !supplierEvalModel.NextEvaluationDate.HasValue))
+        if (!supplierEvalModel.NextEvaluationDate.HasValue)
         {
-            SetError("Si el proveedor no queda aprobado debe registrar acciones derivadas y próxima reevaluación.");
+            SetError("Toda evaluacion de proveedor debe incluir proxima fecha de evaluacion.");
+            return;
+        }
+
+        if (supplierEvalModel.AverageScore < 3.5 &&
+            (supplierEvalModel.Decision == "Aprobado" || supplierEvalModel.Decision == "Aprobado con restricciones"))
+        {
+            SetError("Una evaluacion con media inferior a 3,5 no puede quedar como aprobada. Seleccione Reevaluar o No aprobado.");
+            return;
+        }
+
+        if (supplierEvalModel.Decision == "Aprobado con restricciones" &&
+            string.IsNullOrWhiteSpace(supplierEvalModel.CorrectiveActions))
+        {
+            SetError("Un proveedor aprobado con restricciones debe incluir las restricciones o acciones derivadas.");
+            return;
+        }
+
+        supplierEvalModel.Id = Guid.NewGuid();
+        supplierEvalModel.IsApproved = SupplierEvaluationIsApproved(supplierEvalModel);
+        if (!supplierEvalModel.IsApproved && string.IsNullOrWhiteSpace(supplierEvalModel.CorrectiveActions))
+        {
+            SetError("Si el proveedor no queda aprobado debe registrar acciones derivadas.");
             return;
         }
         supplierEvalModel.CreatedAt = DateTime.UtcNow;
@@ -747,11 +992,11 @@
 
         supplier.LastEvaluationDate = evaluation.EvaluationDate;
         supplier.NextEvaluationDate = evaluation.NextEvaluationDate;
-        supplier.QualityStatus = MapSupplierDecisionToQualityStatus(evaluation.Decision);
+        supplier.QualityStatus = MapSupplierEvaluationToQualityStatus(evaluation);
         supplier.UpdatedAt = DateTime.UtcNow;
     }
 
-    private async Task CreateQualityIndicator()
+    private async Task SaveQualityIndicator()
     {
         if (string.IsNullOrWhiteSpace(indicatorModel.Name) || string.IsNullOrWhiteSpace(indicatorModel.Period))
         {
@@ -759,19 +1004,84 @@
             return;
         }
 
-        indicatorModel.Id = Guid.NewGuid();
         indicatorModel.MeetsTarget = IndicatorMeetsTarget(indicatorModel);
-        indicatorModel.CreatedAt = DateTime.UtcNow;
         if (!indicatorModel.MeetsTarget && string.IsNullOrWhiteSpace(indicatorModel.ActionPlan))
         {
             SetError("Los indicadores fuera de objetivo deben incluir análisis/acción.");
             return;
         }
 
-        DbContext.QualityIndicators.Add(indicatorModel);
-        AddAuditLog("CREATE", "QualityIndicator", indicatorModel.Id, $"Indicador registrado: {indicatorModel.Name} {indicatorModel.Period}");
-        await SaveAndReload("Indicador de calidad registrado.");
+        if (indicatorModel.Id == Guid.Empty)
+        {
+            indicatorModel.Id = Guid.NewGuid();
+            indicatorModel.CreatedAt = DateTime.UtcNow;
+            DbContext.QualityIndicators.Add(indicatorModel);
+            AddAuditLog("CREATE", "QualityIndicator", indicatorModel.Id, $"Indicador registrado: {indicatorModel.Name} {indicatorModel.Period}");
+            await SaveAndReload("Indicador de calidad registrado.");
+        }
+        else
+        {
+            var existing = await DbContext.QualityIndicators.FindAsync(indicatorModel.Id);
+            if (existing == null)
+            {
+                SetError("No se encontro el indicador que se intenta actualizar.");
+                return;
+            }
+
+            CopyIndicatorFields(indicatorModel, existing);
+            AddAuditLog("EDIT", "QualityIndicator", existing.Id, $"Indicador actualizado: {existing.Name} {existing.Period}");
+            await SaveAndReload("Indicador de calidad actualizado.");
+        }
+
         indicatorModel = NewQualityIndicator();
+    }
+
+    private void EditIndicator(QualityIndicator indicator)
+    {
+        indicatorModel = new QualityIndicator
+        {
+            Id = indicator.Id,
+            Name = indicator.Name,
+            Area = indicator.Area,
+            Period = indicator.Period,
+            TargetValue = indicator.TargetValue,
+            TargetRule = indicator.TargetRule,
+            ActualValue = indicator.ActualValue,
+            Unit = indicator.Unit,
+            Trend = indicator.Trend,
+            MeetsTarget = indicator.MeetsTarget,
+            Analysis = indicator.Analysis,
+            ActionPlan = indicator.ActionPlan,
+            Responsible = indicator.Responsible,
+            DueDate = indicator.DueDate,
+            CreatedAt = indicator.CreatedAt
+        };
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private void CancelIndicatorEdit()
+    {
+        indicatorModel = NewQualityIndicator();
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private static void CopyIndicatorFields(QualityIndicator source, QualityIndicator target)
+    {
+        target.Name = source.Name;
+        target.Area = source.Area;
+        target.Period = source.Period;
+        target.TargetValue = source.TargetValue;
+        target.TargetRule = source.TargetRule;
+        target.ActualValue = source.ActualValue;
+        target.Unit = source.Unit;
+        target.Trend = source.Trend;
+        target.MeetsTarget = source.MeetsTarget;
+        target.Analysis = source.Analysis;
+        target.ActionPlan = source.ActionPlan;
+        target.Responsible = source.Responsible;
+        target.DueDate = source.DueDate;
     }
 
     private void UseIsoInputsInReviewAgenda()
@@ -945,6 +1255,37 @@
     private static string GetWarningBadgeClass(int count)
     {
         return count > 0 ? "bg-warning text-dark" : "bg-success";
+    }
+
+    private static bool SupplierEvaluationIsApproved(SupplierEvaluation evaluation)
+    {
+        return evaluation.AverageScore >= 3.5 &&
+               (evaluation.Decision == "Aprobado" || evaluation.Decision == "Aprobado con restricciones");
+    }
+
+    private static bool SupplierNeedsManagementAttention(SupplierEvaluation evaluation)
+    {
+        return !evaluation.IsApproved || evaluation.Decision == "Aprobado con restricciones";
+    }
+
+    private static SupplierQualityStatus MapSupplierEvaluationToQualityStatus(SupplierEvaluation evaluation)
+    {
+        if (evaluation.Decision == "Aprobado con restricciones" && evaluation.IsApproved)
+        {
+            return SupplierQualityStatus.EN_OBSERVACION;
+        }
+
+        if (!evaluation.IsApproved && evaluation.Decision == "Reevaluar")
+        {
+            return SupplierQualityStatus.EVALUACION_CADUCADA;
+        }
+
+        if (!evaluation.IsApproved)
+        {
+            return SupplierQualityStatus.NO_APTO;
+        }
+
+        return MapSupplierDecisionToQualityStatus(evaluation.Decision);
     }
 
     private static SupplierQualityStatus MapSupplierDecisionToQualityStatus(string? decision) => decision switch
