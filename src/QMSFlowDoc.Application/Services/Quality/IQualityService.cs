@@ -13,7 +13,7 @@ public interface IQualityService
     Task<Nonconformity?> GetNCByIdAsync(Guid id);
     Task<Guid> CreateNCAsync(CreateNCRequest request, Guid? userId = null, string? userName = null);
     Task<bool> UpdateNCAsync(Guid id, CreateNCRequest request, Guid? userId = null, string? userName = null);
-    Task<bool> UpdateNCStatusAsync(Guid id, NCStatus status, Guid? userId = null, string? userName = null);
+    Task<bool> UpdateNCStatusAsync(Guid id, NCStatus status, Guid? userId = null, string? userName = null, string? confirmPassword = null);
     Task<bool> DeleteNCAsync(Guid id, Guid? userId = null, string? userName = null);
 
     // CAPA Actions

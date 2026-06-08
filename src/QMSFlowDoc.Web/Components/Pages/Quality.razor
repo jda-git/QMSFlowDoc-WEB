@@ -4,7 +4,9 @@
 @using QMSFlowDoc.Shared.Models
 @using QMSFlowDoc.Shared.DTOs
 @using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
 @using QMSFlowDoc.Application.Services.Identity
+@using QMSFlowDoc.Infrastructure.Persistence
 @using NCStatus = QMSFlowDoc.Shared.Models.NCStatus
 @using ComplaintStatus = QMSFlowDoc.Shared.Models.ComplaintStatus
 @using NCSeverity = QMSFlowDoc.Shared.Models.NCSeverity
@@ -17,6 +19,7 @@
 @using ClinicalImpact = QMSFlowDoc.Shared.Models.ClinicalImpact
 @attribute [Authorize]
 @inject IQualityService QualityService
+@inject QmsDbContext DbContext
 @inject IJSRuntime JS
 @inject IPermissionService PermissionService
 
@@ -164,6 +167,7 @@ else
                             <th>Origen</th>
                             <th>Paciente</th>
                             <th>Acciones</th>
+                            <th>Vencimiento</th>
                             <th>Fecha</th>
                             <th class="text-end pe-4">Opciones</th>
                         </tr>
@@ -209,6 +213,16 @@ else
                                     <span class="badge bg-secondary-subtle text-secondary rounded-pill">
                                         <i class="bi bi-clipboard-check me-1"></i>@nc.ActionCount
                                     </span>
+                                </td>
+                                <td class="small">
+                                    @if (nc.DueDate.HasValue)
+                                    {
+                                        <span class="@GetDueDateTextClass(nc.DueDate, nc.Status == NCStatus.CLOSED)">@nc.DueDate.Value.ToString("dd/MM/yyyy")</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted">-</span>
+                                    }
                                 </td>
                                 <td class="text-muted small">@nc.DetectedAt.ToString("dd/MM/yyyy")</td>
                                 <td class="text-end pe-4">
@@ -360,6 +374,19 @@ else
 
                     <!-- Details Grid -->
                     <div class="row g-3 mb-4">
+                        <div class="col-md-12">
+                            <div class="bg-light rounded-3 p-3">
+                                <small class="text-muted d-block mb-1">Vencimiento de NC</small>
+                                @if (selectedNC.DueDate.HasValue)
+                                {
+                                    <span class="fw-semibold @GetDueDateTextClass(selectedNC.DueDate, selectedNC.Status == NCStatus.CLOSED)">@selectedNC.DueDate.Value.ToString("dd/MM/yyyy")</span>
+                                }
+                                else
+                                {
+                                    <span class="fw-semibold text-muted">No definido</span>
+                                }
+                            </div>
+                        </div>
                         <div class="col-md-6">
                             <div class="bg-light rounded-3 p-3">
                                 <small class="text-muted d-block mb-1">Origen</small>
@@ -414,6 +441,8 @@ else
                                         <i class="bi bi-gear me-1"></i>En Acción
                                     </button>
                                 }
+                                <input type="password" class="form-control form-control-sm rounded-pill" style="max-width: 260px;"
+                                       placeholder="Contraseña para cerrar NC" @bind="ncClosePassword" autocomplete="current-password" />
                                 <button class="btn btn-sm btn-outline-success rounded-pill px-3" @onclick="() => ChangeNCStatus(NCStatus.CLOSED)">
                                     <i class="bi bi-check-lg me-1"></i>Cerrar NC
                                 </button>
@@ -491,6 +520,28 @@ else
                                     }
                                 </div>
                             }
+                        }
+                    </div>
+
+                    <div class="mt-4">
+                        <h6 class="fw-bold text-secondary mb-2"><i class="bi bi-clock-history me-2"></i>Historial del registro</h6>
+                        @if (!selectedHistory.Any())
+                        {
+                            <div class="text-muted small bg-light rounded-3 p-3">No hay eventos de auditoria registrados para esta no conformidad.</div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive border rounded-3">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead class="bg-light"><tr><th>Fecha</th><th>Usuario</th><th>Accion</th><th>Detalle</th></tr></thead>
+                                    <tbody>
+                                    @foreach (var log in selectedHistory)
+                                    {
+                                        <tr><td class="small">@log.Timestamp.ToString("dd/MM/yyyy HH:mm")</td><td class="small">@log.UserName</td><td class="small">@log.Action</td><td class="small">@log.Details</td></tr>
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
                         }
                     </div>
                 </div>
@@ -604,6 +655,28 @@ else
                             </div>
                         </div>
                     }
+
+                    <div class="mt-4">
+                        <h6 class="fw-bold text-secondary mb-2"><i class="bi bi-clock-history me-2"></i>Historial del registro</h6>
+                        @if (!selectedHistory.Any())
+                        {
+                            <div class="text-muted small bg-light rounded-3 p-3">No hay eventos de auditoria registrados para esta queja/reclamacion.</div>
+                        }
+                        else
+                        {
+                            <div class="table-responsive border rounded-3">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead class="bg-light"><tr><th>Fecha</th><th>Usuario</th><th>Accion</th><th>Detalle</th></tr></thead>
+                                    <tbody>
+                                    @foreach (var log in selectedHistory)
+                                    {
+                                        <tr><td class="small">@log.Timestamp.ToString("dd/MM/yyyy HH:mm")</td><td class="small">@log.UserName</td><td class="small">@log.Action</td><td class="small">@log.Details</td></tr>
+                                    }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                    </div>
                 </div>
             </div>
         </div>
@@ -627,6 +700,11 @@ else
                     <EditForm Model="ncModel" OnValidSubmit="SaveNC">
                         <DataAnnotationsValidator />
                         <div class="row g-3">
+                            <div class="col-md-6">
+                                <label class="form-label fw-semibold">Fecha objetivo de cierre</label>
+                                <InputDate class="form-control form-control-premium" @bind-Value="ncModel.DueDate" />
+                                <small class="text-muted">Se mostrara en calendario y seguimiento.</small>
+                            </div>
                             <div class="col-12">
                                 <label class="form-label fw-semibold">Título <span class="text-danger">*</span></label>
                                 <InputText class="form-control form-control-premium" @bind-Value="ncModel.Title" placeholder="Descripción breve de la no conformidad..." />
@@ -911,6 +989,7 @@ else
 
     private List<NCListDto> ncList = new();
     private List<ComplaintListDto> complaintList = new();
+    private List<QMSFlowDoc.Domain.Entities.AuditLog> selectedHistory = new();
 
     private Nonconformity? selectedNC;
     private Complaint? selectedComplaint;
@@ -928,6 +1007,7 @@ else
     private bool isEditingComplaint = false;
     private Guid? editingComplaintId;
     private string? ncErrorMessage;
+    private string? ncClosePassword;
     private string deleteConfirmMessage = "";
     private Func<Task>? deleteAction;
 
@@ -998,9 +1078,37 @@ else
     private async Task SelectNC(Guid id)
     {
         ncErrorMessage = null;
+        ncClosePassword = null;
         selectedNC = await QualityService.GetNCByIdAsync(id);
+        if (selectedNC != null)
+        {
+            await LoadNCVisibleHistory(selectedNC);
+        }
     }
-    private void CloseNCDetail() { selectedNC = null; ncErrorMessage = null; }
+    private void CloseNCDetail() { selectedNC = null; selectedHistory.Clear(); ncErrorMessage = null; ncClosePassword = null; }
+
+    private async Task LoadNCVisibleHistory(Nonconformity nc)
+    {
+        var actionIds = nc.Actions.Select(a => a.Id).ToList();
+        selectedHistory = await DbContext.AuditLogs.AsNoTracking()
+            .Where(log =>
+                (log.EntityType == "Nonconformity" && log.EntityId == nc.Id) ||
+                (log.EntityType == "CapaAction" && log.EntityId.HasValue && actionIds.Contains(log.EntityId.Value)))
+            .OrderByDescending(log => log.Timestamp)
+            .ThenByDescending(log => log.Id)
+            .Take(80)
+            .ToListAsync();
+    }
+
+    private async Task LoadVisibleHistory(string entityType, Guid entityId)
+    {
+        selectedHistory = await DbContext.AuditLogs.AsNoTracking()
+            .Where(log => log.EntityType == entityType && log.EntityId == entityId)
+            .OrderByDescending(log => log.Timestamp)
+            .ThenByDescending(log => log.Id)
+            .Take(80)
+            .ToListAsync();
+    }
 
     private void OpenCreateNCModal()
     {
@@ -1032,6 +1140,7 @@ else
             Origin = nc.Origin ?? "",
             ImpactPatient = nc.ImpactPatient,
             Containment = nc.Containment ?? "",
+            DueDate = nc.DueDate,
             RootCauseAnalysis = nc.RootCauseAnalysis ?? ""
         };
         ncErrorMessage = null;
@@ -1045,7 +1154,7 @@ else
         Enum.TryParse<NCSeverity>(ncModel.Severity, out var sev);
         var req = new CreateNCRequest(
             ncModel.Title, ncModel.Description ?? "", sev, null,
-            ncModel.ImpactPatient, ncModel.Containment, ncModel.Origin,
+            ncModel.ImpactPatient, ncModel.Containment, ncModel.DueDate, ncModel.Origin,
             ncModel.RootCauseAnalysis, currentUserId
         );
 
@@ -1053,7 +1162,10 @@ else
         {
             await QualityService.UpdateNCAsync(editingNCId.Value, req, currentUserId, currentUserName);
             if (selectedNC?.Id == editingNCId.Value)
+            {
                 selectedNC = await QualityService.GetNCByIdAsync(editingNCId.Value);
+                if (selectedNC != null) await LoadNCVisibleHistory(selectedNC);
+            }
         }
         else
         {
@@ -1070,8 +1182,14 @@ else
         ncErrorMessage = null;
         try
         {
-            await QualityService.UpdateNCStatusAsync(selectedNC.Id, status, currentUserId, currentUserName);
+            var confirmPassword = status == NCStatus.CLOSED ? ncClosePassword : null;
+            await QualityService.UpdateNCStatusAsync(selectedNC.Id, status, currentUserId, currentUserName, confirmPassword);
+            if (status == NCStatus.CLOSED)
+            {
+                ncClosePassword = string.Empty;
+            }
             selectedNC = await QualityService.GetNCByIdAsync(selectedNC.Id);
+            if (selectedNC != null) await LoadNCVisibleHistory(selectedNC);
             await LoadData();
         }
         catch (Exception ex)
@@ -1111,6 +1229,7 @@ else
         await QualityService.CreateCAPAAsync(req, currentUserId, currentUserName);
         showCAPAModal = false;
         selectedNC = await QualityService.GetNCByIdAsync(selectedNC.Id);
+        if (selectedNC != null) await LoadNCVisibleHistory(selectedNC);
         await LoadData();
     }
 
@@ -1127,14 +1246,22 @@ else
 
         await QualityService.CompleteCAPAAsync(completingCapaId, effectivenessText, currentUserId, currentUserName);
         showEffectivenessModal = false;
-        if (selectedNC != null) selectedNC = await QualityService.GetNCByIdAsync(selectedNC.Id);
+        if (selectedNC != null)
+        {
+            selectedNC = await QualityService.GetNCByIdAsync(selectedNC.Id);
+            if (selectedNC != null) await LoadNCVisibleHistory(selectedNC);
+        }
         await LoadData();
     }
 
     private async Task DeleteCAPAAction(Guid capaId)
     {
         await QualityService.DeleteCAPAAsync(capaId, currentUserId, currentUserName);
-        if (selectedNC != null) selectedNC = await QualityService.GetNCByIdAsync(selectedNC.Id);
+        if (selectedNC != null)
+        {
+            selectedNC = await QualityService.GetNCByIdAsync(selectedNC.Id);
+            if (selectedNC != null) await LoadNCVisibleHistory(selectedNC);
+        }
         await LoadData();
     }
 
@@ -1143,8 +1270,9 @@ else
     {
         ncErrorMessage = null;
         selectedComplaint = await QualityService.GetComplaintByIdAsync(id);
+        await LoadVisibleHistory("Complaint", id);
     }
-    private void CloseComplaintDetail() { selectedComplaint = null; ncErrorMessage = null; }
+    private void CloseComplaintDetail() { selectedComplaint = null; selectedHistory.Clear(); ncErrorMessage = null; }
 
     private void OpenCreateComplaintModal()
     {
@@ -1195,6 +1323,11 @@ else
         if (isEditingComplaint && editingComplaintId.HasValue)
         {
             await QualityService.UpdateComplaintAsync(editingComplaintId.Value, req, currentUserId, currentUserName);
+            if (selectedComplaint?.Id == editingComplaintId.Value)
+            {
+                selectedComplaint = await QualityService.GetComplaintByIdAsync(editingComplaintId.Value);
+                await LoadVisibleHistory("Complaint", editingComplaintId.Value);
+            }
         }
         else
         {
@@ -1212,6 +1345,7 @@ else
         {
             await QualityService.UpdateComplaintStatusAsync(selectedComplaint.Id, status, currentUserId, currentUserName);
             selectedComplaint = await QualityService.GetComplaintByIdAsync(selectedComplaint.Id);
+            if (selectedComplaint != null) await LoadVisibleHistory("Complaint", selectedComplaint.Id);
             await LoadData();
         }
         catch (Exception ex)
@@ -1252,6 +1386,15 @@ else
     private string GetClaimantLabel(ClaimantType t) => t switch { ClaimantType.PATIENT => "Paciente", ClaimantType.CLINICIAN => "Clínico", ClaimantType.STAFF => "Personal", ClaimantType.REGULATORY => "Regulatorio", ClaimantType.OTHER => "Otro", _ => t.ToString() };
 
     // ── Form Models ──
+    private string GetDueDateTextClass(DateTime? dueDate, bool isClosed)
+    {
+        if (!dueDate.HasValue || isClosed) return "text-muted";
+        var days = (dueDate.Value.Date - DateTime.Today).TotalDays;
+        if (days < 0) return "text-danger fw-bold";
+        if (days <= 30) return "text-danger";
+        return "text-muted";
+    }
+
     public class NCFormModel
     {
         public string Title { get; set; } = string.Empty;
@@ -1260,6 +1403,7 @@ else
         public string? Origin { get; set; }
         public bool ImpactPatient { get; set; }
         public string? Containment { get; set; }
+        public DateTime? DueDate { get; set; }
         public string? RootCauseAnalysis { get; set; }
     }
 
@@ -1301,7 +1445,11 @@ else
         {
             await QualityService.VerifyCAPAAsync(verifyingCapaId, verificationNotesText, currentUserId, currentUserName);
             showVerificationModal = false;
-            if (selectedNC != null) selectedNC = await QualityService.GetNCByIdAsync(selectedNC.Id);
+            if (selectedNC != null)
+            {
+                selectedNC = await QualityService.GetNCByIdAsync(selectedNC.Id);
+                if (selectedNC != null) await LoadNCVisibleHistory(selectedNC);
+            }
             await LoadData();
         }
         catch (Exception ex)

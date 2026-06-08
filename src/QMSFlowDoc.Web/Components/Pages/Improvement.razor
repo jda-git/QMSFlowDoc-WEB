@@ -1,17 +1,21 @@
-@page "/improvement"
+﻿@page "/improvement"
 @rendermode InteractiveServer
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.Identity
 @using System.Net
 @using System.Text
 @using QMSFlowDoc.Application.Services.Identity
 @using QMSFlowDoc.Application.Services.Quality
 @using QMSFlowDoc.Domain.Entities
+@using QMSFlowDoc.Domain.Identity
 @using QMSFlowDoc.Infrastructure.Persistence
 @using QMSFlowDoc.Shared.DTOs
 @inject QmsDbContext DbContext
 @inject IPermissionService PermissionService
 @inject IQualityService QualityService
 @inject IWebHostEnvironment WebHostEnvironment
+@inject IConfiguration Configuration
+@inject UserManager<ApplicationUser> UserManager
 
 <PageTitle>Mejora Continua ISO - QMSFlowDoc</PageTitle>
 
@@ -39,6 +43,15 @@
         @if (!string.IsNullOrWhiteSpace(errorMessage))
         {
             <div class="alert alert-danger py-2 small">@errorMessage</div>
+        }
+        @if (canApproveImprovement)
+        {
+            <div class="row mb-3">
+                <div class="col-lg-5">
+                    <label class="form-label small fw-semibold text-secondary mb-1">Firma electronica para aprobaciones</label>
+                    <input type="password" class="form-control" placeholder="Contraseña del usuario actual para aprobar/cerrar" @bind="approvalPassword" autocomplete="current-password" />
+                </div>
+            </div>
         }
 
         <ul class="nav nav-tabs custom-tabs mb-4 border-bottom-0">
@@ -132,7 +145,18 @@
                                 <td>@r.Title</td>
                                 <td>@r.Category</td>
                                 <td><span class="badge @GetRiskScoreBadgeClass(r.RiskScore)">@r.RiskScore - @GetRiskScoreLevel(r.RiskScore)</span></td>
-                                <td>@(r.ResidualRiskScore.HasValue ? $"{r.ResidualRiskScore} - {GetRiskScoreLevel(r.ResidualRiskScore.Value)}" : "Pendiente")</td>
+                                <td>
+                                    @if (r.ResidualRiskScore.HasValue)
+                                    {
+                                        <span class="badge @GetRiskScoreBadgeClass(r.ResidualRiskScore.Value)">
+                                            @r.ResidualRiskScore.Value - @GetRiskScoreLevel(r.ResidualRiskScore.Value)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary">Pendiente</span>
+                                    }
+                                </td>
                                 <td>@(r.Responsible ?? r.OwnerName)</td>
                                 <td>@(r.DueDate?.ToString("dd/MM/yyyy") ?? "-")</td>
                                 <td>@GetRiskStatusLabel(r.Status)</td>
@@ -578,7 +602,12 @@
                         <label class="form-label small fw-semibold text-secondary mb-1">Próxima evaluación</label>
                         <input type="date" class="form-control mb-2" @bind="supplierEvalModel.NextEvaluationDate" />
                         <label class="form-label small fw-semibold text-secondary mb-1">Observaciones</label>
-                        <textarea class="form-control mb-3" rows="2" placeholder="Observaciones" @bind="supplierEvalModel.Observations"></textarea>
+                        <textarea class="form-control mb-2" rows="2" placeholder="Observaciones" @bind="supplierEvalModel.Observations"></textarea>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Evidencia documental vinculada</label>
+                        <select class="form-select mb-3" value="@GetNullableGuidValue(supplierEvalModel.EvidenceDocumentId)" @onchange="e => supplierEvalModel.EvidenceDocumentId = ParseNullableGuid(e.Value?.ToString())">
+                            <option value="">Sin documento vinculado</option>
+                            @foreach (var d in evidenceDocuments) { <option value="@d.Id">@GetDocumentLabel(d)</option> }
+                        </select>
                         <button class="btn btn-primary w-100" @onclick="SaveSupplierEvaluation" disabled="@(supplierEvalModel.SupplierId == Guid.Empty)">@(supplierEvalModel.Id == Guid.Empty ? "Registrar evaluación" : "Actualizar evaluación")</button>
                         @if (supplierEvalModel.Id != Guid.Empty)
                         {
@@ -610,7 +639,22 @@
                         <tbody>
                         @foreach (var e in supplierEvaluations)
                         {
-                            <tr><td>@e.EvaluationDate.ToString("dd/MM/yyyy")</td><td>@e.Supplier?.Name</td><td>@e.EvaluatedPeriod</td><td>@e.Criticality</td><td>@e.AverageScore.ToString("N1")</td><td><span class="badge @GetSupplierDecisionBadgeClass(e.Decision)">@e.Decision</span></td><td>@(e.NextEvaluationDate?.ToString("dd/MM/yyyy") ?? "-")</td><td><button class="btn btn-sm btn-outline-primary" @onclick="() => EditSupplierEvaluation(e)">Editar</button></td></tr>
+                            <tr>
+                                <td>@e.EvaluationDate.ToString("dd/MM/yyyy")</td>
+                                <td>@e.Supplier?.Name</td>
+                                <td>@e.EvaluatedPeriod</td>
+                                <td>@e.Criticality</td>
+                                <td>@e.AverageScore.ToString("N1")</td>
+                                <td><span class="badge @GetSupplierDecisionBadgeClass(e.Decision)">@e.Decision</span></td>
+                                <td>@(e.NextEvaluationDate?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                <td>
+                                    <div><small>@GetDocumentLabel(e.EvidenceDocumentId)</small></div>
+                                    <div class="d-flex flex-wrap gap-2 mt-1">
+                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => EditSupplierEvaluation(e)">Editar</button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick='() => ShowHistory("SupplierEvaluation", e.Id, e.Supplier?.Name ?? "Proveedor")'>Historial</button>
+                                    </div>
+                                </td>
+                            </tr>
                         }
                         </tbody>
                     </TableCard>
@@ -664,7 +708,14 @@
                         </div>
                         @if (!string.IsNullOrWhiteSpace(lastExportUrl))
                         {
-                            <div class="alert alert-success mt-3 mb-0 py-2">Informe generado: <a href="@lastExportUrl" target="_blank">@lastExportTitle</a></div>
+                            <div class="alert alert-success mt-3 mb-0 py-2">
+                                Informe generado: <a href="@lastExportUrl" target="_blank">@lastExportTitle (HTML)</a>
+                                @if (!string.IsNullOrWhiteSpace(lastExportWordUrl))
+                                {
+                                    <span class="mx-1">|</span>
+                                    <a href="@lastExportWordUrl" target="_blank">Word</a>
+                                }
+                            </div>
                         }
                     </div>
 
@@ -695,11 +746,14 @@
 
     private bool isAuthorized;
     private bool isAdmin;
+    private bool canApproveImprovement;
     private string activeTab = "risks";
     private string? successMessage;
     private string? errorMessage;
     private string? lastExportUrl;
+    private string? lastExportWordUrl;
     private string? lastExportTitle;
+    private string? approvalPassword;
     private Guid? currentUserId;
     private string currentUserName = "Sistema";
 
@@ -750,8 +804,10 @@
             currentUserName = user.Identity?.Name ?? "Usuario";
             if (Guid.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var userId))
                 currentUserId = userId;
-            var hasQualityRole = (await PermissionService.GetPermissionsForUserAsync(user, "Quality")).CanRead;
+            var qualityPermissions = await PermissionService.GetPermissionsForUserAsync(user, "Quality");
+            var hasQualityRole = qualityPermissions.CanRead;
             isAdmin = user.IsInRole("Administrador");
+            canApproveImprovement = isAdmin || user.IsInRole("Director") || user.IsInRole("Responsable calidad") || qualityPermissions.CanApprove;
             isAuthorized = isAdmin || user.IsInRole("Director") || user.IsInRole("Responsable calidad") || hasQualityRole;
         }
 
@@ -1108,6 +1164,7 @@
             ImpactPatient: false,
             Containment: "Pendiente de definir tras análisis del hallazgo de auditoría.",
             Origin: "Auditoría interna",
+            DueDate: null,
             RootCauseAnalysis: null,
             DetectedByUserId: currentUserId
         );
@@ -1379,6 +1436,7 @@
             CorrectiveActions = evaluation.CorrectiveActions,
             NextEvaluationDate = evaluation.NextEvaluationDate,
             Observations = evaluation.Observations,
+            EvidenceDocumentId = evaluation.EvidenceDocumentId,
             AttachmentPath = evaluation.AttachmentPath,
             CreatedAt = evaluation.CreatedAt
         };
@@ -1411,6 +1469,7 @@
         target.CorrectiveActions = source.CorrectiveActions;
         target.NextEvaluationDate = source.NextEvaluationDate;
         target.Observations = source.Observations;
+        target.EvidenceDocumentId = source.EvidenceDocumentId;
         target.AttachmentPath = source.AttachmentPath;
     }
 
@@ -1625,16 +1684,17 @@
 
     private async Task ApproveRisk(Risk risk)
     {
-        if (!CanApproveFormalRecord()) return;
+        if (!await CanApproveFormalRecord()) return;
         risk.ApprovedByName = currentUserName;
         risk.ApprovedAt = DateTime.UtcNow;
         AddAuditLog("APPROVE", "Risk", risk.Id, $"Riesgo aprobado/cerrado formalmente: {risk.Title}");
+        approvalPassword = string.Empty;
         await SaveAndReload("Riesgo aprobado formalmente.");
     }
 
     private async Task ApproveAudit(AuditPlan audit)
     {
-        if (!CanApproveFormalRecord()) return;
+        if (!await CanApproveFormalRecord()) return;
         if (!AuditHasCompletionEvidence(audit))
         {
             SetError("La auditoria debe tener evidencia completa antes de aprobarse formalmente.");
@@ -1644,36 +1704,58 @@
         audit.ApprovedByName = currentUserName;
         audit.ApprovedAt = DateTime.UtcNow;
         AddAuditLog("APPROVE", "AuditPlan", audit.Id, $"Auditoria aprobada formalmente: {audit.Title}");
+        approvalPassword = string.Empty;
         await SaveAndReload("Auditoria aprobada formalmente.");
     }
 
     private async Task ApproveReview(ManagementReview review)
     {
-        if (!CanApproveFormalRecord()) return;
+        if (!await CanApproveFormalRecord()) return;
         review.ApprovedByName = currentUserName;
         review.ApprovedAt = DateTime.UtcNow;
         AddAuditLog("APPROVE", "ManagementReview", review.Id, $"Revision por direccion aprobada: {review.ReviewDate:yyyy-MM-dd}");
+        approvalPassword = string.Empty;
         await SaveAndReload("Revision por direccion aprobada formalmente.");
     }
 
     private async Task ApproveIndicator(QualityIndicator indicator)
     {
-        if (!CanApproveFormalRecord()) return;
+        if (!await CanApproveFormalRecord()) return;
         indicator.ApprovedByName = currentUserName;
         indicator.ApprovedAt = DateTime.UtcNow;
         AddAuditLog("APPROVE", "QualityIndicator", indicator.Id, $"Indicador aprobado/cerrado: {indicator.Name} {indicator.Period}");
+        approvalPassword = string.Empty;
         await SaveAndReload("Indicador aprobado formalmente.");
     }
 
-    private bool CanApproveFormalRecord()
+    private async Task<bool> CanApproveFormalRecord()
     {
-        if (isAdmin || currentUserName.Contains("calidad", StringComparison.OrdinalIgnoreCase))
+        if (!canApproveImprovement)
         {
-            return true;
+            SetError("Solo Administrador, Direccion, Responsable calidad o usuarios con permiso de aprobacion en Calidad pueden aprobar/cerrar formalmente registros de mejora.");
+            return false;
         }
 
-        SetError("Solo Administrador o Responsable calidad puede aprobar/cerrar formalmente registros de mejora.");
-        return false;
+        if (string.IsNullOrWhiteSpace(approvalPassword))
+        {
+            SetError("Introduzca su contraseña para firmar electronicamente la aprobacion/cierre.");
+            return false;
+        }
+
+        ApplicationUser? user = null;
+        if (currentUserId.HasValue)
+        {
+            user = await UserManager.FindByIdAsync(currentUserId.Value.ToString());
+        }
+
+        user ??= await UserManager.FindByNameAsync(currentUserName);
+        if (user == null || !await UserManager.CheckPasswordAsync(user, approvalPassword))
+        {
+            SetError("La contraseña de firma no es valida para el usuario actual.");
+            return false;
+        }
+
+        return true;
     }
 
     private async Task ShowHistory(string entityType, Guid entityId, string title)
@@ -1690,32 +1772,33 @@
 
     private async Task ExportRiskMatrixReport()
     {
-        var rows = risks.Select(r => $"<tr><td>{E(r.Title)}</td><td>{E(r.Category)}</td><td>{r.RiskScore} - {E(GetRiskScoreLevel(r.RiskScore))}</td><td>{(r.ResidualRiskScore.HasValue ? $"{r.ResidualRiskScore} - {E(GetRiskScoreLevel(r.ResidualRiskScore.Value))}" : "Pendiente")}</td><td>{E(GetRiskStatusLabel(r.Status))}</td><td>{E(r.Responsible)}</td></tr>");
-        await WriteExport("Matriz de riesgos", "matriz-riesgos", BuildHtmlReport("Matriz de riesgos", RiskMatrixCriteriaHtml() + TableHtml("Riesgo|Categoria|Score|Residual|Estado|Responsable", rows)));
+        var rows = risks.Select(r => $"<tr><td>{E(r.Title)}</td><td>{E(r.Category)}</td><td>{r.RiskScore} - {E(GetRiskScoreLevel(r.RiskScore))}</td><td>{(r.ResidualRiskScore.HasValue ? $"{r.ResidualRiskScore} - {E(GetRiskScoreLevel(r.ResidualRiskScore.Value))}" : "Pendiente")}</td><td>{E(GetRiskStatusLabel(r.Status))}</td><td>{E(r.Responsible)}</td><td>{r.DueDate:dd/MM/yyyy}</td><td>{E(GetRiskActionStatusLabel(r))}</td><td>{E(GetDocumentLabel(r.EvidenceDocumentId))}</td><td>{E(ApprovalText(r.ApprovedByName, r.ApprovedAt))}</td></tr>");
+        await WriteExport("Matriz de riesgos", "matriz-riesgos", BuildHtmlReport("Matriz de riesgos", RiskMatrixCriteriaHtml() + TableHtml("Riesgo|Categoria|Score|Residual|Estado|Responsable|Plazo|Accion/Eficacia|Evidencia|Aprobacion", rows)));
     }
 
     private async Task ExportAnnualAuditProgramReport()
     {
-        var rows = audits.Select(a => $"<tr><td>{a.ProgramYear}</td><td>{a.ScheduledDate:dd/MM/yyyy}</td><td>{E(a.Title)}</td><td>{E(a.Scope)}</td><td>{E(a.LeadAuditor)}</td><td>{E(a.InternalAuditors)}</td><td>{E(GetAuditStatusLabel(a.Status))}</td></tr>");
-        await WriteExport("Plan anual de auditorias", "plan-anual-auditorias", BuildHtmlReport("Plan anual de auditorias", TableHtml("Año|Fecha|Titulo|Alcance|Auditor lider|Equipo auditor|Estado", rows)));
+        var rows = audits.Select(a => $"<tr><td>{a.ProgramYear}</td><td>{a.ScheduledDate:dd/MM/yyyy}</td><td>{E(a.Title)}</td><td>{E(a.Scope)}</td><td>{E(a.Criteria)}</td><td>{E(a.LeadAuditor)}</td><td>{E(a.InternalAuditors)}</td><td>{E(a.AuditorIndependenceStatement)}</td><td>{E(GetAuditStatusLabel(a.Status))}</td><td>{E(GetDocumentLabel(a.ReportDocumentId))}</td><td>{E(ApprovalText(a.ApprovedByName, a.ApprovedAt))}</td></tr>");
+        await WriteExport("Plan anual de auditorias", "plan-anual-auditorias", BuildHtmlReport("Plan anual de auditorias", TableHtml("Anio|Fecha|Titulo|Alcance|Criterios|Auditor lider|Equipo auditor|Independencia|Estado|Informe/evidencia|Aprobacion", rows)));
     }
 
     private async Task ExportSupplierEvaluationReport()
     {
-        var rows = supplierEvaluations.Select(e => $"<tr><td>{e.EvaluationDate:dd/MM/yyyy}</td><td>{E(e.Supplier?.Name)}</td><td>{E(e.EvaluatedPeriod)}</td><td>{e.AverageScore:N1}</td><td>{E(e.Decision)}</td><td>{e.NextEvaluationDate:dd/MM/yyyy}</td><td>{E(e.CorrectiveActions)}</td></tr>");
-        await WriteExport("Evaluacion de proveedores", "evaluacion-proveedores", BuildHtmlReport("Evaluacion de proveedores", TableHtml("Fecha|Proveedor|Periodo|Media|Decision|Proxima evaluacion|Acciones", rows)));
+        var rows = supplierEvaluations.Select(e => $"<tr><td>{e.EvaluationDate:dd/MM/yyyy}</td><td>{E(e.Supplier?.Name)}</td><td>{E(e.EvaluatedPeriod)}</td><td>{E(e.Criticality)}</td><td>{e.ScorePlazos}</td><td>{e.ScoreCalidad}</td><td>{e.ScoreServicio}</td><td>{e.ScoreIncidencias}</td><td>{e.AverageScore:N1}</td><td>{E(e.Decision)}</td><td>{e.NextEvaluationDate:dd/MM/yyyy}</td><td>{E(GetDocumentLabel(e.EvidenceDocumentId))}</td><td>{E(e.CorrectiveActions)}</td></tr>");
+        await WriteExport("Evaluacion de proveedores", "evaluacion-proveedores", BuildHtmlReport("Evaluacion de proveedores", TableHtml("Fecha|Proveedor|Periodo|Criticidad|Plazos|Calidad|Servicio|Incidencias|Media|Decision|Proxima evaluacion|Evidencia|Acciones", rows)));
     }
 
     private async Task ExportIndicatorSummaryReport()
     {
-        var rows = qualityIndicators.Select(i => $"<tr><td>{E(i.Period)}</td><td>{E(i.Name)}</td><td>{E(i.Area)}</td><td>{i.TargetValue:N2} {E(i.Unit)}</td><td>{i.ActualValue:N2} {E(i.Unit)}</td><td>{E(i.Trend)}</td><td>{E(GetIndicatorActionStatusLabel(i))}</td></tr>");
-        await WriteExport("Indicadores de calidad", "indicadores-calidad", BuildHtmlReport("Indicadores de calidad", TableHtml("Periodo|Indicador|Area|Objetivo|Resultado|Tendencia|Seguimiento", rows)));
+        var rows = qualityIndicators.Select(i => $"<tr><td>{E(i.Period)}</td><td>{E(i.Name)}</td><td>{E(i.Area)}</td><td>{i.TargetValue:N2} {E(i.Unit)}</td><td>{i.ActualValue:N2} {E(i.Unit)}</td><td>{E(i.Trend)}</td><td>{E(GetIndicatorActionStatusLabel(i))}</td><td>{i.DueDate:dd/MM/yyyy}</td><td>{E(GetDocumentLabel(i.EvidenceDocumentId))}</td><td>{E(ApprovalText(i.ApprovedByName, i.ApprovedAt))}</td></tr>");
+        await WriteExport("Indicadores de calidad", "indicadores-calidad", BuildHtmlReport("Indicadores de calidad", TableHtml("Periodo|Indicador|Area|Objetivo|Resultado|Tendencia|Seguimiento|Plazo|Evidencia|Aprobacion", rows)));
     }
 
     private async Task ExportAuditReport(AuditPlan audit)
     {
         var findings = auditFindings.Where(f => f.AuditPlanId == audit.Id).Select(f => $"<tr><td>{E(GetFindingTypeLabel(f.Type))}</td><td>{E(f.IsoRequirement)}</td><td>{E(f.Description)}</td><td>{E(GetAuditFindingStatusLabel(f))}</td></tr>");
         var body = SectionHtml("Datos de auditoria", $"<p><b>Fecha:</b> {audit.ScheduledDate:dd/MM/yyyy}<br><b>Año:</b> {audit.ProgramYear}<br><b>Alcance:</b> {E(audit.Scope)}<br><b>Auditor lider:</b> {E(audit.LeadAuditor)}<br><b>Equipo auditor:</b> {E(audit.InternalAuditors)}<br><b>Independencia:</b> {E(audit.AuditorIndependenceStatement)}</p>") +
+                   SectionHtml("Control formal", $"<p><b>Informe/evidencia:</b> {E(GetDocumentLabel(audit.ReportDocumentId))}<br><b>Aprobacion:</b> {E(ApprovalText(audit.ApprovedByName, audit.ApprovedAt))}<br><b>Notas:</b> {Nl(audit.ApprovalNotes)}</p>") +
                    SectionHtml("Conclusiones", $"<p>{E(audit.Conclusions)}</p>") +
                    TableHtml("Tipo|ISO|Descripcion|Seguimiento", findings);
         await WriteExport($"Informe auditoria - {audit.Title}", "informe-auditoria", BuildHtmlReport($"Informe auditoria - {audit.Title}", body));
@@ -1724,27 +1807,52 @@
     private async Task ExportReviewReport(ManagementReview review)
     {
         var body = SectionHtml("Participantes y agenda", $"<p><b>Participantes:</b> {E(review.Participants)}<br><b>Agenda:</b><br>{Nl(review.Agenda)}</p>") +
-                   SectionHtml("Entradas y decisiones", $"<p><b>Resumen:</b> {E(review.Summary)}<br><b>Decisiones:</b> {E(review.Decisions)}<br><b>Acciones:</b> {E(review.Actions)}</p>");
+                   SectionHtml("Entradas y decisiones", $"<p><b>Resumen:</b> {E(review.Summary)}<br><b>Decisiones:</b> {E(review.Decisions)}<br><b>Acciones:</b> {E(review.Actions)}<br><b>Responsable/plazo:</b> {E(review.ActionOwner)} {review.ActionDueDate:dd/MM/yyyy}</p>") +
+                   SectionHtml("Control formal", $"<p><b>Acta/evidencia:</b> {E(GetDocumentLabel(review.MinutesDocumentId))}<br><b>Aprobacion:</b> {E(ApprovalText(review.ApprovedByName, review.ApprovedAt))}<br><b>Notas:</b> {Nl(review.ApprovalNotes)}</p>");
         await WriteExport($"Acta revision direccion - {review.ReviewDate:dd-MM-yyyy}", "acta-revision-direccion", BuildHtmlReport($"Acta revision direccion - {review.ReviewDate:dd/MM/yyyy}", body));
     }
 
     private async Task ExportIndicatorReport(QualityIndicator indicator)
     {
         var body = SectionHtml("Indicador", $"<p><b>Periodo:</b> {E(indicator.Period)}<br><b>Area:</b> {E(indicator.Area)}<br><b>Objetivo:</b> {indicator.TargetValue:N2} {E(indicator.Unit)}<br><b>Resultado:</b> {indicator.ActualValue:N2} {E(indicator.Unit)}<br><b>Seguimiento:</b> {E(GetIndicatorActionStatusLabel(indicator))}</p>") +
-                   SectionHtml("Analisis y eficacia", $"<p>{Nl(indicator.Analysis)}<br>{Nl(indicator.ActionPlan)}<br>{Nl(indicator.EffectivenessReview)}</p>");
+                   SectionHtml("Analisis y eficacia", $"<p>{Nl(indicator.Analysis)}<br>{Nl(indicator.ActionPlan)}<br>{Nl(indicator.EffectivenessReview)}</p>") +
+                   SectionHtml("Control formal", $"<p><b>Plazo:</b> {indicator.DueDate:dd/MM/yyyy}<br><b>Evidencia:</b> {E(GetDocumentLabel(indicator.EvidenceDocumentId))}<br><b>Aprobacion:</b> {E(ApprovalText(indicator.ApprovedByName, indicator.ApprovedAt))}<br><b>Notas:</b> {Nl(indicator.ApprovalNotes)}</p>");
         await WriteExport($"Informe indicador - {indicator.Name}", "informe-indicador", BuildHtmlReport($"Informe indicador - {indicator.Name}", body));
     }
 
     private async Task WriteExport(string title, string prefix, string html)
     {
-        var exportDir = Path.Combine(WebHostEnvironment.WebRootPath, "exports");
+        var exportDir = GetImprovementExportDirectory();
         Directory.CreateDirectory(exportDir);
-        var fileName = $"{prefix}-{DateTime.Now:yyyyMMdd-HHmmss}.html";
-        await File.WriteAllTextAsync(Path.Combine(exportDir, fileName), html, Encoding.UTF8);
+        var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+        var htmlFileName = $"{prefix}-{stamp}.html";
+        var wordFileName = $"{prefix}-{stamp}.doc";
+        await File.WriteAllTextAsync(Path.Combine(exportDir, htmlFileName), html, Encoding.UTF8);
+        await File.WriteAllTextAsync(Path.Combine(exportDir, wordFileName), html, Encoding.UTF8);
+        AddAuditLog("EXPORT", "ImprovementExport", Guid.Empty, $"Informe generado: {title} ({htmlFileName}, {wordFileName})");
+        await DbContext.SaveChangesAsync();
         lastExportTitle = title;
-        lastExportUrl = $"/exports/{fileName}";
+        lastExportUrl = $"/api/exports/{Uri.EscapeDataString(htmlFileName)}";
+        lastExportWordUrl = $"/api/exports/{Uri.EscapeDataString(wordFileName)}";
         successMessage = $"Informe generado: {title}.";
         errorMessage = null;
+    }
+
+    private string GetImprovementExportDirectory()
+    {
+        var configured = Configuration["ImprovementExports:Path"];
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured;
+        }
+
+        var documentRoot = Configuration["DocumentStorage:RootPath"];
+        if (!string.IsNullOrWhiteSpace(documentRoot))
+        {
+            return Path.Combine(documentRoot, "Exports");
+        }
+
+        return Path.Combine(WebHostEnvironment.ContentRootPath, "App_Data", "Exports");
     }
 
     private static string BuildHtmlReport(string title, string body)
@@ -1793,6 +1901,12 @@
 
     private static string E(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
     private static string Nl(string? value) => E(value).Replace("\r\n", "<br>").Replace("\n", "<br>");
+    private static string ApprovalText(string? approvedByName, DateTime? approvedAt)
+    {
+        return approvedAt.HasValue
+            ? $"Aprobado por {approvedByName ?? "Usuario"} el {approvedAt.Value:dd/MM/yyyy HH:mm}"
+            : "Sin aprobacion formal";
+    }
 
     private static int ParseSettingInt(Dictionary<string, string> settings, string key, int fallback)
     {

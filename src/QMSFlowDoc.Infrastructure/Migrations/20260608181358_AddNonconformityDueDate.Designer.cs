@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using QMSFlowDoc.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using QMSFlowDoc.Infrastructure.Persistence;
 namespace QMSFlowDoc.Infrastructure.Migrations
 {
     [DbContext(typeof(QmsDbContext))]
-    partial class QmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260608181358_AddNonconformityDueDate")]
+    partial class AddNonconformityDueDate
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.0");
@@ -3796,9 +3799,6 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                     b.Property<string>("EvaluatorUserId")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("EvidenceDocumentId")
-                        .HasColumnType("TEXT");
-
                     b.Property<bool>("IsApproved")
                         .HasColumnType("INTEGER");
 
@@ -3830,8 +3830,6 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("EvidenceDocumentId");
 
                     b.HasIndex("SupplierId");
 
@@ -4657,17 +4655,11 @@ namespace QMSFlowDoc.Infrastructure.Migrations
 
             modelBuilder.Entity("QMSFlowDoc.Domain.Entities.SupplierEvaluation", b =>
                 {
-                    b.HasOne("QMSFlowDoc.Domain.Entities.Document", "EvidenceDocument")
-                        .WithMany()
-                        .HasForeignKey("EvidenceDocumentId");
-
                     b.HasOne("QMSFlowDoc.Domain.Entities.Supplier", "Supplier")
                         .WithMany("Evaluations")
                         .HasForeignKey("SupplierId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
-
-                    b.Navigation("EvidenceDocument");
 
                     b.Navigation("Supplier");
                 });

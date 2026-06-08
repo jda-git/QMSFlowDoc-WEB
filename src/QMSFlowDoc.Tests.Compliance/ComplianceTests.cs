@@ -185,6 +185,43 @@ namespace QMSFlowDoc.Tests.Compliance
         }
 
         [Fact]
+        public async Task TestNC_CannotClose_WithoutElectronicSignature()
+        {
+            using var context = new QmsDbContext(_options);
+            var qualityService = new QualityService(context);
+
+            var ncId = Guid.NewGuid();
+            var nc = new Nonconformity
+            {
+                Id = ncId,
+                Title = "Test NC ready to close",
+                Description = "Description",
+                Severity = NCSeverity.LOW,
+                Status = NCStatus.ACTION,
+                RootCauseAnalysis = "Root cause documented",
+                Containment = "Containment documented",
+                IsDeleted = false
+            };
+            context.Nonconformities.Add(nc);
+
+            context.CapaActions.Add(new CapaAction
+            {
+                Id = Guid.NewGuid(),
+                NCId = ncId,
+                Description = "Verified CAPA",
+                Status = CAPAStatus.VERIFIED,
+                IsDeleted = false
+            });
+
+            await context.SaveChangesAsync();
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                qualityService.UpdateNCStatusAsync(ncId, SharedModels.NCStatus.CLOSED, Guid.NewGuid(), "QualityUser"));
+
+            Assert.Contains("contrase", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
         public async Task TestAuthorization_CannotGrant_WithoutAptoCompetency()
         {
             using var context = new QmsDbContext(_options);

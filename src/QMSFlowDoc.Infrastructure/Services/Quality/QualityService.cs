@@ -1,5 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using QMSFlowDoc.Application.Services.Quality;
+using Microsoft.AspNetCore.Identity;
+using QMSFlowDoc.Domain.Identity;
 using QMSFlowDoc.Infrastructure.Persistence;
 using QMSFlowDoc.Shared.DTOs;
 using DomainEntities = QMSFlowDoc.Domain.Entities;
@@ -14,10 +16,12 @@ namespace QMSFlowDoc.Infrastructure.Services.Quality;
 public class QualityService : IQualityService
 {
     private readonly QmsDbContext _context;
+    private readonly UserManager<ApplicationUser>? _userManager;
 
-    public QualityService(QmsDbContext context)
+    public QualityService(QmsDbContext context, UserManager<ApplicationUser>? userManager = null)
     {
         _context = context;
+        _userManager = userManager;
     }
 
     // ── Non-Conformities ─────────────────────────────────────────────
@@ -37,6 +41,7 @@ public class QualityService : IQualityService
                 Status = (SharedModels.NCStatus)n.Status,
                 ImpactPatient = n.ImpactPatient,
                 ActionCount = n.Actions.Count(a => !a.IsDeleted),
+                DueDate = n.DueDate,
                 Origin = n.Origin,
                 RootCauseAnalysis = n.RootCauseAnalysis
             })
@@ -93,6 +98,7 @@ public class QualityService : IQualityService
             Severity = (SharedModels.NCSeverity)nc.Severity,
             ImpactPatient = nc.ImpactPatient,
             Containment = nc.Containment,
+            DueDate = nc.DueDate,
             Origin = nc.Origin,
             RootCauseAnalysis = nc.RootCauseAnalysis,
             Status = (SharedModels.NCStatus)nc.Status,
@@ -116,6 +122,7 @@ public class QualityService : IQualityService
             Status = request.Status.HasValue ? (DomainEntities.NCStatus)request.Status.Value : DomainEntities.NCStatus.OPEN,
             ImpactPatient = request.ImpactPatient,
             Containment = request.Containment,
+            DueDate = request.DueDate,
             Origin = request.Origin,
             RootCauseAnalysis = request.RootCauseAnalysis,
             DetectedByUserId = request.DetectedByUserId,
@@ -142,6 +149,7 @@ public class QualityService : IQualityService
         nc.Severity = (DomainEntities.NCSeverity)request.Severity;
         nc.ImpactPatient = request.ImpactPatient;
         nc.Containment = request.Containment;
+        nc.DueDate = request.DueDate;
         nc.Origin = request.Origin;
         nc.RootCauseAnalysis = request.RootCauseAnalysis;
         nc.DetectedByUserId = request.DetectedByUserId;
@@ -150,8 +158,7 @@ public class QualityService : IQualityService
             var targetStatus = (DomainEntities.NCStatus)request.Status.Value;
             if (targetStatus == DomainEntities.NCStatus.CLOSED)
             {
-                await _context.Entry(nc).Collection(n => n.Actions).LoadAsync();
-                ValidateNCClosure(nc);
+                throw new InvalidOperationException("El cierre formal de una No Conformidad debe realizarse mediante cambio de estado con firma electronica.");
             }
             nc.Status = targetStatus;
         }
@@ -161,7 +168,7 @@ public class QualityService : IQualityService
         return await _context.SaveChangesAsync() > 0;
     }
 
-    public async Task<bool> UpdateNCStatusAsync(Guid id, SharedModels.NCStatus status, Guid? userId = null, string? userName = null)
+    public async Task<bool> UpdateNCStatusAsync(Guid id, SharedModels.NCStatus status, Guid? userId = null, string? userName = null, string? confirmPassword = null)
     {
         var nc = await _context.Nonconformities.FindAsync(id);
         if (nc == null || nc.IsDeleted) return false;
@@ -171,6 +178,7 @@ public class QualityService : IQualityService
         {
             await _context.Entry(nc).Collection(n => n.Actions).LoadAsync();
             ValidateNCClosure(nc);
+            await ValidateNCClosureSignatureAsync(userId, confirmPassword);
             nc.ClosedAt = DateTime.UtcNow;
             nc.ClosedByUserId = userId;
         }
@@ -185,6 +193,30 @@ public class QualityService : IQualityService
 
         await LogAuditAsync("STATUS_CHANGE", "Nonconformity", nc.Id, $"NC estado cambiado a {status}", userId, userName);
         return await _context.SaveChangesAsync() > 0;
+    }
+
+    private async Task ValidateNCClosureSignatureAsync(Guid? userId, string? confirmPassword)
+    {
+        if (!userId.HasValue)
+        {
+            throw new InvalidOperationException("Usuario no identificado para firmar el cierre de la No Conformidad.");
+        }
+
+        if (string.IsNullOrWhiteSpace(confirmPassword))
+        {
+            throw new InvalidOperationException("Se requiere la contraseña del usuario para firmar el cierre de la No Conformidad.");
+        }
+
+        if (_userManager == null)
+        {
+            throw new InvalidOperationException("No se pudo validar la firma electronica del cierre de la No Conformidad.");
+        }
+
+        var user = await _userManager.FindByIdAsync(userId.Value.ToString());
+        if (user == null || !await _userManager.CheckPasswordAsync(user, confirmPassword))
+        {
+            throw new InvalidOperationException("La contraseña de firma no es valida. No se pudo cerrar la No Conformidad.");
+        }
     }
 
     public async Task<bool> DeleteNCAsync(Guid id, Guid? userId = null, string? userName = null)

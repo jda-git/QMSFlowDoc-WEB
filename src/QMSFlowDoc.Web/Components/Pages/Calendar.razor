@@ -1,9 +1,14 @@
 @page "/calendar"
+@attribute [Authorize]
 @rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.EntityFrameworkCore
+@using QMSFlowDoc.Application.Services.Identity
 @using QMSFlowDoc.Domain.Entities
 @using QMSFlowDoc.Infrastructure.Persistence
 @inject QmsDbContext DbContext
+@inject IPermissionService PermissionService
 
 <PageTitle>Calendario - QMSFlowDoc</PageTitle>
 
@@ -23,6 +28,12 @@
     @if (isLoading)
     {
         <div class="alert alert-info">Cargando calendario...</div>
+    }
+    else if (!isAuthorized)
+    {
+        <div class="alert alert-danger rounded-3">
+            No dispone de permisos de lectura en ningun modulo con eventos de calendario.
+        </div>
     }
     else
     {
@@ -214,8 +225,10 @@
 
 @code {
     private static readonly string[] WeekdayNames = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
+    private static readonly PermissionSettingDto NoPermissions = new(false, false, false, false, false, false);
 
     private bool isLoading = true;
+    private bool isAuthorized = false;
     private DateTime visibleMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
     private DateTime selectedDate = DateTime.Today;
     private List<CalendarEvent> allEvents = new();
@@ -223,25 +236,55 @@
     private List<CalendarEvent> monthEvents = new();
     private List<CalendarEvent> selectedDayEvents = new();
     private List<CalendarDay> calendarDays = new();
+    private Dictionary<string, PermissionSettingDto> permissions = new();
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadEvents();
+        await LoadPermissions();
+        if (isAuthorized)
+        {
+            await LoadEvents();
+        }
+
         RebuildCalendar();
         isLoading = false;
+    }
+
+    private async Task LoadPermissions()
+    {
+        if (AuthStateTask == null)
+        {
+            return;
+        }
+
+        var user = (await AuthStateTask).User;
+        if (user.Identity?.IsAuthenticated != true)
+        {
+            return;
+        }
+
+        foreach (var section in new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment", "EQA" })
+        {
+            permissions[section] = await PermissionService.GetPermissionsForUserAsync(user, section);
+        }
+
+        isAuthorized = permissions.Values.Any(p => p.CanRead);
     }
 
     private async Task LoadEvents()
     {
         var events = new List<CalendarEvent>();
 
-        await AddDocumentEvents(events);
-        await AddInventoryEvents(events);
-        await AddStaffEvents(events);
-        await AddQualityEvents(events);
-        await AddEquipmentEvents(events);
-        await AddImprovementEvents(events);
-        await AddSupplierEvents(events);
+        if (CanRead("Documents")) await AddDocumentEvents(events);
+        if (CanRead("Inventory")) await AddInventoryEvents(events);
+        if (CanRead("Staff")) await AddStaffEvents(events);
+        if (CanRead("Quality")) await AddQualityEvents(events);
+        if (CanRead("Equipment")) await AddEquipmentEvents(events);
+        if (CanRead("Quality")) await AddImprovementEvents(events);
+        if (CanRead("Inventory") || CanRead("Quality")) await AddSupplierEvents(events);
 
         allEvents = events
             .Where(e => e.Date.Date >= DateTime.Today.AddYears(-1))
@@ -252,6 +295,11 @@
             .ToList();
 
         orderedEvents = allEvents.ToList();
+    }
+
+    private bool CanRead(string section)
+    {
+        return permissions.GetValueOrDefault(section, NoPermissions).CanRead;
     }
 
     private async Task AddDocumentEvents(List<CalendarEvent> events)
@@ -323,6 +371,13 @@
 
     private async Task AddQualityEvents(List<CalendarEvent> events)
     {
+        var nonconformities = await DbContext.Nonconformities.AsNoTracking()
+            .Where(n => !n.IsDeleted && n.DueDate.HasValue && n.Status != NCStatus.CLOSED)
+            .Select(n => new { n.Title, n.DueDate, n.Status })
+            .ToListAsync();
+
+        events.AddRange(nonconformities.Select(n => NewEvent("No conformidades", "Vencimiento de NC", n.DueDate!.Value, n.Title, n.Status.ToString())));
+
         var capas = await DbContext.CapaActions.AsNoTracking()
             .Include(c => c.Nonconformity)
             .Where(c => !c.IsDeleted && c.DueDate.HasValue && c.Status != CAPAStatus.DONE && c.Status != CAPAStatus.VERIFIED && c.Status != CAPAStatus.CANCELLED)

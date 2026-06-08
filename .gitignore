@@ -123,6 +123,7 @@ WindowsAppRuntimeInstall*.exe
 # Temporary files
 *.tmp
 *.temp
+qmsflowdoc-web.pid
 ~$*
 
 # Office temporary files

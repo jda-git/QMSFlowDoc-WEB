@@ -277,6 +277,7 @@ public sealed partial class ComplaintEditorView : Page
                      NCStatus.OPEN,
                      true, // Impact patient likely if it's a complaint
                      "",
+                     null,
                      "Queja Externa",
                      "",
                      null

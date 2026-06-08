@@ -131,6 +131,7 @@ public sealed partial class NCEditorView : Page
                 status,
                 ImpactPatientCheck.IsChecked ?? false,
                 ContainmentBox.Text,
+                null,
                 OriginCombo.Text, // ISO 15189
                 RcaBox.Text,  // ISO 15189
                 ((App)Application.Current).AuthService.CurrentUserId // DetectedByUserId

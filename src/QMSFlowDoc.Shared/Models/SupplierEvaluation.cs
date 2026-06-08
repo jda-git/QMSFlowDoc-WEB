@@ -29,6 +29,8 @@ public class SupplierEvaluation
     public string? CorrectiveActions { get; set; }
     public DateTime? NextEvaluationDate { get; set; }
     public string? Observations { get; set; }
+    public Guid? EvidenceDocumentId { get; set; }
+    public Document? EvidenceDocument { get; set; }
     public string? AttachmentPath { get; set; }
     
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

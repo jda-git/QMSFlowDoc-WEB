@@ -232,6 +232,8 @@ public class DocumentService : IDocumentService
             throw new InvalidOperationException($"Ya existe otro documento activo registrado con el código '{request.DocCode}'.");
         }
 
+        var previousReviewInterval = doc.ReviewIntervalMonths;
+
         doc.DocCode = request.DocCode;
         doc.Title = request.Title;
         doc.DocumentTypeId = request.DocumentTypeId;
@@ -243,7 +245,9 @@ public class DocumentService : IDocumentService
 
         // El estado no se puede actualizar directamente mediante metadatos, se ignora request.Status
         
-        if (doc.ReviewIntervalMonths.HasValue && doc.ReviewIntervalMonths.Value > 0)
+        if (doc.ReviewIntervalMonths.HasValue &&
+            doc.ReviewIntervalMonths.Value > 0 &&
+            doc.ReviewIntervalMonths != previousReviewInterval)
         {
             doc.NextReviewDue = DateTime.UtcNow.AddMonths(doc.ReviewIntervalMonths.Value);
         }
@@ -358,8 +362,12 @@ public class DocumentService : IDocumentService
         }
 
         var folderName = doc.Folder?.Name ?? "General";
-        using var stream = new MemoryStream(fileData);
-        var storageResult = await _storageService.SaveFileAsync(stream, fileName, $"Documentos\\{folderName}");
+        DocumentStorageResult? storageResult = null;
+
+        try
+        {
+            using var stream = new MemoryStream(fileData);
+            storageResult = await _storageService.SaveFileAsync(stream, fileName, $"Documentos\\{folderName}");
 
         int major = 1;
         int minor = 0;
@@ -404,7 +412,17 @@ public class DocumentService : IDocumentService
         doc.UpdatedAt = DateTime.UtcNow;
 
         await LogAuditAsync("UPLOAD", "Document", doc.Id, $"Cargada versión {newVersion.VersionLabel} del archivo: {fileName}", userId, username);
-        return await _context.SaveChangesAsync() > 0;
+            return await _context.SaveChangesAsync() > 0;
+        }
+        catch
+        {
+            if (storageResult != null)
+            {
+                await _storageService.ArchiveFileAsync(storageResult.RelativePath);
+            }
+
+            throw;
+        }
     }
 
     /// <inheritdoc/>

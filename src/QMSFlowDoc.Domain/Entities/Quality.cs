@@ -43,6 +43,7 @@ public class Nonconformity
     public NCSeverity Severity { get; set; } = NCSeverity.LOW;
     public bool ImpactPatient { get; set; } = false;
     public string? Containment { get; set; }
+    public DateTime? DueDate { get; set; }
     
     // ISO 15189 Req 5.1 & 5.2
     public string? Origin { get; set; } // Equipment, Reagent, Process, Document
