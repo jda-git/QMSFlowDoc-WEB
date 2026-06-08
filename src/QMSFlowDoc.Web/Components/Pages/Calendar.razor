@@ -1,0 +1,550 @@
+@page "/calendar"
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using QMSFlowDoc.Domain.Entities
+@using QMSFlowDoc.Infrastructure.Persistence
+@inject QmsDbContext DbContext
+
+<PageTitle>Calendario - QMSFlowDoc</PageTitle>
+
+<div class="container-fluid py-4 px-4">
+    <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <div>
+            <h2 class="fw-bold text-dark mb-1"><i class="bi bi-calendar3 text-primary me-2"></i>Calendario</h2>
+            <p class="text-muted mb-0">Vista transversal de revisiones, vencimientos, auditorias, mantenimientos, calibraciones y acciones pendientes.</p>
+        </div>
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-secondary" @onclick="PreviousMonth" title="Mes anterior"><i class="bi bi-chevron-left"></i></button>
+            <button class="btn btn-outline-primary" @onclick="GoToCurrentMonth">Hoy</button>
+            <button class="btn btn-outline-secondary" @onclick="NextMonth" title="Mes siguiente"><i class="bi bi-chevron-right"></i></button>
+        </div>
+    </div>
+
+    @if (isLoading)
+    {
+        <div class="alert alert-info">Cargando calendario...</div>
+    }
+    else
+    {
+        <div class="row g-4">
+            <div class="col-xl-7">
+                <div class="calendar-card bg-white border rounded-3 shadow-sm p-3">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h4 class="fw-bold mb-0 text-capitalize">@visibleMonth.ToString("MMMM yyyy")</h4>
+                        <span class="badge bg-primary">@monthEvents.Count evento(s) este mes</span>
+                    </div>
+
+                    <div class="calendar-grid calendar-weekdays text-uppercase small fw-bold text-muted">
+                        @foreach (var dayName in WeekdayNames)
+                        {
+                            <div>@dayName</div>
+                        }
+                    </div>
+
+                    <div class="calendar-grid">
+                        @foreach (var day in calendarDays)
+                        {
+                            var eventsForDay = EventsForDay(day.Date);
+                            <button type="button"
+                                    class="calendar-day @(day.IsCurrentMonth ? "" : "muted") @(IsSelectedDay(day.Date) ? "selected" : "") @(eventsForDay.Any() ? "has-events" : "")"
+                                    @onclick="() => SelectDay(day.Date)">
+                                <span class="day-number">@day.Date.Day</span>
+                                @if (eventsForDay.Any())
+                                {
+                                    <span class="event-count @GetDayEventClass(eventsForDay)">@eventsForDay.Count</span>
+                                }
+                            </button>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-xl-5">
+                <div class="bg-white border rounded-3 shadow-sm p-3 h-100">
+                    <h5 class="fw-bold mb-3">Eventos del @selectedDate.ToString("dd/MM/yyyy")</h5>
+                    @if (!selectedDayEvents.Any())
+                    {
+                        <p class="text-muted mb-0">No hay eventos registrados para este dia.</p>
+                    }
+                    else
+                    {
+                        <div class="vstack gap-2">
+                            @foreach (var item in selectedDayEvents)
+                            {
+                                <div class="event-row @GetEventUrgencyClass(item)">
+                                    <span class="badge @GetSectionBadgeClass(item.Section)">@item.Section</span>
+                                    <strong>@item.Title</strong>
+                                    <small class="text-muted">@item.Date.ToString("dd/MM/yyyy") - @item.DateLabel</small>
+                                    @if (!string.IsNullOrWhiteSpace(item.Detail))
+                                    {
+                                        <small>@item.Detail</small>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="mt-4 bg-white border rounded-3 shadow-sm p-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="fw-bold mb-0">Listado global ordenado</h5>
+                <span class="text-muted small">@orderedEvents.Count evento(s) con fecha</span>
+            </div>
+
+            @if (!orderedEvents.Any())
+            {
+                <div class="alert alert-success mb-0">No hay eventos pendientes con fecha.</div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Apartado</th>
+                                <th>Que es la fecha</th>
+                                <th>Evento</th>
+                                <th>Estado</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var item in orderedEvents)
+                            {
+                                <tr class="@GetEventUrgencyClass(item)">
+                                    <td class="fw-semibold">@item.Date.ToString("dd/MM/yyyy")</td>
+                                    <td><span class="badge @GetSectionBadgeClass(item.Section)">@item.Section</span></td>
+                                    <td>@item.DateLabel</td>
+                                    <td>
+                                        <div class="fw-semibold">@item.Title</div>
+                                        @if (!string.IsNullOrWhiteSpace(item.Detail))
+                                        {
+                                            <small class="text-muted">@item.Detail</small>
+                                        }
+                                    </td>
+                                    <td><span class="badge @GetDueBadgeClass(item)">@GetDueLabel(item)</span></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    }
+</div>
+
+<style>
+    .calendar-grid {
+        display: grid;
+        grid-template-columns: repeat(7, minmax(0, 1fr));
+        gap: .4rem;
+    }
+
+    .calendar-weekdays {
+        text-align: center;
+        margin-bottom: .4rem;
+    }
+
+    .calendar-day {
+        min-height: 5.25rem;
+        border: 1px solid #e5e7eb;
+        border-radius: .5rem;
+        background: #fff;
+        padding: .5rem;
+        text-align: left;
+        position: relative;
+    }
+
+    .calendar-day.muted {
+        color: #9ca3af;
+        background: #f9fafb;
+    }
+
+    .calendar-day.has-events {
+        border-color: #93c5fd;
+        background: #eff6ff;
+    }
+
+    .calendar-day.selected {
+        outline: 3px solid #2563eb;
+    }
+
+    .day-number {
+        font-weight: 700;
+    }
+
+    .event-count {
+        position: absolute;
+        right: .45rem;
+        bottom: .45rem;
+        min-width: 1.6rem;
+        height: 1.6rem;
+        border-radius: 999px;
+        color: white;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: .8rem;
+        font-weight: 700;
+    }
+
+    .event-count.normal {
+        background: #2563eb;
+    }
+
+    .event-count.urgent {
+        background: #dc2626;
+    }
+
+    .event-row {
+        border: 1px solid #e5e7eb;
+        border-radius: .5rem;
+        padding: .75rem;
+        display: grid;
+        gap: .25rem;
+    }
+
+    .event-urgent {
+        background: #fff1f2 !important;
+        color: #7f1d1d;
+    }
+</style>
+
+@code {
+    private static readonly string[] WeekdayNames = ["Lun", "Mar", "Mie", "Jue", "Vie", "Sab", "Dom"];
+
+    private bool isLoading = true;
+    private DateTime visibleMonth = new(DateTime.Today.Year, DateTime.Today.Month, 1);
+    private DateTime selectedDate = DateTime.Today;
+    private List<CalendarEvent> allEvents = new();
+    private List<CalendarEvent> orderedEvents = new();
+    private List<CalendarEvent> monthEvents = new();
+    private List<CalendarEvent> selectedDayEvents = new();
+    private List<CalendarDay> calendarDays = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEvents();
+        RebuildCalendar();
+        isLoading = false;
+    }
+
+    private async Task LoadEvents()
+    {
+        var events = new List<CalendarEvent>();
+
+        await AddDocumentEvents(events);
+        await AddInventoryEvents(events);
+        await AddStaffEvents(events);
+        await AddQualityEvents(events);
+        await AddEquipmentEvents(events);
+        await AddImprovementEvents(events);
+        await AddSupplierEvents(events);
+
+        allEvents = events
+            .Where(e => e.Date.Date >= DateTime.Today.AddYears(-1))
+            .OrderBy(e => e.Date.Date < DateTime.Today ? 0 : 1)
+            .ThenBy(e => e.Date.Date < DateTime.Today ? DateTime.Today - e.Date.Date : e.Date.Date - DateTime.Today)
+            .ThenBy(e => e.Section)
+            .ThenBy(e => e.Title)
+            .ToList();
+
+        orderedEvents = allEvents.ToList();
+    }
+
+    private async Task AddDocumentEvents(List<CalendarEvent> events)
+    {
+        var docs = await DbContext.Documents.AsNoTracking()
+            .Where(d => !d.IsDeleted && d.NextReviewDue.HasValue)
+            .Select(d => new { d.Title, d.DocCode, d.Status, d.NextReviewDue })
+            .ToListAsync();
+
+        events.AddRange(docs.Select(d => NewEvent("Gestor documental", "Revision de documento", d.NextReviewDue!.Value, DocumentTitle(d.DocCode, d.Title), d.Status.ToString())));
+    }
+
+    private async Task AddInventoryEvents(List<CalendarEvent> events)
+    {
+        var lots = await DbContext.ReagentLots.AsNoTracking()
+            .Select(l => new { l.ReagentId, l.LotNumber, l.ExpiryDate, l.OpenExpiryDate, l.Status })
+            .ToListAsync();
+
+        var reagentIds = lots.Select(l => l.ReagentId).Distinct().ToList();
+        var reagentNames = await DbContext.Reagents.AsNoTracking()
+            .Where(r => reagentIds.Contains(r.Id) && !r.IsDeleted)
+            .Select(r => new { r.Id, r.Name })
+            .ToDictionaryAsync(r => r.Id, r => r.Name);
+
+        events.AddRange(lots.Select(l =>
+        {
+            var reagentName = reagentNames.GetValueOrDefault(l.ReagentId, "Reactivo");
+            return NewEvent("Inventario", "Caducidad de lote", l.ExpiryDate, $"{reagentName} - lote {l.LotNumber}", l.Status.ToString());
+        }));
+        events.AddRange(lots.Where(l => l.OpenExpiryDate.HasValue).Select(l =>
+        {
+            var reagentName = reagentNames.GetValueOrDefault(l.ReagentId, "Reactivo");
+            return NewEvent("Inventario", "Caducidad tras apertura", l.OpenExpiryDate!.Value, $"{reagentName} - lote {l.LotNumber}", l.Status.ToString());
+        }));
+    }
+
+    private async Task AddStaffEvents(List<CalendarEvent> events)
+    {
+        var competencies = await DbContext.StaffCompetencyStatuses.AsNoTracking()
+            .Include(s => s.Staff).ThenInclude(s => s!.User)
+            .Include(s => s.Competency)
+            .Where(s => s.NextDueDate.HasValue)
+            .Select(s => new
+            {
+                StaffName = s.Staff != null && s.Staff.User != null ? s.Staff.User.FullName : "Personal",
+                CompetencyName = s.Competency != null ? s.Competency.Name : "Competencia",
+                s.NextDueDate,
+                s.CurrentStatus
+            })
+            .ToListAsync();
+
+        events.AddRange(competencies.Select(c => NewEvent("Personal", "Vencimiento de competencia", c.NextDueDate!.Value, $"{c.StaffName} - {c.CompetencyName}", c.CurrentStatus)));
+
+        var authorizations = await DbContext.StaffAuthorizations.AsNoTracking()
+            .Include(a => a.Staff).ThenInclude(s => s!.User)
+            .Include(a => a.Authorization)
+            .Where(a => a.ValidUntil.HasValue && a.Status != "REVOCADA")
+            .Select(a => new
+            {
+                StaffName = a.Staff != null && a.Staff.User != null ? a.Staff.User.FullName : "Personal",
+                AuthorizationName = a.Authorization != null ? a.Authorization.Name : "Autorizacion",
+                a.ValidUntil,
+                a.Status
+            })
+            .ToListAsync();
+
+        events.AddRange(authorizations.Select(a => NewEvent("Personal", "Vencimiento de autorizacion", a.ValidUntil!.Value, $"{a.StaffName} - {a.AuthorizationName}", a.Status)));
+    }
+
+    private async Task AddQualityEvents(List<CalendarEvent> events)
+    {
+        var capas = await DbContext.CapaActions.AsNoTracking()
+            .Include(c => c.Nonconformity)
+            .Where(c => !c.IsDeleted && c.DueDate.HasValue && c.Status != CAPAStatus.DONE && c.Status != CAPAStatus.VERIFIED && c.Status != CAPAStatus.CANCELLED)
+            .Select(c => new { c.DueDate, c.Description, NcTitle = c.Nonconformity != null ? c.Nonconformity.Title : "No conformidad", c.Status })
+            .ToListAsync();
+
+        events.AddRange(capas.Select(c => NewEvent("No conformidades", "Vencimiento accion CAPA/NC", c.DueDate!.Value, c.NcTitle, c.Description)));
+
+        var complaintActions = await DbContext.ComplaintActions.AsNoTracking()
+            .Where(a => a.DueDate.HasValue && a.Status != ActionStatus.DONE && a.Status != ActionStatus.VERIFIED)
+            .Select(a => new { a.ComplaintId, a.DueDate, a.Description, a.Status })
+            .ToListAsync();
+
+        var complaintIds = complaintActions.Select(a => a.ComplaintId).Distinct().ToList();
+        var complaintSources = await DbContext.Complaints.AsNoTracking()
+            .Where(c => complaintIds.Contains(c.Id) && !c.IsDeleted)
+            .Select(c => new { c.Id, c.Source })
+            .ToDictionaryAsync(c => c.Id, c => c.Source);
+
+        events.AddRange(complaintActions.Select(a => NewEvent("No conformidades", "Vencimiento accion de queja", a.DueDate!.Value, complaintSources.GetValueOrDefault(a.ComplaintId, "Reclamacion"), a.Description)));
+    }
+
+    private async Task AddEquipmentEvents(List<CalendarEvent> events)
+    {
+        var equipment = await DbContext.Equipments.AsNoTracking()
+            .Where(e => !e.IsDeleted && e.NextCalibration.HasValue)
+            .Select(e => new { e.Name, e.InternalId, e.NextCalibration, e.Status })
+            .ToListAsync();
+
+        events.AddRange(equipment.Select(e => NewEvent("Equipamiento", "Proxima calibracion", e.NextCalibration!.Value, EquipmentTitle(e.InternalId, e.Name), e.Status.ToString())));
+
+        var plans = await DbContext.MaintenancePlans.AsNoTracking()
+            .Where(p => p.IsActive && p.NextDueDate.HasValue)
+            .Select(p => new { p.EquipmentId, p.PlanName, p.NextDueDate })
+            .ToListAsync();
+
+        var equipmentIds = plans.Select(p => p.EquipmentId).Distinct().ToList();
+        var equipmentLookup = await DbContext.Equipments.AsNoTracking()
+            .Where(e => equipmentIds.Contains(e.Id) && !e.IsDeleted)
+            .Select(e => new { e.Id, e.Name, e.InternalId })
+            .ToDictionaryAsync(e => e.Id);
+
+        events.AddRange(plans.Select(p =>
+        {
+            var title = equipmentLookup.TryGetValue(p.EquipmentId, out var eq)
+                ? EquipmentTitle(eq.InternalId, eq.Name)
+                : "Equipo";
+            return NewEvent("Equipamiento", "Proximo mantenimiento", p.NextDueDate!.Value, $"{title} - {p.PlanName}");
+        }));
+
+        var calibrationPlans = await DbContext.EquipmentCalibrationPlans.AsNoTracking()
+            .Include(p => p.Equipment)
+            .Where(p => p.NextCalibrationDate.HasValue)
+            .Select(p => new { p.NextCalibrationDate, EquipmentName = p.Equipment != null ? p.Equipment.Name : "Equipo", EquipmentId = p.Equipment != null ? p.Equipment.InternalId : null, p.ControlledMagnitude })
+            .ToListAsync();
+
+        events.AddRange(calibrationPlans.Select(p => NewEvent("Equipamiento", "Proxima calibracion metrologica", p.NextCalibrationDate!.Value, $"{EquipmentTitle(p.EquipmentId, p.EquipmentName)} - {p.ControlledMagnitude}")));
+    }
+
+    private async Task AddImprovementEvents(List<CalendarEvent> events)
+    {
+        var risks = await DbContext.Risks.AsNoTracking()
+            .Where(r => r.DueDate.HasValue && r.Status == RiskStatus.ACTIVE)
+            .Select(r => new { r.Title, r.DueDate, r.Status })
+            .ToListAsync();
+        events.AddRange(risks.Select(r => NewEvent("Mejora continua", "Vencimiento de riesgo/accion", r.DueDate!.Value, r.Title, r.Status.ToString())));
+
+        var audits = await DbContext.AuditPlans.AsNoTracking()
+            .Where(a => a.Status != AuditStatus.COMPLETED && a.Status != AuditStatus.CANCELLED)
+            .Select(a => new { a.Title, a.ScheduledDate, a.Status })
+            .ToListAsync();
+        events.AddRange(audits.Select(a => NewEvent("Mejora continua", "Auditoria interna", a.ScheduledDate, a.Title, a.Status.ToString())));
+
+        var reviews = await DbContext.ManagementReviews.AsNoTracking()
+            .Select(r => new { r.ReviewDate, r.ActionDueDate, r.Summary, r.Actions, r.EffectivenessReview })
+            .ToListAsync();
+        events.AddRange(reviews.Select(r => NewEvent("Mejora continua", "Revision por direccion", r.ReviewDate, string.IsNullOrWhiteSpace(r.Summary) ? "Revision por direccion" : r.Summary)));
+        events.AddRange(reviews.Where(r => r.ActionDueDate.HasValue && !string.IsNullOrWhiteSpace(r.Actions) && string.IsNullOrWhiteSpace(r.EffectivenessReview))
+            .Select(r => NewEvent("Mejora continua", "Fecha limite accion direccion", r.ActionDueDate!.Value, r.Actions!)));
+
+        var indicators = await DbContext.QualityIndicators.AsNoTracking()
+            .Where(i => i.DueDate.HasValue && !i.MeetsTarget && string.IsNullOrWhiteSpace(i.EffectivenessReview))
+            .Select(i => new { i.Name, i.Period, i.DueDate, i.ActionPlan })
+            .ToListAsync();
+        events.AddRange(indicators.Select(i => NewEvent("Mejora continua", "Fecha limite indicador", i.DueDate!.Value, $"{i.Name} - {i.Period}", i.ActionPlan)));
+    }
+
+    private async Task AddSupplierEvents(List<CalendarEvent> events)
+    {
+        var suppliers = await DbContext.Suppliers.AsNoTracking()
+            .Where(s => !s.IsDeleted && s.NextEvaluationDate.HasValue)
+            .Select(s => new { s.Name, s.NextEvaluationDate, s.QualityStatus })
+            .ToListAsync();
+
+        events.AddRange(suppliers.Select(s => NewEvent("Proveedores", "Proxima reevaluacion", s.NextEvaluationDate!.Value, s.Name, s.QualityStatus.ToString())));
+    }
+
+    private void RebuildCalendar()
+    {
+        var firstOfMonth = new DateTime(visibleMonth.Year, visibleMonth.Month, 1);
+        var mondayOffset = ((int)firstOfMonth.DayOfWeek + 6) % 7;
+        var start = firstOfMonth.AddDays(-mondayOffset);
+        calendarDays = Enumerable.Range(0, 42)
+            .Select(i =>
+            {
+                var date = start.AddDays(i);
+                return new CalendarDay(date, date.Month == visibleMonth.Month);
+            })
+            .ToList();
+
+        monthEvents = allEvents
+            .Where(e => e.Date.Year == visibleMonth.Year && e.Date.Month == visibleMonth.Month)
+            .OrderBy(e => e.Date)
+            .ToList();
+        selectedDayEvents = EventsForDay(selectedDate);
+    }
+
+    private void PreviousMonth()
+    {
+        visibleMonth = visibleMonth.AddMonths(-1);
+        selectedDate = new DateTime(visibleMonth.Year, visibleMonth.Month, 1);
+        RebuildCalendar();
+    }
+
+    private void NextMonth()
+    {
+        visibleMonth = visibleMonth.AddMonths(1);
+        selectedDate = new DateTime(visibleMonth.Year, visibleMonth.Month, 1);
+        RebuildCalendar();
+    }
+
+    private void GoToCurrentMonth()
+    {
+        visibleMonth = new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        selectedDate = DateTime.Today;
+        RebuildCalendar();
+    }
+
+    private void SelectDay(DateTime date)
+    {
+        selectedDate = date.Date;
+        if (visibleMonth.Month != date.Month || visibleMonth.Year != date.Year)
+        {
+            visibleMonth = new DateTime(date.Year, date.Month, 1);
+        }
+
+        RebuildCalendar();
+    }
+
+    private List<CalendarEvent> EventsForDay(DateTime date)
+    {
+        return allEvents
+            .Where(e => e.Date.Date == date.Date)
+            .OrderBy(e => e.Section)
+            .ThenBy(e => e.Title)
+            .ToList();
+    }
+
+    private bool IsSelectedDay(DateTime date)
+    {
+        return selectedDate.Date == date.Date;
+    }
+
+    private static CalendarEvent NewEvent(string section, string dateLabel, DateTime date, string title, string? detail = null)
+    {
+        return new CalendarEvent(section, dateLabel, date.Date, title, detail);
+    }
+
+    private static string DocumentTitle(string? code, string title)
+    {
+        return string.IsNullOrWhiteSpace(code) ? title : $"{code} - {title}";
+    }
+
+    private static string EquipmentTitle(string? internalId, string name)
+    {
+        return string.IsNullOrWhiteSpace(internalId) ? name : $"{internalId} - {name}";
+    }
+
+    private static string GetDayEventClass(List<CalendarEvent> events)
+    {
+        return events.Any(IsUrgent) ? "urgent" : "normal";
+    }
+
+    private static string GetEventUrgencyClass(CalendarEvent item)
+    {
+        return IsUrgent(item) ? "event-urgent" : string.Empty;
+    }
+
+    private static bool IsUrgent(CalendarEvent item)
+    {
+        return item.Date.Date <= DateTime.Today.AddMonths(1);
+    }
+
+    private static string GetDueLabel(CalendarEvent item)
+    {
+        var days = (item.Date.Date - DateTime.Today).Days;
+        if (days.CompareTo(0) < 0) return $"Vencido hace {Math.Abs(days)} d";
+        if (days == 0) return "Hoy";
+        return $"En {days} d";
+    }
+
+    private static string GetDueBadgeClass(CalendarEvent item)
+    {
+        var days = (item.Date.Date - DateTime.Today).Days;
+        if (days.CompareTo(0) < 0) return "bg-danger";
+        if (days.CompareTo(30) <= 0) return "bg-danger";
+        if (days.CompareTo(60) <= 0) return "bg-warning text-dark";
+        return "bg-secondary";
+    }
+
+    private static string GetSectionBadgeClass(string section) => section switch
+    {
+        "Gestor documental" => "bg-primary",
+        "Inventario" => "bg-success",
+        "Personal" => "bg-info text-dark",
+        "No conformidades" => "bg-danger",
+        "Equipamiento" => "bg-dark",
+        "Mejora continua" => "bg-warning text-dark",
+        "Proveedores" => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    private sealed record CalendarEvent(string Section, string DateLabel, DateTime Date, string Title, string? Detail = null);
+    private sealed record CalendarDay(DateTime Date, bool IsCurrentMonth);
+}
