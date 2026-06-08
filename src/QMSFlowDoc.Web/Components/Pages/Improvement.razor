@@ -513,16 +513,20 @@
                         <input type="date" class="form-control mb-2" @bind="supplierEvalModel.NextEvaluationDate" />
                         <label class="form-label small fw-semibold text-secondary mb-1">Observaciones</label>
                         <textarea class="form-control mb-3" rows="2" placeholder="Observaciones" @bind="supplierEvalModel.Observations"></textarea>
-                        <button class="btn btn-primary w-100" @onclick="CreateSupplierEvaluation" disabled="@(supplierEvalModel.SupplierId == Guid.Empty)">Registrar evaluación</button>
+                        <button class="btn btn-primary w-100" @onclick="SaveSupplierEvaluation" disabled="@(supplierEvalModel.SupplierId == Guid.Empty)">@(supplierEvalModel.Id == Guid.Empty ? "Registrar evaluación" : "Actualizar evaluación")</button>
+                        @if (supplierEvalModel.Id != Guid.Empty)
+                        {
+                            <button class="btn btn-outline-secondary w-100 mt-2" @onclick="CancelSupplierEvaluationEdit">Cancelar edicion</button>
+                        }
                     </div>
                 </div>
                 <div class="col-lg-8">
                     <TableCard Title="Evaluaciones de proveedores">
-                        <thead><tr><th>Fecha</th><th>Proveedor</th><th>Periodo</th><th>Criticidad</th><th>Media</th><th>Decisión</th><th>Próxima</th></tr></thead>
+                        <thead><tr><th>Fecha</th><th>Proveedor</th><th>Periodo</th><th>Criticidad</th><th>Media</th><th>Decisión</th><th>Próxima</th><th>Acción</th></tr></thead>
                         <tbody>
                         @foreach (var e in supplierEvaluations)
                         {
-                            <tr><td>@e.EvaluationDate.ToString("dd/MM/yyyy")</td><td>@e.Supplier?.Name</td><td>@e.EvaluatedPeriod</td><td>@e.Criticality</td><td>@e.AverageScore.ToString("N1")</td><td><span class="badge @GetSupplierDecisionBadgeClass(e.Decision)">@e.Decision</span></td><td>@(e.NextEvaluationDate?.ToString("dd/MM/yyyy") ?? "-")</td></tr>
+                            <tr><td>@e.EvaluationDate.ToString("dd/MM/yyyy")</td><td>@e.Supplier?.Name</td><td>@e.EvaluatedPeriod</td><td>@e.Criticality</td><td>@e.AverageScore.ToString("N1")</td><td><span class="badge @GetSupplierDecisionBadgeClass(e.Decision)">@e.Decision</span></td><td>@(e.NextEvaluationDate?.ToString("dd/MM/yyyy") ?? "-")</td><td><button class="btn btn-sm btn-outline-primary" @onclick="() => EditSupplierEvaluation(e)">Editar</button></td></tr>
                         }
                         </tbody>
                     </TableCard>
@@ -1069,11 +1073,52 @@
         target.MinutesDocumentId = source.MinutesDocumentId;
     }
 
-    private async Task CreateSupplierEvaluation()
+    private async Task SaveSupplierEvaluation()
     {
-        if (supplierEvalModel.SupplierId == Guid.Empty) return;
+        if (!ValidateSupplierEvaluation())
+        {
+            return;
+        }
+
+        supplierEvalModel.IsApproved = SupplierEvaluationIsApproved(supplierEvalModel);
+
+        if (supplierEvalModel.Id == Guid.Empty)
+        {
+            supplierEvalModel.Id = Guid.NewGuid();
+            supplierEvalModel.CreatedAt = DateTime.UtcNow;
+            DbContext.SupplierEvaluations.Add(supplierEvalModel);
+            await SyncSupplierFromLatestEvaluation(supplierEvalModel.SupplierId, supplierEvalModel);
+            AddAuditLog("CREATE", "SupplierEvaluation", supplierEvalModel.Id, $"Evaluación de proveedor registrada. Media: {supplierEvalModel.AverageScore:N1}");
+            await SaveAndReload("Evaluación de proveedor registrada.");
+        }
+        else
+        {
+            var existing = await DbContext.SupplierEvaluations.FindAsync(supplierEvalModel.Id);
+            if (existing == null)
+            {
+                SetError("No se encontro la evaluacion de proveedor que se intenta actualizar.");
+                return;
+            }
+
+            var previousSupplierId = existing.SupplierId;
+            CopySupplierEvaluationFields(supplierEvalModel, existing);
+            await SyncSupplierFromLatestEvaluation(existing.SupplierId, existing);
+            if (previousSupplierId != existing.SupplierId)
+            {
+                await SyncSupplierFromLatestEvaluation(previousSupplierId, existing);
+            }
+            AddAuditLog("EDIT", "SupplierEvaluation", existing.Id, $"Evaluación de proveedor actualizada. Media: {existing.AverageScore:N1}");
+            await SaveAndReload("Evaluación de proveedor actualizada.");
+        }
+
+        supplierEvalModel = NewSupplierEvaluation();
+    }
+
+    private bool ValidateSupplierEvaluation()
+    {
+        if (supplierEvalModel.SupplierId == Guid.Empty) return false;
         ClampSupplierScores();
-        supplierEvalModel.EvaluatorUserId = currentUserId;
+        supplierEvalModel.EvaluatorUserId ??= currentUserId;
         supplierEvalModel.EvaluatorName = string.IsNullOrWhiteSpace(supplierEvalModel.EvaluatorName) ? currentUserName : supplierEvalModel.EvaluatorName;
         if (string.IsNullOrWhiteSpace(supplierEvalModel.EvaluatedPeriod) ||
             string.IsNullOrWhiteSpace(supplierEvalModel.Scope) ||
@@ -1081,52 +1126,129 @@
             string.IsNullOrWhiteSpace(supplierEvalModel.EvaluatorName))
         {
             SetError("La evaluacion de proveedor debe incluir periodo, alcance, criticidad y evaluador.");
-            return;
+            return false;
         }
 
         if (!supplierEvalModel.NextEvaluationDate.HasValue)
         {
             SetError("Toda evaluacion de proveedor debe incluir proxima fecha de evaluacion.");
-            return;
+            return false;
         }
 
         if (supplierEvalModel.AverageScore < 3.5 &&
             (supplierEvalModel.Decision == "Aprobado" || supplierEvalModel.Decision == "Aprobado con restricciones"))
         {
             SetError("Una evaluacion con media inferior a 3,5 no puede quedar como aprobada. Seleccione Reevaluar o No aprobado.");
-            return;
+            return false;
         }
 
         if (supplierEvalModel.Decision == "Aprobado con restricciones" &&
             string.IsNullOrWhiteSpace(supplierEvalModel.CorrectiveActions))
         {
             SetError("Un proveedor aprobado con restricciones debe incluir las restricciones o acciones derivadas.");
-            return;
+            return false;
         }
 
-        supplierEvalModel.Id = Guid.NewGuid();
         supplierEvalModel.IsApproved = SupplierEvaluationIsApproved(supplierEvalModel);
         if (!supplierEvalModel.IsApproved && string.IsNullOrWhiteSpace(supplierEvalModel.CorrectiveActions))
         {
             SetError("Si el proveedor no queda aprobado debe registrar acciones derivadas.");
-            return;
+            return false;
         }
-        supplierEvalModel.CreatedAt = DateTime.UtcNow;
-        DbContext.SupplierEvaluations.Add(supplierEvalModel);
-        await SyncSupplierFromEvaluation(supplierEvalModel);
-        AddAuditLog("CREATE", "SupplierEvaluation", supplierEvalModel.Id, $"Evaluación de proveedor registrada. Media: {supplierEvalModel.AverageScore:N1}");
-        await SaveAndReload("Evaluación de proveedor registrada.");
-        supplierEvalModel = NewSupplierEvaluation();
+
+        return true;
     }
 
-    private async Task SyncSupplierFromEvaluation(SupplierEvaluation evaluation)
+    private void EditSupplierEvaluation(SupplierEvaluation evaluation)
     {
-        var supplier = await DbContext.Suppliers.FirstOrDefaultAsync(s => s.Id == evaluation.SupplierId);
+        supplierEvalModel = new SupplierEvaluation
+        {
+            Id = evaluation.Id,
+            SupplierId = evaluation.SupplierId,
+            EvaluationDate = evaluation.EvaluationDate,
+            EvaluatorUserId = evaluation.EvaluatorUserId,
+            EvaluatorName = evaluation.EvaluatorName,
+            EvaluatedPeriod = evaluation.EvaluatedPeriod,
+            Criticality = evaluation.Criticality,
+            Scope = evaluation.Scope,
+            ScorePlazos = evaluation.ScorePlazos,
+            ScoreCalidad = evaluation.ScoreCalidad,
+            ScoreServicio = evaluation.ScoreServicio,
+            ScoreIncidencias = evaluation.ScoreIncidencias,
+            IsApproved = evaluation.IsApproved,
+            Decision = evaluation.Decision,
+            CorrectiveActions = evaluation.CorrectiveActions,
+            NextEvaluationDate = evaluation.NextEvaluationDate,
+            Observations = evaluation.Observations,
+            AttachmentPath = evaluation.AttachmentPath,
+            CreatedAt = evaluation.CreatedAt
+        };
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private void CancelSupplierEvaluationEdit()
+    {
+        supplierEvalModel = NewSupplierEvaluation();
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private static void CopySupplierEvaluationFields(SupplierEvaluation source, SupplierEvaluation target)
+    {
+        target.SupplierId = source.SupplierId;
+        target.EvaluationDate = source.EvaluationDate;
+        target.EvaluatorUserId = source.EvaluatorUserId;
+        target.EvaluatorName = source.EvaluatorName;
+        target.EvaluatedPeriod = source.EvaluatedPeriod;
+        target.Criticality = source.Criticality;
+        target.Scope = source.Scope;
+        target.ScorePlazos = source.ScorePlazos;
+        target.ScoreCalidad = source.ScoreCalidad;
+        target.ScoreServicio = source.ScoreServicio;
+        target.ScoreIncidencias = source.ScoreIncidencias;
+        target.IsApproved = source.IsApproved;
+        target.Decision = source.Decision;
+        target.CorrectiveActions = source.CorrectiveActions;
+        target.NextEvaluationDate = source.NextEvaluationDate;
+        target.Observations = source.Observations;
+        target.AttachmentPath = source.AttachmentPath;
+    }
+
+    private async Task SyncSupplierFromLatestEvaluation(Guid supplierId, SupplierEvaluation? pendingEvaluation = null)
+    {
+        var supplier = await DbContext.Suppliers.FirstOrDefaultAsync(s => s.Id == supplierId);
         if (supplier == null) return;
 
-        supplier.LastEvaluationDate = evaluation.EvaluationDate;
-        supplier.NextEvaluationDate = evaluation.NextEvaluationDate;
-        supplier.QualityStatus = MapSupplierEvaluationToQualityStatus(evaluation);
+        var evaluations = await DbContext.SupplierEvaluations
+            .AsNoTracking()
+            .Where(e => e.SupplierId == supplierId)
+            .Where(e => pendingEvaluation == null || e.Id != pendingEvaluation.Id)
+            .OrderByDescending(e => e.EvaluationDate)
+            .ThenByDescending(e => e.CreatedAt)
+            .ToListAsync();
+        if (pendingEvaluation != null && pendingEvaluation.SupplierId == supplierId)
+        {
+            evaluations.Add(pendingEvaluation);
+        }
+
+        var latestEvaluation = evaluations
+            .OrderByDescending(e => e.EvaluationDate)
+            .ThenByDescending(e => e.CreatedAt)
+            .FirstOrDefault();
+
+        if (latestEvaluation == null)
+        {
+            supplier.LastEvaluationDate = null;
+            supplier.NextEvaluationDate = null;
+            supplier.QualityStatus = SupplierQualityStatus.PENDIENTE;
+            supplier.UpdatedAt = DateTime.UtcNow;
+            return;
+        }
+
+        supplier.LastEvaluationDate = latestEvaluation.EvaluationDate;
+        supplier.NextEvaluationDate = latestEvaluation.NextEvaluationDate;
+        supplier.QualityStatus = MapSupplierEvaluationToQualityStatus(latestEvaluation);
         supplier.UpdatedAt = DateTime.UtcNow;
     }
 
