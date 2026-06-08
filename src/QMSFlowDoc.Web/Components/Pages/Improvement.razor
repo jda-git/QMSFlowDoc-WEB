@@ -126,6 +126,7 @@
                                 <td>@(r.DueDate?.ToString("dd/MM/yyyy") ?? "-")</td>
                                 <td>@GetRiskStatusLabel(r.Status)</td>
                                 <td>
+                                    <span class="badge @GetRiskActionBadgeClass(r) mb-1">@GetRiskActionStatusLabel(r)</span>
                                     <div>@(string.IsNullOrWhiteSpace(r.ActionPlan) ? r.MitigationPlan : r.ActionPlan)</div>
                                     @if (!string.IsNullOrWhiteSpace(r.EffectivenessReview))
                                     {
@@ -337,10 +338,13 @@
                             <tbody>
                                 <tr><td>Riesgos activos</td><td><span class="badge bg-secondary">@activeRiskCount</span></td></tr>
                                 <tr><td>Riesgos altos o críticos</td><td><span class="badge @GetWarningBadgeClass(highRiskCount)">@highRiskCount</span></td></tr>
+                                <tr><td>Acciones de riesgo vencidas</td><td><span class="badge @GetWarningBadgeClass(overdueRiskActionCount)">@overdueRiskActionCount</span></td></tr>
                                 <tr><td>No conformidades abiertas</td><td><span class="badge @GetWarningBadgeClass(openNcCount)">@openNcCount</span></td></tr>
                                 <tr><td>Reclamaciones abiertas</td><td><span class="badge @GetWarningBadgeClass(openComplaintCount)">@openComplaintCount</span></td></tr>
                                 <tr><td>CAPA abiertas / vencidas</td><td><span class="badge @GetWarningBadgeClass(openCapaCount)">@openCapaCount / @overdueCapaCount</span></td></tr>
                                 <tr><td>Indicadores fuera de objetivo</td><td><span class="badge @GetWarningBadgeClass(indicatorOutOfTargetCount)">@indicatorOutOfTargetCount</span></td></tr>
+                                <tr><td>Acciones de indicadores vencidas</td><td><span class="badge @GetWarningBadgeClass(overdueIndicatorActionCount)">@overdueIndicatorActionCount</span></td></tr>
+                                <tr><td>Acciones de direccion abiertas / vencidas</td><td><span class="badge @GetWarningBadgeClass(openReviewActionCount)">@openReviewActionCount / @overdueReviewActionCount</span></td></tr>
                                 <tr><td>Equipos no aptos o restringidos</td><td><span class="badge @GetWarningBadgeClass(equipmentAttentionCount)">@equipmentAttentionCount</span></td></tr>
                                 <tr><td>EQA con revisión o acción pendiente</td><td><span class="badge @GetWarningBadgeClass(eqaAttentionCount)">@eqaAttentionCount</span></td></tr>
                                 <tr><td>Desviaciones EQA abiertas</td><td><span class="badge @GetWarningBadgeClass(openEqaDeviationCount)">@openEqaDeviationCount</span></td></tr>
@@ -355,7 +359,7 @@
                         <tbody>
                         @foreach (var r in reviews)
                         {
-                            <tr><td>@r.ReviewDate.ToString("dd/MM/yyyy")</td><td>@r.Participants</td><td>@r.Summary</td><td>@r.Decisions</td><td>@r.Actions</td><td>@r.ActionOwner @(r.ActionDueDate.HasValue ? $"({r.ActionDueDate.Value:dd/MM/yyyy})" : "")</td><td><button class="btn btn-sm btn-outline-primary" @onclick="() => EditReview(r)">Editar</button></td></tr>
+                            <tr><td>@r.ReviewDate.ToString("dd/MM/yyyy")</td><td>@r.Participants</td><td>@r.Summary</td><td>@r.Decisions</td><td>@r.Actions</td><td>@r.ActionOwner @(r.ActionDueDate.HasValue ? $"({r.ActionDueDate.Value:dd/MM/yyyy})" : "")</td><td><span class="badge @GetReviewActionBadgeClass(r) me-2">@GetReviewActionStatusLabel(r)</span><button class="btn btn-sm btn-outline-primary" @onclick="() => EditReview(r)">Editar</button></td></tr>
                         }
                         </tbody>
                     </TableCard>
@@ -434,7 +438,7 @@
                                         <small class="text-primary">@i.ActionPlan</small>
                                     }
                                 </td>
-                                <td><button class="btn btn-sm btn-outline-primary" @onclick="() => EditIndicator(i)">Editar</button></td>
+                                <td><span class="badge @GetIndicatorActionBadgeClass(i) me-2">@GetIndicatorActionStatusLabel(i)</span><button class="btn btn-sm btn-outline-primary" @onclick="() => EditIndicator(i)">Editar</button></td>
                             </tr>
                         }
                         </tbody>
@@ -550,6 +554,10 @@
     private int plannedOrInProgressAuditCount;
     private int pendingAuditNcFindingCount;
     private int failedSupplierEvaluationCount;
+    private int overdueRiskActionCount;
+    private int overdueIndicatorActionCount;
+    private int openReviewActionCount;
+    private int overdueReviewActionCount;
 
     private Risk riskModel = NewRisk();
     private AuditPlan auditModel = NewAudit();
@@ -601,6 +609,10 @@
         plannedOrInProgressAuditCount = audits.Count(a => a.Status is AuditStatus.PLANNED or AuditStatus.IN_PROGRESS);
         pendingAuditNcFindingCount = auditFindings.Count(f => IsNonconformityFinding(f.Type) && !f.RelatedNCId.HasValue);
         failedSupplierEvaluationCount = supplierEvaluations.Count(e => SupplierNeedsManagementAttention(e));
+        overdueRiskActionCount = risks.Count(IsRiskActionOverdue);
+        overdueIndicatorActionCount = qualityIndicators.Count(IsIndicatorActionOverdue);
+        openReviewActionCount = reviews.Count(ReviewHasOpenAction);
+        overdueReviewActionCount = reviews.Count(IsReviewActionOverdue);
     }
 
     private async Task SaveRisk()
@@ -1321,6 +1333,105 @@
     private static string GetWarningBadgeClass(int count)
     {
         return count > 0 ? "bg-warning text-dark" : "bg-success";
+    }
+
+    private static bool IsRiskActionOverdue(Risk risk)
+    {
+        return risk.Status == RiskStatus.ACTIVE &&
+               risk.DueDate.HasValue &&
+               risk.DueDate.Value.Date < DateTime.Today;
+    }
+
+    private static string GetRiskActionStatusLabel(Risk risk)
+    {
+        if (risk.Status is RiskStatus.MITIGATED or RiskStatus.ACCEPTED or RiskStatus.RETIRED)
+        {
+            return "Cerrada";
+        }
+
+        if (IsRiskActionOverdue(risk))
+        {
+            return "Vencida";
+        }
+
+        return risk.DueDate.HasValue ? "Abierta" : "Sin plazo";
+    }
+
+    private static string GetRiskActionBadgeClass(Risk risk)
+    {
+        return GetRiskActionStatusLabel(risk) switch
+        {
+            "Cerrada" => "bg-success",
+            "Vencida" => "bg-danger",
+            "Abierta" => "bg-warning text-dark",
+            _ => "bg-secondary"
+        };
+    }
+
+    private static bool ReviewHasOpenAction(ManagementReview review)
+    {
+        return !string.IsNullOrWhiteSpace(review.Actions) &&
+               string.IsNullOrWhiteSpace(review.EffectivenessReview);
+    }
+
+    private static bool IsReviewActionOverdue(ManagementReview review)
+    {
+        return ReviewHasOpenAction(review) &&
+               review.ActionDueDate.HasValue &&
+               review.ActionDueDate.Value.Date < DateTime.Today;
+    }
+
+    private static string GetReviewActionStatusLabel(ManagementReview review)
+    {
+        if (string.IsNullOrWhiteSpace(review.Actions))
+        {
+            return "Sin acciones";
+        }
+
+        if (!string.IsNullOrWhiteSpace(review.EffectivenessReview))
+        {
+            return "Cerrada";
+        }
+
+        return IsReviewActionOverdue(review) ? "Vencida" : "Abierta";
+    }
+
+    private static string GetReviewActionBadgeClass(ManagementReview review)
+    {
+        return GetReviewActionStatusLabel(review) switch
+        {
+            "Cerrada" => "bg-success",
+            "Vencida" => "bg-danger",
+            "Abierta" => "bg-warning text-dark",
+            _ => "bg-secondary"
+        };
+    }
+
+    private static bool IsIndicatorActionOverdue(QualityIndicator indicator)
+    {
+        return !indicator.MeetsTarget &&
+               indicator.DueDate.HasValue &&
+               indicator.DueDate.Value.Date < DateTime.Today;
+    }
+
+    private static string GetIndicatorActionStatusLabel(QualityIndicator indicator)
+    {
+        if (indicator.MeetsTarget)
+        {
+            return "Cumple";
+        }
+
+        return IsIndicatorActionOverdue(indicator) ? "Vencida" : "En seguimiento";
+    }
+
+    private static string GetIndicatorActionBadgeClass(QualityIndicator indicator)
+    {
+        return GetIndicatorActionStatusLabel(indicator) switch
+        {
+            "Cumple" => "bg-success",
+            "Vencida" => "bg-danger",
+            _ => "bg-warning text-dark"
+        };
     }
 
     private static bool SupplierEvaluationIsApproved(SupplierEvaluation evaluation)
