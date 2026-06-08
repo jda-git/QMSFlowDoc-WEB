@@ -64,6 +64,8 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                     ActionPlan = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     Responsible = table.Column<string>(type: "nvarchar(max)", nullable: true),
                     DueDate = table.Column<DateTime>(type: "datetime2", nullable: true),
+                    EffectivenessReview = table.Column<string>(type: "nvarchar(max)", nullable: true),
+                    EffectivenessReviewDate = table.Column<DateTime>(type: "datetime2", nullable: true),
                     CreatedAt = table.Column<DateTime>(type: "datetime2", nullable: false)
                 },
                 constraints: table =>
