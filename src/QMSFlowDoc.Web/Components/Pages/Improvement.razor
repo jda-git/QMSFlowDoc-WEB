@@ -359,7 +359,8 @@
                                 <tr><td>Auditorías planificadas/en curso</td><td><span class="badge bg-info text-dark">@plannedOrInProgressAuditCount</span></td></tr>
                                 <tr><td>Hallazgos NC sin vincular</td><td><span class="badge @GetWarningBadgeClass(pendingAuditNcFindingCount)">@pendingAuditNcFindingCount</span></td></tr>
                                 <tr><td>Hallazgos de auditoría vencidos</td><td><span class="badge @GetWarningBadgeClass(overdueAuditFindingCount)">@overdueAuditFindingCount</span></td></tr>
-                                <tr><td>Proveedores con atencion</td><td><span class="badge @GetWarningBadgeClass(failedSupplierEvaluationCount)">@failedSupplierEvaluationCount</span></td></tr>
+                                <tr><td>Proveedores con atencion</td><td><span class="badge @GetWarningBadgeClass(supplierAttentionCount)">@supplierAttentionCount</span></td></tr>
+                                <tr><td>Reevaluaciones de proveedores vencidas</td><td><span class="badge @GetWarningBadgeClass(overdueSupplierReevaluationCount)">@overdueSupplierReevaluationCount</span></td></tr>
                             </tbody>
                         </TableCard>
                     </div>
@@ -521,6 +522,24 @@
                     </div>
                 </div>
                 <div class="col-lg-8">
+                    <div class="mb-4">
+                        <TableCard Title="Seguimiento de proveedores">
+                            <thead><tr><th>Proveedor</th><th>Tipo</th><th>Estado actual</th><th>Ultima evaluacion</th><th>Proxima evaluacion</th><th>Seguimiento</th></tr></thead>
+                            <tbody>
+                            @foreach (var supplier in suppliers)
+                            {
+                                <tr>
+                                    <td>@supplier.Name</td>
+                                    <td>@GetSupplierTypeLabel(supplier.Type)</td>
+                                    <td><span class="badge @GetSupplierStatusBadgeClass(supplier.QualityStatus)">@GetSupplierQualityStatusLabel(supplier.QualityStatus)</span></td>
+                                    <td>@(supplier.LastEvaluationDate?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                    <td>@(supplier.NextEvaluationDate?.ToString("dd/MM/yyyy") ?? "-")</td>
+                                    <td><span class="badge @GetSupplierMonitoringBadgeClass(supplier)">@GetSupplierMonitoringLabel(supplier)</span></td>
+                                </tr>
+                            }
+                            </tbody>
+                        </TableCard>
+                    </div>
                     <TableCard Title="Evaluaciones de proveedores">
                         <thead><tr><th>Fecha</th><th>Proveedor</th><th>Periodo</th><th>Criticidad</th><th>Media</th><th>Decisión</th><th>Próxima</th><th>Acción</th></tr></thead>
                         <tbody>
@@ -567,6 +586,8 @@
     private int plannedOrInProgressAuditCount;
     private int pendingAuditNcFindingCount;
     private int failedSupplierEvaluationCount;
+    private int supplierAttentionCount;
+    private int overdueSupplierReevaluationCount;
     private int overdueRiskActionCount;
     private int overdueIndicatorActionCount;
     private int openReviewActionCount;
@@ -623,6 +644,8 @@
         plannedOrInProgressAuditCount = audits.Count(a => a.Status is AuditStatus.PLANNED or AuditStatus.IN_PROGRESS);
         pendingAuditNcFindingCount = auditFindings.Count(f => IsNonconformityFinding(f.Type) && !f.RelatedNCId.HasValue);
         failedSupplierEvaluationCount = supplierEvaluations.Count(e => SupplierNeedsManagementAttention(e));
+        supplierAttentionCount = suppliers.Count(SupplierNeedsCurrentAttention);
+        overdueSupplierReevaluationCount = suppliers.Count(SupplierReevaluationIsOverdue);
         overdueRiskActionCount = risks.Count(IsRiskActionOverdue);
         overdueIndicatorActionCount = qualityIndicators.Count(IsIndicatorActionOverdue);
         openReviewActionCount = reviews.Count(ReviewHasOpenAction);
@@ -1424,7 +1447,7 @@
             $"- Equipos no aptos o restringidos: {equipmentAttentionCount}.",
             $"- EQA con revisión/acción pendiente: {eqaAttentionCount}; desviaciones EQA abiertas: {openEqaDeviationCount}.",
             $"- Auditorías planificadas/en curso: {plannedOrInProgressAuditCount}; hallazgos NC sin vincular: {pendingAuditNcFindingCount}; hallazgos vencidos: {overdueAuditFindingCount}.",
-            $"- Evaluaciones de proveedores no aprobadas: {failedSupplierEvaluationCount}.",
+            $"- Evaluaciones de proveedores no aprobadas: {failedSupplierEvaluationCount}; proveedores con atencion actual: {supplierAttentionCount}; reevaluaciones vencidas: {overdueSupplierReevaluationCount}.",
             "- Revisión de acciones, recursos, cambios que afectan al sistema de gestión y oportunidades de mejora.");
     }
 
@@ -1677,6 +1700,86 @@
     {
         return !evaluation.IsApproved || evaluation.Decision == "Aprobado con restricciones";
     }
+
+    private static bool SupplierReevaluationIsOverdue(Supplier supplier)
+    {
+        return !supplier.IsDeleted &&
+               supplier.NextEvaluationDate.HasValue &&
+               supplier.NextEvaluationDate.Value.Date < DateTime.Today;
+    }
+
+    private static bool SupplierNeedsCurrentAttention(Supplier supplier)
+    {
+        return !supplier.IsDeleted &&
+               (SupplierReevaluationIsOverdue(supplier) ||
+                supplier.QualityStatus is SupplierQualityStatus.PENDIENTE
+                    or SupplierQualityStatus.NO_APTO
+                    or SupplierQualityStatus.EN_OBSERVACION
+                    or SupplierQualityStatus.EVALUACION_CADUCADA);
+    }
+
+    private static string GetSupplierMonitoringLabel(Supplier supplier)
+    {
+        if (SupplierReevaluationIsOverdue(supplier))
+        {
+            return "Reevaluacion vencida";
+        }
+
+        return supplier.QualityStatus switch
+        {
+            SupplierQualityStatus.APTO => "Al dia",
+            SupplierQualityStatus.PENDIENTE => "Pendiente de evaluar",
+            SupplierQualityStatus.EN_OBSERVACION => "Con restricciones",
+            SupplierQualityStatus.EVALUACION_CADUCADA => "Reevaluar",
+            SupplierQualityStatus.NO_APTO => "No aprobado",
+            _ => supplier.QualityStatus.ToString()
+        };
+    }
+
+    private static string GetSupplierMonitoringBadgeClass(Supplier supplier)
+    {
+        if (SupplierReevaluationIsOverdue(supplier) || supplier.QualityStatus == SupplierQualityStatus.NO_APTO)
+        {
+            return "bg-danger";
+        }
+
+        return supplier.QualityStatus switch
+        {
+            SupplierQualityStatus.APTO => "bg-success",
+            SupplierQualityStatus.PENDIENTE => "bg-secondary",
+            SupplierQualityStatus.EN_OBSERVACION => "bg-warning text-dark",
+            SupplierQualityStatus.EVALUACION_CADUCADA => "bg-warning text-dark",
+            _ => "bg-secondary"
+        };
+    }
+
+    private static string GetSupplierQualityStatusLabel(SupplierQualityStatus status) => status switch
+    {
+        SupplierQualityStatus.PENDIENTE => "Pendiente de evaluacion",
+        SupplierQualityStatus.APTO => "Aprobado",
+        SupplierQualityStatus.NO_APTO => "No aprobado",
+        SupplierQualityStatus.EN_OBSERVACION => "Aprobado con restricciones",
+        SupplierQualityStatus.EVALUACION_CADUCADA => "Reevaluar",
+        _ => status.ToString()
+    };
+
+    private static string GetSupplierStatusBadgeClass(SupplierQualityStatus status) => status switch
+    {
+        SupplierQualityStatus.APTO => "bg-success",
+        SupplierQualityStatus.PENDIENTE => "bg-secondary",
+        SupplierQualityStatus.EN_OBSERVACION => "bg-warning text-dark",
+        SupplierQualityStatus.EVALUACION_CADUCADA => "bg-warning text-dark",
+        SupplierQualityStatus.NO_APTO => "bg-danger",
+        _ => "bg-secondary"
+    };
+
+    private static string GetSupplierTypeLabel(SupplierType type) => type switch
+    {
+        SupplierType.SUMINISTROS_REACTIVOS => "Suministros / reactivos",
+        SupplierType.SERVICIO_TECNICO => "Servicio tecnico",
+        SupplierType.LABORATORIO_DERIVACION => "Laboratorio de derivacion",
+        _ => type.ToString()
+    };
 
     private static SupplierQualityStatus MapSupplierEvaluationToQualityStatus(SupplierEvaluation evaluation)
     {
