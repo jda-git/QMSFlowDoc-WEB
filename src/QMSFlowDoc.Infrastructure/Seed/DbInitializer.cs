@@ -725,16 +725,27 @@ namespace QMSFlowDoc.Infrastructure.Seed
             await EnsureColumnAsync(context, "Risks", "ResidualImpact", "INTEGER");
             await EnsureColumnAsync(context, "Risks", "EffectivenessReview", "TEXT");
             await EnsureColumnAsync(context, "Risks", "EffectivenessReviewDate", "TEXT");
+            await EnsureColumnAsync(context, "Risks", "EvidenceDocumentId", "TEXT");
+            await EnsureColumnAsync(context, "Risks", "ApprovedByName", "TEXT");
+            await EnsureColumnAsync(context, "Risks", "ApprovedAt", "TEXT");
+            await EnsureColumnAsync(context, "Risks", "ApprovalNotes", "TEXT");
 
             await EnsureColumnAsync(context, "AuditPlans", "Objectives", "TEXT");
             await EnsureColumnAsync(context, "AuditPlans", "Criteria", "TEXT");
             await EnsureColumnAsync(context, "AuditPlans", "Conclusions", "TEXT");
             await EnsureColumnAsync(context, "AuditPlans", "FollowUpActions", "TEXT");
             await EnsureColumnAsync(context, "AuditPlans", "CompletedAt", "TEXT");
+            await EnsureColumnAsync(context, "AuditPlans", "ProgramYear", "INTEGER NOT NULL DEFAULT 0");
+            await EnsureColumnAsync(context, "AuditPlans", "InternalAuditors", "TEXT");
+            await EnsureColumnAsync(context, "AuditPlans", "AuditorIndependenceStatement", "TEXT");
+            await EnsureColumnAsync(context, "AuditPlans", "ApprovedByName", "TEXT");
+            await EnsureColumnAsync(context, "AuditPlans", "ApprovedAt", "TEXT");
+            await EnsureColumnAsync(context, "AuditPlans", "ApprovalNotes", "TEXT");
 
             await EnsureColumnAsync(context, "AuditFindings", "Responsible", "TEXT");
             await EnsureColumnAsync(context, "AuditFindings", "DueDate", "TEXT");
             await EnsureColumnAsync(context, "AuditFindings", "EffectivenessReview", "TEXT");
+            await EnsureColumnAsync(context, "AuditFindings", "EvidenceDocumentId", "TEXT");
 
             await EnsureColumnAsync(context, "ManagementReviews", "PreviousActionsReview", "TEXT");
             await EnsureColumnAsync(context, "ManagementReviews", "ChangesAffectingQms", "TEXT");
@@ -746,6 +757,9 @@ namespace QMSFlowDoc.Infrastructure.Seed
             await EnsureColumnAsync(context, "ManagementReviews", "ActionOwner", "TEXT");
             await EnsureColumnAsync(context, "ManagementReviews", "ActionDueDate", "TEXT");
             await EnsureColumnAsync(context, "ManagementReviews", "EffectivenessReview", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "ApprovedByName", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "ApprovedAt", "TEXT");
+            await EnsureColumnAsync(context, "ManagementReviews", "ApprovalNotes", "TEXT");
 
             await EnsureColumnAsync(context, "SupplierEvaluations", "EvaluatorName", "TEXT");
             await EnsureColumnAsync(context, "SupplierEvaluations", "Criticality", "TEXT NOT NULL DEFAULT 'Media'");
@@ -772,12 +786,21 @@ namespace QMSFlowDoc.Infrastructure.Seed
                     DueDate TEXT NULL,
                     EffectivenessReview TEXT NULL,
                     EffectivenessReviewDate TEXT NULL,
+                    EvidenceDocumentId TEXT NULL,
+                    ApprovedByName TEXT NULL,
+                    ApprovedAt TEXT NULL,
+                    ApprovalNotes TEXT NULL,
                     CreatedAt TEXT NOT NULL
                 );
                 """);
             await EnsureColumnAsync(context, "QualityIndicators", "EffectivenessReview", "TEXT");
             await EnsureColumnAsync(context, "QualityIndicators", "EffectivenessReviewDate", "TEXT");
+            await EnsureColumnAsync(context, "QualityIndicators", "EvidenceDocumentId", "TEXT");
+            await EnsureColumnAsync(context, "QualityIndicators", "ApprovedByName", "TEXT");
+            await EnsureColumnAsync(context, "QualityIndicators", "ApprovedAt", "TEXT");
+            await EnsureColumnAsync(context, "QualityIndicators", "ApprovalNotes", "TEXT");
             await context.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS IX_QualityIndicators_Name_Period ON QualityIndicators (Name, Period);");
+            await context.Database.ExecuteSqlRawAsync("UPDATE AuditPlans SET ProgramYear = CAST(strftime('%Y', ScheduledDate) AS INTEGER) WHERE ProgramYear = 0 AND ScheduledDate IS NOT NULL;");
         }
 
         private static async Task EnsureColumnAsync(QmsDbContext context, string table, string column, string definition)

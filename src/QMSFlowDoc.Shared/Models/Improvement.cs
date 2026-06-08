@@ -64,6 +64,11 @@ public class Risk
     public int? ResidualRiskScore => ResidualLikelihood.HasValue && ResidualImpact.HasValue ? (int)ResidualLikelihood.Value * (int)ResidualImpact.Value : null;
     public string? EffectivenessReview { get; set; }
     public DateTime? EffectivenessReviewDate { get; set; }
+    public Guid? EvidenceDocumentId { get; set; }
+    public Document? EvidenceDocument { get; set; }
+    public string? ApprovedByName { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? ApprovalNotes { get; set; }
     public Guid? OwnerUserId { get; set; }
     public string? OwnerName { get; set; }
     public User? Owner { get; set; }
@@ -89,6 +94,12 @@ public class AuditPlan
     public string? Conclusions { get; set; }
     public string? FollowUpActions { get; set; }
     public DateTime? CompletedAt { get; set; }
+    public int ProgramYear { get; set; }
+    public string? InternalAuditors { get; set; }
+    public string? AuditorIndependenceStatement { get; set; }
+    public string? ApprovedByName { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? ApprovalNotes { get; set; }
     
     public Guid? ReportDocumentId { get; set; }
     public Document? ReportDocument { get; set; }
@@ -112,6 +123,8 @@ public class AuditFinding
     public string? Responsible { get; set; }
     public DateTime? DueDate { get; set; }
     public string? EffectivenessReview { get; set; }
+    public Guid? EvidenceDocumentId { get; set; }
+    public Document? EvidenceDocument { get; set; }
     public Guid? RelatedNCId { get; set; } // Link to Nonconformity if it becomes one
     public Nonconformity? RelatedNC { get; set; }
 }
@@ -134,6 +147,9 @@ public class ManagementReview
     public string? ActionOwner { get; set; }
     public DateTime? ActionDueDate { get; set; }
     public string? EffectivenessReview { get; set; }
+    public string? ApprovedByName { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? ApprovalNotes { get; set; }
     
     public Guid? MinutesDocumentId { get; set; }
     public Document? MinutesDocument { get; set; }
@@ -157,6 +173,11 @@ public class QualityIndicator
     public DateTime? DueDate { get; set; }
     public string? EffectivenessReview { get; set; }
     public DateTime? EffectivenessReviewDate { get; set; }
+    public Guid? EvidenceDocumentId { get; set; }
+    public Document? EvidenceDocument { get; set; }
+    public string? ApprovedByName { get; set; }
+    public DateTime? ApprovedAt { get; set; }
+    public string? ApprovalNotes { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 

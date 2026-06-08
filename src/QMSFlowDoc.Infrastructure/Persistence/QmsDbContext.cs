@@ -615,6 +615,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Ignore(r => r.RiskScore);
                 e.Ignore(r => r.ResidualRiskScore);
                 e.HasOne(r => r.Owner).WithMany().HasForeignKey(r => r.OwnerUserId).OnDelete(DeleteBehavior.SetNull);
+                e.HasOne(r => r.EvidenceDocument).WithMany().HasForeignKey(r => r.EvidenceDocumentId).OnDelete(DeleteBehavior.SetNull);
             });
 
             modelBuilder.Entity<AuditPlan>(e =>
@@ -623,6 +624,8 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.HasKey(a => a.Id);
                 e.Property(a => a.Title).HasMaxLength(500);
                 e.Property(a => a.Status).HasConversion<int>();
+                e.Property(a => a.InternalAuditors).HasMaxLength(500);
+                e.Property(a => a.ApprovedByName).HasMaxLength(200);
                 e.Property(a => a.RowVersion).IsRowVersion();
                 e.HasOne(a => a.ReportDocument).WithMany().HasForeignKey(a => a.ReportDocumentId).OnDelete(DeleteBehavior.SetNull);
                 e.HasMany(a => a.Findings).WithOne().HasForeignKey(f => f.AuditPlanId).OnDelete(DeleteBehavior.Cascade);
@@ -635,12 +638,14 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(f => f.Type).HasConversion<int>();
                 e.Property(f => f.IsoRequirement).HasMaxLength(100);
                 e.HasOne(f => f.RelatedNC).WithMany().HasForeignKey(f => f.RelatedNCId).OnDelete(DeleteBehavior.SetNull);
+                e.HasOne(f => f.EvidenceDocument).WithMany().HasForeignKey(f => f.EvidenceDocumentId).OnDelete(DeleteBehavior.SetNull);
             });
 
             modelBuilder.Entity<ManagementReview>(e =>
             {
                 e.ToTable("ManagementReviews");
                 e.HasKey(r => r.Id);
+                e.Property(r => r.ApprovedByName).HasMaxLength(200);
                 e.HasOne(r => r.MinutesDocument).WithMany().HasForeignKey(r => r.MinutesDocumentId).OnDelete(DeleteBehavior.SetNull);
             });
 
@@ -656,7 +661,9 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(i => i.TargetRule).HasMaxLength(20);
                 e.Property(i => i.TargetValue).HasPrecision(18, 2);
                 e.Property(i => i.ActualValue).HasPrecision(18, 2);
+                e.Property(i => i.ApprovedByName).HasMaxLength(200);
                 e.HasIndex(i => new { i.Name, i.Period });
+                e.HasOne(i => i.EvidenceDocument).WithMany().HasForeignKey(i => i.EvidenceDocumentId).OnDelete(DeleteBehavior.SetNull);
             });
 
             modelBuilder.Entity<IQCResult>(e =>

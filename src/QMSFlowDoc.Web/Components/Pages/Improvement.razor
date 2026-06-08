@@ -1,6 +1,8 @@
 @page "/improvement"
 @rendermode InteractiveServer
 @using Microsoft.EntityFrameworkCore
+@using System.Net
+@using System.Text
 @using QMSFlowDoc.Application.Services.Identity
 @using QMSFlowDoc.Application.Services.Quality
 @using QMSFlowDoc.Domain.Entities
@@ -9,6 +11,7 @@
 @inject QmsDbContext DbContext
 @inject IPermissionService PermissionService
 @inject IQualityService QualityService
+@inject IWebHostEnvironment WebHostEnvironment
 
 <PageTitle>Mejora Continua ISO - QMSFlowDoc</PageTitle>
 
@@ -44,6 +47,7 @@
             <li class="nav-item"><button class="nav-link @(activeTab == "reviews" ? "active" : "")" @onclick='() => activeTab = "reviews"'>Revisión dirección</button></li>
             <li class="nav-item"><button class="nav-link @(activeTab == "indicators" ? "active" : "")" @onclick='() => activeTab = "indicators"'>Indicadores</button></li>
             <li class="nav-item"><button class="nav-link @(activeTab == "suppliers" ? "active" : "")" @onclick='() => activeTab = "suppliers"'>Proveedores</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "control" ? "active" : "")" @onclick='() => activeTab = "control"'>Control ISO</button></li>
         </ul>
 
         @if (activeTab == "risks")
@@ -103,7 +107,14 @@
                         <label class="form-label small fw-semibold text-secondary mb-1">Revisión de eficacia / aceptación</label>
                         <textarea class="form-control mb-2" rows="2" placeholder="Revisión de eficacia / aceptación" @bind="riskModel.EffectivenessReview"></textarea>
                         <label class="form-label small fw-semibold text-secondary mb-1">Fecha de revisión de eficacia</label>
-                        <input type="date" class="form-control mb-3" @bind="riskModel.EffectivenessReviewDate" />
+                        <input type="date" class="form-control mb-2" @bind="riskModel.EffectivenessReviewDate" />
+                        <label class="form-label small fw-semibold text-secondary mb-1">Evidencia documental vinculada</label>
+                        <select class="form-select mb-2" value="@GetNullableGuidValue(riskModel.EvidenceDocumentId)" @onchange="e => riskModel.EvidenceDocumentId = ParseNullableGuid(e.Value?.ToString())">
+                            <option value="">Sin documento vinculado</option>
+                            @foreach (var d in evidenceDocuments) { <option value="@d.Id">@GetDocumentLabel(d)</option> }
+                        </select>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Notas de aprobación/cierre formal</label>
+                        <textarea class="form-control mb-3" rows="2" placeholder="Justificación de aceptación o cierre por responsable autorizado" @bind="riskModel.ApprovalNotes"></textarea>
                         <button class="btn btn-primary w-100" @onclick="SaveRisk">@(riskModel.Id == Guid.Empty ? "Registrar riesgo" : "Actualizar riesgo")</button>
                         @if (riskModel.Id != Guid.Empty)
                         {
@@ -113,7 +124,7 @@
                 </div>
                 <div class="col-lg-8">
                     <TableCard Title="Matriz de riesgos">
-                        <thead><tr><th>Riesgo</th><th>Categoría</th><th>Score</th><th>Residual</th><th>Responsable</th><th>Plazo</th><th>Estado</th><th>Acción/Eficacia</th><th>Actualizar</th></tr></thead>
+                        <thead><tr><th>Riesgo</th><th>Categoría</th><th>Score</th><th>Residual</th><th>Responsable</th><th>Plazo</th><th>Estado</th><th>Evidencia/Aprobación</th><th>Acción/Eficacia</th><th>Actualizar</th></tr></thead>
                         <tbody>
                         @foreach (var r in risks)
                         {
@@ -126,6 +137,10 @@
                                 <td>@(r.DueDate?.ToString("dd/MM/yyyy") ?? "-")</td>
                                 <td>@GetRiskStatusLabel(r.Status)</td>
                                 <td>
+                                    <div><small>@GetDocumentLabel(r.EvidenceDocumentId)</small></div>
+                                    <span class="badge @(r.ApprovedAt.HasValue ? "bg-success" : "bg-secondary")">@(r.ApprovedAt.HasValue ? $"Aprobado {r.ApprovedAt.Value:dd/MM/yyyy}" : "Sin aprobación")</span>
+                                </td>
+                                <td>
                                     <span class="badge @GetRiskActionBadgeClass(r) mb-1">@GetRiskActionStatusLabel(r)</span>
                                     <div>@(string.IsNullOrWhiteSpace(r.ActionPlan) ? r.MitigationPlan : r.ActionPlan)</div>
                                     @if (!string.IsNullOrWhiteSpace(r.EffectivenessReview))
@@ -136,6 +151,8 @@
                                 <td>
                                     <div class="d-flex gap-2">
                                         <button class="btn btn-sm btn-outline-primary" @onclick="() => EditRisk(r)">Editar</button>
+                                        <button class="btn btn-sm btn-outline-success" @onclick="() => ApproveRisk(r)">Aprobar</button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick='() => ShowHistory("Risk", r.Id, r.Title)'>Historial</button>
                                         <select class="form-select form-select-sm" value="@r.Status" @onchange="e => UpdateRiskStatus(r, e.Value?.ToString())">
                                             @foreach (var v in Enum.GetValues<RiskStatus>()) { <option value="@v">@GetRiskStatusLabel(v)</option> }
                                         </select>
@@ -159,6 +176,8 @@
                         <input class="form-control mb-2" placeholder="Título" @bind="auditModel.Title" />
                         <label class="form-label small fw-semibold text-secondary mb-1">Fecha programada</label>
                         <input type="date" class="form-control mb-2" @bind="auditModel.ScheduledDate" />
+                        <label class="form-label small fw-semibold text-secondary mb-1">Año del programa anual</label>
+                        <input type="number" class="form-control mb-2" @bind="auditModel.ProgramYear" />
                         <label class="form-label small fw-semibold text-secondary mb-1">Alcance</label>
                         <textarea class="form-control mb-2" rows="2" placeholder="Alcance" @bind="auditModel.Scope"></textarea>
                         <label class="form-label small fw-semibold text-secondary mb-1">Objetivos de la auditoría</label>
@@ -168,13 +187,24 @@
                         <label class="form-label small fw-semibold text-secondary mb-1">Checklist o puntos verificados</label>
                         <textarea class="form-control mb-2" rows="2" placeholder="Checklist o puntos verificados" @bind="auditModel.ChecklistJson"></textarea>
                         <label class="form-label small fw-semibold text-secondary mb-1">Auditor líder</label>
-                        <input class="form-control mb-3" placeholder="Auditor líder" @bind="auditModel.LeadAuditor" />
+                        <input class="form-control mb-2" placeholder="Auditor líder" @bind="auditModel.LeadAuditor" />
+                        <label class="form-label small fw-semibold text-secondary mb-1">Equipo auditor</label>
+                        <input class="form-control mb-2" placeholder="Auditores internos asignados" @bind="auditModel.InternalAuditors" />
+                        <label class="form-label small fw-semibold text-secondary mb-1">Independencia del auditor</label>
+                        <textarea class="form-control mb-3" rows="2" placeholder="Declaración de independencia e imparcialidad respecto al proceso auditado" @bind="auditModel.AuditorIndependenceStatement"></textarea>
                         <label class="form-label small fw-semibold text-secondary mb-1">Informe / resumen de auditoría</label>
                         <textarea class="form-control mb-2" rows="2" placeholder="Informe/resumen de auditoría" @bind="auditModel.SummaryReport"></textarea>
                         <label class="form-label small fw-semibold text-secondary mb-1">Conclusiones</label>
                         <textarea class="form-control mb-2" rows="2" placeholder="Conclusiones" @bind="auditModel.Conclusions"></textarea>
                         <label class="form-label small fw-semibold text-secondary mb-1">Seguimiento de acciones</label>
-                        <textarea class="form-control mb-3" rows="2" placeholder="Seguimiento de acciones" @bind="auditModel.FollowUpActions"></textarea>
+                        <textarea class="form-control mb-2" rows="2" placeholder="Seguimiento de acciones" @bind="auditModel.FollowUpActions"></textarea>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Informe/evidencia documental</label>
+                        <select class="form-select mb-2" value="@GetNullableGuidValue(auditModel.ReportDocumentId)" @onchange="e => auditModel.ReportDocumentId = ParseNullableGuid(e.Value?.ToString())">
+                            <option value="">Sin documento vinculado</option>
+                            @foreach (var d in evidenceDocuments) { <option value="@d.Id">@GetDocumentLabel(d)</option> }
+                        </select>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Notas de aprobación formal</label>
+                        <textarea class="form-control mb-3" rows="2" placeholder="Aprobación del informe/programa por responsable autorizado" @bind="auditModel.ApprovalNotes"></textarea>
                         <button class="btn btn-primary w-100" @onclick="SaveAudit">@(auditModel.Id == Guid.Empty ? "Crear plan" : "Actualizar auditoria")</button>
                         @if (auditModel.Id != Guid.Empty)
                         {
@@ -199,6 +229,11 @@
                         <input type="date" class="form-control mb-2" @bind="findingModel.DueDate" />
                         <label class="form-label small fw-semibold text-secondary mb-1">Revisión de eficacia del hallazgo / acción</label>
                         <textarea class="form-control mb-2" rows="2" placeholder="Revisión de eficacia del hallazgo/acción" @bind="findingModel.EffectivenessReview"></textarea>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Evidencia documental del hallazgo</label>
+                        <select class="form-select mb-2" value="@GetNullableGuidValue(findingModel.EvidenceDocumentId)" @onchange="e => findingModel.EvidenceDocumentId = ParseNullableGuid(e.Value?.ToString())">
+                            <option value="">Sin documento vinculado</option>
+                            @foreach (var d in evidenceDocuments) { <option value="@d.Id">@GetDocumentLabel(d)</option> }
+                        </select>
                         <label class="form-label small fw-semibold text-secondary mb-1">Tipo de hallazgo</label>
                         <select class="form-select mb-3" @bind="findingModel.Type">
                             @foreach (var v in Enum.GetValues<FindingType>()) { <option value="@v">@GetFindingTypeLabel(v)</option> }
@@ -211,13 +246,13 @@
                     </div>
                 </div>
                 <div class="col-lg-8">
-                    <TableCard Title="Programa de auditorías">
-                        <thead><tr><th>Fecha</th><th>Título</th><th>Alcance</th><th>Auditor</th><th>Evidencia</th><th>Estado</th><th>Actualizar</th></tr></thead>
+                    <TableCard Title="Programa anual de auditorías">
+                        <thead><tr><th>Año/Fecha</th><th>Título</th><th>Alcance</th><th>Auditor</th><th>Evidencia/Aprobación</th><th>Estado</th><th>Actualizar</th></tr></thead>
                         <tbody>
                         @foreach (var a in audits)
                         {
                             <tr>
-                                <td>@a.ScheduledDate.ToString("dd/MM/yyyy")</td>
+                                <td>@a.ProgramYear<br /><small>@a.ScheduledDate.ToString("dd/MM/yyyy")</small></td>
                                 <td>@a.Title</td>
                                 <td>@a.Scope</td>
                                 <td>@a.LeadAuditor</td>
@@ -230,6 +265,8 @@
                                     {
                                         <span class="badge bg-warning text-dark">Pendiente</span>
                                     }
+                                    <div><small>@GetDocumentLabel(a.ReportDocumentId)</small></div>
+                                    <span class="badge @(a.ApprovedAt.HasValue ? "bg-success" : "bg-secondary")">@(a.ApprovedAt.HasValue ? $"Aprobada {a.ApprovedAt.Value:dd/MM/yyyy}" : "Sin aprobación")</span>
                                 </td>
                                 <td>
                                     @GetAuditStatusLabel(a.Status)
@@ -239,8 +276,11 @@
                                     }
                                 </td>
                                 <td>
-                                    <div class="d-flex gap-2">
+                                    <div class="d-flex flex-wrap gap-2">
                                         <button class="btn btn-sm btn-outline-primary" @onclick="() => EditAudit(a)">Editar</button>
+                                        <button class="btn btn-sm btn-outline-success" @onclick="() => ApproveAudit(a)">Aprobar</button>
+                                        <button class="btn btn-sm btn-outline-dark" @onclick="() => ExportAuditReport(a)">Informe</button>
+                                        <button class="btn btn-sm btn-outline-secondary" @onclick='() => ShowHistory("AuditPlan", a.Id, a.Title)'>Historial</button>
                                         <select class="form-select form-select-sm" value="@a.Status" @onchange="e => UpdateAuditStatus(a, e.Value?.ToString())">
                                             @foreach (var v in Enum.GetValues<AuditStatus>()) { <option value="@v">@GetAuditStatusLabel(v)</option> }
                                         </select>
@@ -253,7 +293,7 @@
 
                     <div class="mt-4">
                         <TableCard Title="Hallazgos de auditoría">
-                            <thead><tr><th>Auditoría</th><th>Tipo</th><th>ISO</th><th>Descripción</th><th>NC vinculada</th><th>Seguimiento</th><th>Acción</th></tr></thead>
+                            <thead><tr><th>Auditoría</th><th>Tipo</th><th>ISO</th><th>Descripción</th><th>Evidencia</th><th>NC vinculada</th><th>Seguimiento</th><th>Acción</th></tr></thead>
                             <tbody>
                             @foreach (var f in auditFindings)
                             {
@@ -262,6 +302,7 @@
                                     <td>@GetFindingTypeLabel(f.Type)</td>
                                     <td>@f.IsoRequirement</td>
                                     <td>@f.Description</td>
+                                    <td><small>@GetDocumentLabel(f.EvidenceDocumentId)</small></td>
                                     <td>
                                         @if (f.RelatedNCId.HasValue)
                                         {
@@ -280,6 +321,7 @@
                                     <td>
                                         <div class="d-flex flex-wrap gap-2">
                                             <button class="btn btn-sm btn-outline-primary" @onclick="() => EditAuditFinding(f)">Editar</button>
+                                            <button class="btn btn-sm btn-outline-secondary" @onclick='() => ShowHistory("AuditFinding", f.Id, f.Description)'>Historial</button>
                                             @if (IsNonconformityFinding(f.Type) && !f.RelatedNCId.HasValue)
                                             {
                                                 <button class="btn btn-sm btn-outline-danger" @onclick="() => CreateNCFromFinding(f)">Crear NC</button>
@@ -331,7 +373,14 @@
                         <label class="form-label small fw-semibold text-secondary mb-1">Fecha límite de acciones</label>
                         <input type="date" class="form-control mb-2" @bind="reviewModel.ActionDueDate" />
                         <label class="form-label small fw-semibold text-secondary mb-1">Seguimiento / eficacia de acciones de dirección</label>
-                        <textarea class="form-control mb-3" rows="2" placeholder="Seguimiento / eficacia de acciones de dirección" @bind="reviewModel.EffectivenessReview"></textarea>
+                        <textarea class="form-control mb-2" rows="2" placeholder="Seguimiento / eficacia de acciones de dirección" @bind="reviewModel.EffectivenessReview"></textarea>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Acta/evidencia documental</label>
+                        <select class="form-select mb-2" value="@GetNullableGuidValue(reviewModel.MinutesDocumentId)" @onchange="e => reviewModel.MinutesDocumentId = ParseNullableGuid(e.Value?.ToString())">
+                            <option value="">Sin documento vinculado</option>
+                            @foreach (var d in evidenceDocuments) { <option value="@d.Id">@GetDocumentLabel(d)</option> }
+                        </select>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Notas de aprobación formal</label>
+                        <textarea class="form-control mb-3" rows="2" placeholder="Aprobación/cierre de la revisión por dirección" @bind="reviewModel.ApprovalNotes"></textarea>
                         <button class="btn btn-primary w-100" @onclick="SaveReview">@(reviewModel.Id == Guid.Empty ? "Registrar revision" : "Actualizar revision")</button>
                         @if (reviewModel.Id != Guid.Empty)
                         {
@@ -369,7 +418,7 @@
                         <tbody>
                         @foreach (var r in reviews)
                         {
-                            <tr><td>@r.ReviewDate.ToString("dd/MM/yyyy")</td><td>@r.Participants</td><td>@r.Summary</td><td>@r.Decisions</td><td>@r.Actions</td><td>@r.ActionOwner @(r.ActionDueDate.HasValue ? $"({r.ActionDueDate.Value:dd/MM/yyyy})" : "")</td><td><span class="badge @GetReviewActionBadgeClass(r) me-2">@GetReviewActionStatusLabel(r)</span><button class="btn btn-sm btn-outline-primary" @onclick="() => EditReview(r)">Editar</button></td></tr>
+                            <tr><td>@r.ReviewDate.ToString("dd/MM/yyyy")</td><td>@r.Participants</td><td>@r.Summary</td><td>@r.Decisions</td><td>@r.Actions</td><td>@r.ActionOwner @(r.ActionDueDate.HasValue ? $"({r.ActionDueDate.Value:dd/MM/yyyy})" : "")<div><small>@GetDocumentLabel(r.MinutesDocumentId)</small></div><span class="badge @(r.ApprovedAt.HasValue ? "bg-success" : "bg-secondary")">@(r.ApprovedAt.HasValue ? $"Aprobada {r.ApprovedAt.Value:dd/MM/yyyy}" : "Sin aprobación")</span></td><td><span class="badge @GetReviewActionBadgeClass(r) me-2">@GetReviewActionStatusLabel(r)</span><div class="d-flex flex-wrap gap-2 mt-1"><button class="btn btn-sm btn-outline-primary" @onclick="() => EditReview(r)">Editar</button><button class="btn btn-sm btn-outline-success" @onclick="() => ApproveReview(r)">Aprobar</button><button class="btn btn-sm btn-outline-dark" @onclick="() => ExportReviewReport(r)">Acta</button><button class="btn btn-sm btn-outline-secondary" @onclick='() => ShowHistory("ManagementReview", r.Id, r.ReviewDate.ToString("dd/MM/yyyy"))'>Historial</button></div></td></tr>
                         }
                         </tbody>
                     </TableCard>
@@ -424,7 +473,14 @@
                         <label class="form-label small fw-semibold text-secondary mb-1">Revisión de eficacia de la acción</label>
                         <textarea class="form-control mb-2" rows="2" placeholder="Evidencia de cierre/eficacia de la acción" @bind="indicatorModel.EffectivenessReview"></textarea>
                         <label class="form-label small fw-semibold text-secondary mb-1">Fecha de revisión de eficacia</label>
-                        <input type="date" class="form-control mb-3" @bind="indicatorModel.EffectivenessReviewDate" />
+                        <input type="date" class="form-control mb-2" @bind="indicatorModel.EffectivenessReviewDate" />
+                        <label class="form-label small fw-semibold text-secondary mb-1">Evidencia documental vinculada</label>
+                        <select class="form-select mb-2" value="@GetNullableGuidValue(indicatorModel.EvidenceDocumentId)" @onchange="e => indicatorModel.EvidenceDocumentId = ParseNullableGuid(e.Value?.ToString())">
+                            <option value="">Sin documento vinculado</option>
+                            @foreach (var d in evidenceDocuments) { <option value="@d.Id">@GetDocumentLabel(d)</option> }
+                        </select>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Notas de aprobación/cierre formal</label>
+                        <textarea class="form-control mb-3" rows="2" placeholder="Aprobación o cierre del seguimiento del indicador" @bind="indicatorModel.ApprovalNotes"></textarea>
                         <button class="btn btn-primary w-100" @onclick="SaveQualityIndicator">@(indicatorModel.Id == Guid.Empty ? "Registrar indicador" : "Actualizar indicador")</button>
                         @if (indicatorModel.Id != Guid.Empty)
                         {
@@ -434,7 +490,7 @@
                 </div>
                 <div class="col-lg-8">
                     <TableCard Title="Indicadores de calidad">
-                        <thead><tr><th>Periodo</th><th>Indicador</th><th>Área</th><th>Objetivo</th><th>Resultado</th><th>Tendencia</th><th>Análisis / Acción</th><th>Seguimiento</th></tr></thead>
+                        <thead><tr><th>Periodo</th><th>Indicador</th><th>Área</th><th>Objetivo</th><th>Resultado</th><th>Tendencia</th><th>Análisis / Acción</th><th>Evidencia/Aprobación</th><th>Seguimiento</th></tr></thead>
                         <tbody>
                         @foreach (var i in qualityIndicators)
                         {
@@ -456,7 +512,8 @@
                                         <div><small class="text-success">Eficacia: @i.EffectivenessReview @(i.EffectivenessReviewDate.HasValue ? $"({i.EffectivenessReviewDate.Value:dd/MM/yyyy})" : "")</small></div>
                                     }
                                 </td>
-                                <td><span class="badge @GetIndicatorActionBadgeClass(i) me-2">@GetIndicatorActionStatusLabel(i)</span><button class="btn btn-sm btn-outline-primary" @onclick="() => EditIndicator(i)">Editar</button></td>
+                                <td><small>@GetDocumentLabel(i.EvidenceDocumentId)</small><br /><span class="badge @(i.ApprovedAt.HasValue ? "bg-success" : "bg-secondary")">@(i.ApprovedAt.HasValue ? $"Aprobado {i.ApprovedAt.Value:dd/MM/yyyy}" : "Sin aprobación")</span></td>
+                                <td><span class="badge @GetIndicatorActionBadgeClass(i) me-2">@GetIndicatorActionStatusLabel(i)</span><div class="d-flex flex-wrap gap-2 mt-1"><button class="btn btn-sm btn-outline-primary" @onclick="() => EditIndicator(i)">Editar</button><button class="btn btn-sm btn-outline-success" @onclick="() => ApproveIndicator(i)">Aprobar</button><button class="btn btn-sm btn-outline-dark" @onclick="() => ExportIndicatorReport(i)">Informe</button><button class="btn btn-sm btn-outline-secondary" @onclick='() => ShowHistory("QualityIndicator", i.Id, $"{i.Name} {i.Period}")'>Historial</button></div></td>
                             </tr>
                         }
                         </tbody>
@@ -560,6 +617,76 @@
                 </div>
             </section>
         }
+
+        @if (activeTab == "control")
+        {
+            <section class="row g-4">
+                <div class="col-lg-5">
+                    <div class="p-3 border rounded-3 bg-light">
+                        <h5 class="fw-bold mb-3">Matriz de riesgos configurable</h5>
+                        <p class="small text-muted">El score se calcula como probabilidad x impacto. Estos umbrales definen la clasificación y pueden adaptarse al criterio del laboratorio.</p>
+                        <div class="row g-2 mb-2">
+                            <div class="col">
+                                <label class="form-label small fw-semibold text-secondary mb-1">Máximo bajo</label>
+                                <input type="number" class="form-control" @bind="riskMatrix.LowMax" />
+                            </div>
+                            <div class="col">
+                                <label class="form-label small fw-semibold text-secondary mb-1">Máximo medio</label>
+                                <input type="number" class="form-control" @bind="riskMatrix.MediumMax" />
+                            </div>
+                            <div class="col">
+                                <label class="form-label small fw-semibold text-secondary mb-1">Máximo alto</label>
+                                <input type="number" class="form-control" @bind="riskMatrix.HighMax" />
+                            </div>
+                        </div>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Criterios de probabilidad</label>
+                        <textarea class="form-control mb-2" rows="4" @bind="riskMatrix.LikelihoodCriteria"></textarea>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Criterios de impacto</label>
+                        <textarea class="form-control mb-2" rows="4" @bind="riskMatrix.ImpactCriteria"></textarea>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Criterio de aceptación/revisión residual</label>
+                        <textarea class="form-control mb-3" rows="3" @bind="riskMatrix.AcceptanceCriteria"></textarea>
+                        <button class="btn btn-primary w-100" @onclick="SaveRiskMatrixSettings" disabled="@(!isAdmin)">Guardar matriz</button>
+                        @if (!isAdmin)
+                        {
+                            <div class="small text-muted mt-2">Solo Administrador puede modificar la matriz.</div>
+                        }
+                    </div>
+                </div>
+
+                <div class="col-lg-7">
+                    <div class="p-3 border rounded-3 bg-white mb-4">
+                        <h5 class="fw-bold mb-3">Informes exportables</h5>
+                        <div class="d-flex flex-wrap gap-2">
+                            <button class="btn btn-outline-dark" @onclick="ExportRiskMatrixReport">Matriz de riesgos</button>
+                            <button class="btn btn-outline-dark" @onclick="ExportAnnualAuditProgramReport">Plan anual auditorías</button>
+                            <button class="btn btn-outline-dark" @onclick="ExportSupplierEvaluationReport">Evaluación proveedores</button>
+                            <button class="btn btn-outline-dark" @onclick="ExportIndicatorSummaryReport">Indicadores</button>
+                        </div>
+                        @if (!string.IsNullOrWhiteSpace(lastExportUrl))
+                        {
+                            <div class="alert alert-success mt-3 mb-0 py-2">Informe generado: <a href="@lastExportUrl" target="_blank">@lastExportTitle</a></div>
+                        }
+                    </div>
+
+                    <TableCard Title="Historial visible del registro seleccionado">
+                        <thead><tr><th>Fecha</th><th>Usuario</th><th>Acción</th><th>Detalle</th></tr></thead>
+                        <tbody>
+                        @if (!visibleHistory.Any())
+                        {
+                            <tr><td colspan="4" class="text-muted">Seleccione Historial en un riesgo, auditoría, hallazgo, revisión, indicador o proveedor.</td></tr>
+                        }
+                        else
+                        {
+                            @foreach (var h in visibleHistory)
+                            {
+                                <tr><td>@h.Timestamp.ToString("dd/MM/yyyy HH:mm")</td><td>@h.UserName</td><td>@h.Action</td><td>@h.Details</td></tr>
+                            }
+                        }
+                        </tbody>
+                    </TableCard>
+                </div>
+            </section>
+        }
     }
 </div>
 
@@ -567,9 +694,12 @@
     [CascadingParameter] private Task<AuthenticationState>? AuthStateTask { get; set; }
 
     private bool isAuthorized;
+    private bool isAdmin;
     private string activeTab = "risks";
     private string? successMessage;
     private string? errorMessage;
+    private string? lastExportUrl;
+    private string? lastExportTitle;
     private Guid? currentUserId;
     private string currentUserName = "Sistema";
 
@@ -580,6 +710,9 @@
     private List<QualityIndicator> qualityIndicators = new();
     private List<Supplier> suppliers = new();
     private List<SupplierEvaluation> supplierEvaluations = new();
+    private List<Document> evidenceDocuments = new();
+    private List<AuditLog> visibleHistory = new();
+    private RiskMatrixSettings riskMatrix = RiskMatrixSettings.Default();
 
     private int activeRiskCount;
     private int highRiskCount;
@@ -618,11 +751,15 @@
             if (Guid.TryParse(user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value, out var userId))
                 currentUserId = userId;
             var hasQualityRole = (await PermissionService.GetPermissionsForUserAsync(user, "Quality")).CanRead;
-            isAuthorized = user.IsInRole("Administrador") || user.IsInRole("Director") || user.IsInRole("Responsable calidad") || hasQualityRole;
+            isAdmin = user.IsInRole("Administrador");
+            isAuthorized = isAdmin || user.IsInRole("Director") || user.IsInRole("Responsable calidad") || hasQualityRole;
         }
 
         if (isAuthorized)
+        {
+            await LoadRiskMatrixSettings();
             await LoadData();
+        }
     }
 
     private async Task LoadData()
@@ -637,10 +774,17 @@
         qualityIndicators = await DbContext.QualityIndicators.OrderByDescending(i => i.CreatedAt).ThenBy(i => i.Name).ToListAsync();
         suppliers = await DbContext.Suppliers.OrderBy(s => s.Name).ToListAsync();
         supplierEvaluations = await DbContext.SupplierEvaluations.Include(e => e.Supplier).OrderByDescending(e => e.EvaluationDate).ToListAsync();
+        evidenceDocuments = await DbContext.Documents
+            .AsNoTracking()
+            .Where(d => !d.IsDeleted)
+            .OrderBy(d => d.DocCode)
+            .ThenBy(d => d.Title)
+            .Take(500)
+            .ToListAsync();
 
         var today = DateTime.Today;
         activeRiskCount = risks.Count(r => r.Status == RiskStatus.ACTIVE);
-        highRiskCount = risks.Count(r => r.Status == RiskStatus.ACTIVE && r.RiskScore >= 12);
+        highRiskCount = risks.Count(r => r.Status == RiskStatus.ACTIVE && IsHighOrCriticalRisk(r.RiskScore));
         openNcCount = await DbContext.Nonconformities.CountAsync(nc => !nc.IsDeleted && nc.Status != NCStatus.CLOSED);
         openComplaintCount = await DbContext.Complaints.CountAsync(c => !c.IsDeleted && c.Status != ComplaintStatus.CLOSED);
         openCapaCount = await DbContext.CapaActions.CountAsync(ca => !ca.IsDeleted && ca.Status != CAPAStatus.DONE && ca.Status != CAPAStatus.VERIFIED && ca.Status != CAPAStatus.CANCELLED);
@@ -669,12 +813,12 @@
             SetError("Para calcular el riesgo residual debe seleccionar probabilidad residual e impacto residual.");
             return;
         }
-        if (riskModel.RiskScore >= 12 && string.IsNullOrWhiteSpace(riskModel.ActionPlan) && string.IsNullOrWhiteSpace(riskModel.MitigationPlan))
+        if (IsHighOrCriticalRisk(riskModel.RiskScore) && string.IsNullOrWhiteSpace(riskModel.ActionPlan) && string.IsNullOrWhiteSpace(riskModel.MitigationPlan))
         {
             SetError("Los riesgos altos o críticos deben tener acción o mitigación planificada.");
             return;
         }
-        if (riskModel.RiskScore >= 12 && (string.IsNullOrWhiteSpace(riskModel.Responsible) || !riskModel.DueDate.HasValue))
+        if (IsHighOrCriticalRisk(riskModel.RiskScore) && (string.IsNullOrWhiteSpace(riskModel.Responsible) || !riskModel.DueDate.HasValue))
         {
             SetError("Los riesgos altos o criticos deben incluir responsable y fecha limite.");
             return;
@@ -724,6 +868,10 @@
             ResidualImpact = risk.ResidualImpact,
             EffectivenessReview = risk.EffectivenessReview,
             EffectivenessReviewDate = risk.EffectivenessReviewDate,
+            EvidenceDocumentId = risk.EvidenceDocumentId,
+            ApprovedByName = risk.ApprovedByName,
+            ApprovedAt = risk.ApprovedAt,
+            ApprovalNotes = risk.ApprovalNotes,
             OwnerUserId = risk.OwnerUserId,
             OwnerName = risk.OwnerName,
             Status = risk.Status,
@@ -757,6 +905,8 @@
         target.ResidualImpact = source.ResidualImpact;
         target.EffectivenessReview = source.EffectivenessReview;
         target.EffectivenessReviewDate = source.EffectivenessReviewDate;
+        target.EvidenceDocumentId = source.EvidenceDocumentId;
+        target.ApprovalNotes = source.ApprovalNotes;
     }
 
     private void OnResidualLikelihoodChanged(ChangeEventArgs e)
@@ -772,11 +922,13 @@
     private async Task SaveAudit()
     {
         if (string.IsNullOrWhiteSpace(auditModel.Title)) return;
-        if (string.IsNullOrWhiteSpace(auditModel.Scope) ||
+        if (auditModel.ProgramYear < 2000 ||
+            string.IsNullOrWhiteSpace(auditModel.Scope) ||
             string.IsNullOrWhiteSpace(auditModel.Criteria) ||
-            string.IsNullOrWhiteSpace(auditModel.LeadAuditor))
+            string.IsNullOrWhiteSpace(auditModel.LeadAuditor) ||
+            string.IsNullOrWhiteSpace(auditModel.AuditorIndependenceStatement))
         {
-            SetError("La auditoria debe incluir alcance, criterios/requisitos auditados y auditor lider.");
+            SetError("La auditoria debe incluir año, alcance, criterios/requisitos auditados, auditor lider e independencia del auditor.");
             return;
         }
 
@@ -820,6 +972,12 @@
             Conclusions = audit.Conclusions,
             FollowUpActions = audit.FollowUpActions,
             CompletedAt = audit.CompletedAt,
+            ProgramYear = audit.ProgramYear == 0 ? audit.ScheduledDate.Year : audit.ProgramYear,
+            InternalAuditors = audit.InternalAuditors,
+            AuditorIndependenceStatement = audit.AuditorIndependenceStatement,
+            ApprovedByName = audit.ApprovedByName,
+            ApprovedAt = audit.ApprovedAt,
+            ApprovalNotes = audit.ApprovalNotes,
             ReportDocumentId = audit.ReportDocumentId,
             ChecklistJson = audit.ChecklistJson
         };
@@ -846,6 +1004,10 @@
         target.Conclusions = source.Conclusions;
         target.FollowUpActions = source.FollowUpActions;
         target.ChecklistJson = source.ChecklistJson;
+        target.ProgramYear = source.ProgramYear;
+        target.InternalAuditors = source.InternalAuditors;
+        target.AuditorIndependenceStatement = source.AuditorIndependenceStatement;
+        target.ApprovalNotes = source.ApprovalNotes;
         target.ReportDocumentId = source.ReportDocumentId;
     }
 
@@ -904,6 +1066,7 @@
             Responsible = finding.Responsible,
             DueDate = finding.DueDate,
             EffectivenessReview = finding.EffectivenessReview,
+            EvidenceDocumentId = finding.EvidenceDocumentId,
             RelatedNCId = finding.RelatedNCId
         };
         successMessage = null;
@@ -926,6 +1089,7 @@
         target.Responsible = source.Responsible;
         target.DueDate = source.DueDate;
         target.EffectivenessReview = source.EffectivenessReview;
+        target.EvidenceDocumentId = source.EvidenceDocumentId;
     }
 
     private async Task CreateNCFromFinding(AuditFinding finding)
@@ -1071,6 +1235,9 @@
             ActionOwner = review.ActionOwner,
             ActionDueDate = review.ActionDueDate,
             EffectivenessReview = review.EffectivenessReview,
+            ApprovedByName = review.ApprovedByName,
+            ApprovedAt = review.ApprovedAt,
+            ApprovalNotes = review.ApprovalNotes,
             MinutesDocumentId = review.MinutesDocumentId
         };
         successMessage = null;
@@ -1101,6 +1268,7 @@
         target.ActionOwner = source.ActionOwner;
         target.ActionDueDate = source.ActionDueDate;
         target.EffectivenessReview = source.EffectivenessReview;
+        target.ApprovalNotes = source.ApprovalNotes;
         target.MinutesDocumentId = source.MinutesDocumentId;
     }
 
@@ -1361,6 +1529,10 @@
             DueDate = indicator.DueDate,
             EffectivenessReview = indicator.EffectivenessReview,
             EffectivenessReviewDate = indicator.EffectivenessReviewDate,
+            EvidenceDocumentId = indicator.EvidenceDocumentId,
+            ApprovedByName = indicator.ApprovedByName,
+            ApprovedAt = indicator.ApprovedAt,
+            ApprovalNotes = indicator.ApprovalNotes,
             CreatedAt = indicator.CreatedAt
         };
         successMessage = null;
@@ -1391,11 +1563,265 @@
         target.DueDate = source.DueDate;
         target.EffectivenessReview = source.EffectivenessReview;
         target.EffectivenessReviewDate = source.EffectivenessReviewDate;
+        target.EvidenceDocumentId = source.EvidenceDocumentId;
+        target.ApprovalNotes = source.ApprovalNotes;
     }
 
     private void UseIsoInputsInReviewAgenda()
     {
         reviewModel.Agenda = BuildManagementReviewAgenda();
+    }
+
+    private async Task SaveRiskMatrixSettings()
+    {
+        if (!isAdmin)
+        {
+            SetError("Solo un Administrador puede modificar la matriz de riesgos.");
+            return;
+        }
+
+        riskMatrix.Normalize();
+        await UpsertSetting("Improvement.RiskMatrix.LowMax", riskMatrix.LowMax.ToString());
+        await UpsertSetting("Improvement.RiskMatrix.MediumMax", riskMatrix.MediumMax.ToString());
+        await UpsertSetting("Improvement.RiskMatrix.HighMax", riskMatrix.HighMax.ToString());
+        await UpsertSetting("Improvement.RiskMatrix.LikelihoodCriteria", riskMatrix.LikelihoodCriteria);
+        await UpsertSetting("Improvement.RiskMatrix.ImpactCriteria", riskMatrix.ImpactCriteria);
+        await UpsertSetting("Improvement.RiskMatrix.AcceptanceCriteria", riskMatrix.AcceptanceCriteria);
+        AddAuditLog("CONFIG_UPDATE", "RiskMatrix", Guid.Empty, "Matriz de riesgos configurable actualizada.");
+        await DbContext.SaveChangesAsync();
+        await LoadData();
+        successMessage = "Matriz de riesgos actualizada.";
+        errorMessage = null;
+    }
+
+    private async Task LoadRiskMatrixSettings()
+    {
+        var settings = await DbContext.SystemSettings.AsNoTracking()
+            .Where(s => s.Key.StartsWith("Improvement.RiskMatrix."))
+            .ToDictionaryAsync(s => s.Key, s => s.Value);
+
+        riskMatrix = RiskMatrixSettings.Default();
+        riskMatrix.LowMax = ParseSettingInt(settings, "Improvement.RiskMatrix.LowMax", riskMatrix.LowMax);
+        riskMatrix.MediumMax = ParseSettingInt(settings, "Improvement.RiskMatrix.MediumMax", riskMatrix.MediumMax);
+        riskMatrix.HighMax = ParseSettingInt(settings, "Improvement.RiskMatrix.HighMax", riskMatrix.HighMax);
+        riskMatrix.LikelihoodCriteria = settings.GetValueOrDefault("Improvement.RiskMatrix.LikelihoodCriteria", riskMatrix.LikelihoodCriteria);
+        riskMatrix.ImpactCriteria = settings.GetValueOrDefault("Improvement.RiskMatrix.ImpactCriteria", riskMatrix.ImpactCriteria);
+        riskMatrix.AcceptanceCriteria = settings.GetValueOrDefault("Improvement.RiskMatrix.AcceptanceCriteria", riskMatrix.AcceptanceCriteria);
+        riskMatrix.Normalize();
+    }
+
+    private async Task UpsertSetting(string key, string value)
+    {
+        var setting = await DbContext.SystemSettings.FindAsync(key);
+        if (setting == null)
+        {
+            DbContext.SystemSettings.Add(new SystemSetting { Key = key, Value = value });
+        }
+        else
+        {
+            setting.Value = value;
+        }
+    }
+
+    private async Task ApproveRisk(Risk risk)
+    {
+        if (!CanApproveFormalRecord()) return;
+        risk.ApprovedByName = currentUserName;
+        risk.ApprovedAt = DateTime.UtcNow;
+        AddAuditLog("APPROVE", "Risk", risk.Id, $"Riesgo aprobado/cerrado formalmente: {risk.Title}");
+        await SaveAndReload("Riesgo aprobado formalmente.");
+    }
+
+    private async Task ApproveAudit(AuditPlan audit)
+    {
+        if (!CanApproveFormalRecord()) return;
+        if (!AuditHasCompletionEvidence(audit))
+        {
+            SetError("La auditoria debe tener evidencia completa antes de aprobarse formalmente.");
+            return;
+        }
+
+        audit.ApprovedByName = currentUserName;
+        audit.ApprovedAt = DateTime.UtcNow;
+        AddAuditLog("APPROVE", "AuditPlan", audit.Id, $"Auditoria aprobada formalmente: {audit.Title}");
+        await SaveAndReload("Auditoria aprobada formalmente.");
+    }
+
+    private async Task ApproveReview(ManagementReview review)
+    {
+        if (!CanApproveFormalRecord()) return;
+        review.ApprovedByName = currentUserName;
+        review.ApprovedAt = DateTime.UtcNow;
+        AddAuditLog("APPROVE", "ManagementReview", review.Id, $"Revision por direccion aprobada: {review.ReviewDate:yyyy-MM-dd}");
+        await SaveAndReload("Revision por direccion aprobada formalmente.");
+    }
+
+    private async Task ApproveIndicator(QualityIndicator indicator)
+    {
+        if (!CanApproveFormalRecord()) return;
+        indicator.ApprovedByName = currentUserName;
+        indicator.ApprovedAt = DateTime.UtcNow;
+        AddAuditLog("APPROVE", "QualityIndicator", indicator.Id, $"Indicador aprobado/cerrado: {indicator.Name} {indicator.Period}");
+        await SaveAndReload("Indicador aprobado formalmente.");
+    }
+
+    private bool CanApproveFormalRecord()
+    {
+        if (isAdmin || currentUserName.Contains("calidad", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        SetError("Solo Administrador o Responsable calidad puede aprobar/cerrar formalmente registros de mejora.");
+        return false;
+    }
+
+    private async Task ShowHistory(string entityType, Guid entityId, string title)
+    {
+        activeTab = "control";
+        visibleHistory = await DbContext.AuditLogs.AsNoTracking()
+            .Where(a => a.EntityType == entityType && a.EntityId == entityId)
+            .OrderByDescending(a => a.Timestamp)
+            .Take(50)
+            .ToListAsync();
+        successMessage = $"Historial cargado: {title}";
+        errorMessage = null;
+    }
+
+    private async Task ExportRiskMatrixReport()
+    {
+        var rows = risks.Select(r => $"<tr><td>{E(r.Title)}</td><td>{E(r.Category)}</td><td>{r.RiskScore} - {E(GetRiskScoreLevel(r.RiskScore))}</td><td>{(r.ResidualRiskScore.HasValue ? $"{r.ResidualRiskScore} - {E(GetRiskScoreLevel(r.ResidualRiskScore.Value))}" : "Pendiente")}</td><td>{E(GetRiskStatusLabel(r.Status))}</td><td>{E(r.Responsible)}</td></tr>");
+        await WriteExport("Matriz de riesgos", "matriz-riesgos", BuildHtmlReport("Matriz de riesgos", RiskMatrixCriteriaHtml() + TableHtml("Riesgo|Categoria|Score|Residual|Estado|Responsable", rows)));
+    }
+
+    private async Task ExportAnnualAuditProgramReport()
+    {
+        var rows = audits.Select(a => $"<tr><td>{a.ProgramYear}</td><td>{a.ScheduledDate:dd/MM/yyyy}</td><td>{E(a.Title)}</td><td>{E(a.Scope)}</td><td>{E(a.LeadAuditor)}</td><td>{E(a.InternalAuditors)}</td><td>{E(GetAuditStatusLabel(a.Status))}</td></tr>");
+        await WriteExport("Plan anual de auditorias", "plan-anual-auditorias", BuildHtmlReport("Plan anual de auditorias", TableHtml("Año|Fecha|Titulo|Alcance|Auditor lider|Equipo auditor|Estado", rows)));
+    }
+
+    private async Task ExportSupplierEvaluationReport()
+    {
+        var rows = supplierEvaluations.Select(e => $"<tr><td>{e.EvaluationDate:dd/MM/yyyy}</td><td>{E(e.Supplier?.Name)}</td><td>{E(e.EvaluatedPeriod)}</td><td>{e.AverageScore:N1}</td><td>{E(e.Decision)}</td><td>{e.NextEvaluationDate:dd/MM/yyyy}</td><td>{E(e.CorrectiveActions)}</td></tr>");
+        await WriteExport("Evaluacion de proveedores", "evaluacion-proveedores", BuildHtmlReport("Evaluacion de proveedores", TableHtml("Fecha|Proveedor|Periodo|Media|Decision|Proxima evaluacion|Acciones", rows)));
+    }
+
+    private async Task ExportIndicatorSummaryReport()
+    {
+        var rows = qualityIndicators.Select(i => $"<tr><td>{E(i.Period)}</td><td>{E(i.Name)}</td><td>{E(i.Area)}</td><td>{i.TargetValue:N2} {E(i.Unit)}</td><td>{i.ActualValue:N2} {E(i.Unit)}</td><td>{E(i.Trend)}</td><td>{E(GetIndicatorActionStatusLabel(i))}</td></tr>");
+        await WriteExport("Indicadores de calidad", "indicadores-calidad", BuildHtmlReport("Indicadores de calidad", TableHtml("Periodo|Indicador|Area|Objetivo|Resultado|Tendencia|Seguimiento", rows)));
+    }
+
+    private async Task ExportAuditReport(AuditPlan audit)
+    {
+        var findings = auditFindings.Where(f => f.AuditPlanId == audit.Id).Select(f => $"<tr><td>{E(GetFindingTypeLabel(f.Type))}</td><td>{E(f.IsoRequirement)}</td><td>{E(f.Description)}</td><td>{E(GetAuditFindingStatusLabel(f))}</td></tr>");
+        var body = SectionHtml("Datos de auditoria", $"<p><b>Fecha:</b> {audit.ScheduledDate:dd/MM/yyyy}<br><b>Año:</b> {audit.ProgramYear}<br><b>Alcance:</b> {E(audit.Scope)}<br><b>Auditor lider:</b> {E(audit.LeadAuditor)}<br><b>Equipo auditor:</b> {E(audit.InternalAuditors)}<br><b>Independencia:</b> {E(audit.AuditorIndependenceStatement)}</p>") +
+                   SectionHtml("Conclusiones", $"<p>{E(audit.Conclusions)}</p>") +
+                   TableHtml("Tipo|ISO|Descripcion|Seguimiento", findings);
+        await WriteExport($"Informe auditoria - {audit.Title}", "informe-auditoria", BuildHtmlReport($"Informe auditoria - {audit.Title}", body));
+    }
+
+    private async Task ExportReviewReport(ManagementReview review)
+    {
+        var body = SectionHtml("Participantes y agenda", $"<p><b>Participantes:</b> {E(review.Participants)}<br><b>Agenda:</b><br>{Nl(review.Agenda)}</p>") +
+                   SectionHtml("Entradas y decisiones", $"<p><b>Resumen:</b> {E(review.Summary)}<br><b>Decisiones:</b> {E(review.Decisions)}<br><b>Acciones:</b> {E(review.Actions)}</p>");
+        await WriteExport($"Acta revision direccion - {review.ReviewDate:dd-MM-yyyy}", "acta-revision-direccion", BuildHtmlReport($"Acta revision direccion - {review.ReviewDate:dd/MM/yyyy}", body));
+    }
+
+    private async Task ExportIndicatorReport(QualityIndicator indicator)
+    {
+        var body = SectionHtml("Indicador", $"<p><b>Periodo:</b> {E(indicator.Period)}<br><b>Area:</b> {E(indicator.Area)}<br><b>Objetivo:</b> {indicator.TargetValue:N2} {E(indicator.Unit)}<br><b>Resultado:</b> {indicator.ActualValue:N2} {E(indicator.Unit)}<br><b>Seguimiento:</b> {E(GetIndicatorActionStatusLabel(indicator))}</p>") +
+                   SectionHtml("Analisis y eficacia", $"<p>{Nl(indicator.Analysis)}<br>{Nl(indicator.ActionPlan)}<br>{Nl(indicator.EffectivenessReview)}</p>");
+        await WriteExport($"Informe indicador - {indicator.Name}", "informe-indicador", BuildHtmlReport($"Informe indicador - {indicator.Name}", body));
+    }
+
+    private async Task WriteExport(string title, string prefix, string html)
+    {
+        var exportDir = Path.Combine(WebHostEnvironment.WebRootPath, "exports");
+        Directory.CreateDirectory(exportDir);
+        var fileName = $"{prefix}-{DateTime.Now:yyyyMMdd-HHmmss}.html";
+        await File.WriteAllTextAsync(Path.Combine(exportDir, fileName), html, Encoding.UTF8);
+        lastExportTitle = title;
+        lastExportUrl = $"/exports/{fileName}";
+        successMessage = $"Informe generado: {title}.";
+        errorMessage = null;
+    }
+
+    private static string BuildHtmlReport(string title, string body)
+    {
+        var html = new StringBuilder();
+        html.AppendLine("<!doctype html>");
+        html.AppendLine("<html lang=\"es\">");
+        html.AppendLine("<head>");
+        html.AppendLine("<meta charset=\"utf-8\">");
+        html.AppendLine($"<title>{E(title)}</title>");
+        html.AppendLine("<style>");
+        html.AppendLine("body { font-family: Arial, sans-serif; margin: 32px; color: #111827; }");
+        html.AppendLine("h1 { border-bottom: 2px solid #2563eb; padding-bottom: 8px; }");
+        html.AppendLine("table { border-collapse: collapse; width: 100%; margin-top: 16px; }");
+        html.AppendLine("th, td { border: 1px solid #d1d5db; padding: 8px; vertical-align: top; }");
+        html.AppendLine("th { background: #eff6ff; text-align: left; }");
+        html.AppendLine(".meta { color: #6b7280; font-size: 12px; margin-bottom: 24px; }");
+        html.AppendLine("section { margin-top: 20px; }");
+        html.AppendLine("</style>");
+        html.AppendLine("</head>");
+        html.AppendLine("<body>");
+        html.AppendLine($"<h1>{E(title)}</h1>");
+        html.AppendLine($"<div class=\"meta\">Generado: {DateTime.Now:dd/MM/yyyy HH:mm} | QMSFlowDoc ISO 15189</div>");
+        html.AppendLine(body);
+        html.AppendLine("</body>");
+        html.AppendLine("</html>");
+        return html.ToString();
+    }
+
+    private static string TableHtml(string pipeHeaders, IEnumerable<string> rows)
+    {
+        var headers = string.Join("", pipeHeaders.Split('|').Select(h => $"<th>{E(h)}</th>"));
+        return $"<table><thead><tr>{headers}</tr></thead><tbody>{string.Join("", rows)}</tbody></table>";
+    }
+
+    private static string SectionHtml(string title, string body) => $"<section><h2>{E(title)}</h2>{body}</section>";
+
+    private string RiskMatrixCriteriaHtml()
+    {
+        return SectionHtml("Criterios de matriz",
+            $"<p><b>Umbrales:</b> Bajo &lt;= {riskMatrix.LowMax}; Medio &lt;= {riskMatrix.MediumMax}; Alto &lt;= {riskMatrix.HighMax}; Critico &gt; {riskMatrix.HighMax}</p>" +
+            $"<p><b>Probabilidad:</b><br>{Nl(riskMatrix.LikelihoodCriteria)}</p>" +
+            $"<p><b>Impacto:</b><br>{Nl(riskMatrix.ImpactCriteria)}</p>" +
+            $"<p><b>Aceptacion residual:</b><br>{Nl(riskMatrix.AcceptanceCriteria)}</p>");
+    }
+
+    private static string E(string? value) => WebUtility.HtmlEncode(value ?? string.Empty);
+    private static string Nl(string? value) => E(value).Replace("\r\n", "<br>").Replace("\n", "<br>");
+
+    private static int ParseSettingInt(Dictionary<string, string> settings, string key, int fallback)
+    {
+        return settings.TryGetValue(key, out var raw) && int.TryParse(raw, out var value) ? value : fallback;
+    }
+
+    private static Guid? ParseNullableGuid(string? raw)
+    {
+        return Guid.TryParse(raw, out var value) ? value : null;
+    }
+
+    private static string GetNullableGuidValue(Guid? value) => value?.ToString() ?? string.Empty;
+
+    private string GetDocumentLabel(Guid? documentId)
+    {
+        if (!documentId.HasValue)
+        {
+            return "Sin documento";
+        }
+
+        var document = evidenceDocuments.FirstOrDefault(d => d.Id == documentId.Value);
+        return document == null ? $"Documento {documentId.Value}" : GetDocumentLabel(document);
+    }
+
+    private static string GetDocumentLabel(Document document)
+    {
+        return string.IsNullOrWhiteSpace(document.DocCode)
+            ? document.Title
+            : $"{document.DocCode} - {document.Title}";
     }
 
     private async Task SaveAndReload(string message)
@@ -1436,7 +1862,13 @@
         Status = RiskStatus.ACTIVE
     };
 
-    private static AuditPlan NewAudit() => new() { ScheduledDate = DateTime.Today, Status = AuditStatus.PLANNED };
+    private static AuditPlan NewAudit() => new()
+    {
+        ScheduledDate = DateTime.Today,
+        ProgramYear = DateTime.Today.Year,
+        Status = AuditStatus.PLANNED,
+        AuditorIndependenceStatement = "El auditor declara independencia respecto al proceso auditado."
+    };
     private static AuditFinding NewFinding() => new() { Type = FindingType.OBSERVATION };
     private static ManagementReview NewReview() => new() { ReviewDate = DateTime.Today };
     private static QualityIndicator NewQualityIndicator() => new()
@@ -1545,21 +1977,23 @@
         _ => value.ToString()
     };
 
-    private static string GetRiskScoreLevel(int score) => score switch
-    {
-        >= 16 => "Crítico",
-        >= 12 => "Alto",
-        >= 6 => "Medio",
-        _ => "Bajo"
-    };
+    private bool IsHighOrCriticalRisk(int score) => score > riskMatrix.MediumMax;
 
-    private static string GetRiskScoreBadgeClass(int score) => score switch
+    private string GetRiskScoreLevel(int score)
     {
-        >= 16 => "bg-danger",
-        >= 12 => "bg-warning text-dark",
-        >= 6 => "bg-info text-dark",
-        _ => "bg-success"
-    };
+        if (score <= riskMatrix.LowMax) return "Bajo";
+        if (score <= riskMatrix.MediumMax) return "Medio";
+        if (score <= riskMatrix.HighMax) return "Alto";
+        return "Crítico";
+    }
+
+    private string GetRiskScoreBadgeClass(int score)
+    {
+        if (score <= riskMatrix.LowMax) return "bg-success";
+        if (score <= riskMatrix.MediumMax) return "bg-info text-dark";
+        if (score <= riskMatrix.HighMax) return "bg-warning text-dark";
+        return "bg-danger";
+    }
 
     private static string GetWarningBadgeClass(int count)
     {
@@ -1887,5 +2321,32 @@
             f.AuditPlanId == auditPlanId &&
             IsNonconformityFinding(f.Type) &&
             !f.RelatedNCId.HasValue);
+    }
+
+    private sealed class RiskMatrixSettings
+    {
+        public int LowMax { get; set; } = 5;
+        public int MediumMax { get; set; } = 11;
+        public int HighMax { get; set; } = 15;
+        public string LikelihoodCriteria { get; set; } = string.Empty;
+        public string ImpactCriteria { get; set; } = string.Empty;
+        public string AcceptanceCriteria { get; set; } = string.Empty;
+
+        public static RiskMatrixSettings Default() => new()
+        {
+            LowMax = 5,
+            MediumMax = 11,
+            HighMax = 15,
+            LikelihoodCriteria = "1 Rara: evento excepcional.\n2 Improbable: poco frecuente.\n3 Posible: puede ocurrir.\n4 Probable: ocurre de forma recurrente.\n5 Casi segura: se espera que ocurra.",
+            ImpactCriteria = "1 Insignificante: sin impacto en resultados o pacientes.\n2 Menor: impacto limitado y controlable.\n3 Moderado: afecta proceso o requiere accion correctiva.\n4 Mayor: posible impacto en resultados o servicio.\n5 Catastrofico: impacto grave en seguridad del paciente o acreditacion.",
+            AcceptanceCriteria = "Riesgo residual bajo: aceptable. Medio: requiere seguimiento. Alto o critico: requiere aprobacion formal, plan de accion y revision de eficacia."
+        };
+
+        public void Normalize()
+        {
+            LowMax = Math.Clamp(LowMax, 1, 24);
+            MediumMax = Math.Clamp(Math.Max(MediumMax, LowMax + 1), 2, 25);
+            HighMax = Math.Clamp(Math.Max(HighMax, MediumMax + 1), 3, 25);
+        }
     }
 }
