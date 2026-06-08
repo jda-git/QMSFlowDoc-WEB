@@ -203,7 +203,11 @@
                         <select class="form-select mb-3" @bind="findingModel.Type">
                             @foreach (var v in Enum.GetValues<FindingType>()) { <option value="@v">@GetFindingTypeLabel(v)</option> }
                         </select>
-                        <button class="btn btn-outline-primary w-100" @onclick="CreateAuditFinding" disabled="@(findingModel.AuditPlanId == Guid.Empty)">Registrar hallazgo</button>
+                        <button class="btn btn-outline-primary w-100" @onclick="SaveAuditFinding" disabled="@(findingModel.AuditPlanId == Guid.Empty)">@(findingModel.Id == Guid.Empty ? "Registrar hallazgo" : "Actualizar hallazgo")</button>
+                        @if (findingModel.Id != Guid.Empty)
+                        {
+                            <button class="btn btn-outline-secondary w-100 mt-2" @onclick="CancelFindingEdit">Cancelar edicion</button>
+                        }
                     </div>
                 </div>
                 <div class="col-lg-8">
@@ -249,7 +253,7 @@
 
                     <div class="mt-4">
                         <TableCard Title="Hallazgos de auditoría">
-                            <thead><tr><th>Auditoría</th><th>Tipo</th><th>ISO</th><th>Descripción</th><th>NC vinculada</th><th>Acción</th></tr></thead>
+                            <thead><tr><th>Auditoría</th><th>Tipo</th><th>ISO</th><th>Descripción</th><th>NC vinculada</th><th>Seguimiento</th><th>Acción</th></tr></thead>
                             <tbody>
                             @foreach (var f in auditFindings)
                             {
@@ -272,11 +276,15 @@
                                             <span class="text-muted">No aplica</span>
                                         }
                                     </td>
+                                    <td><span class="badge @GetAuditFindingBadgeClass(f)">@GetAuditFindingStatusLabel(f)</span></td>
                                     <td>
-                                        @if (IsNonconformityFinding(f.Type) && !f.RelatedNCId.HasValue)
-                                        {
-                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => CreateNCFromFinding(f)">Crear NC</button>
-                                        }
+                                        <div class="d-flex flex-wrap gap-2">
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => EditAuditFinding(f)">Editar</button>
+                                            @if (IsNonconformityFinding(f.Type) && !f.RelatedNCId.HasValue)
+                                            {
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => CreateNCFromFinding(f)">Crear NC</button>
+                                            }
+                                        </div>
                                     </td>
                                 </tr>
                             }
@@ -350,6 +358,7 @@
                                 <tr><td>Desviaciones EQA abiertas</td><td><span class="badge @GetWarningBadgeClass(openEqaDeviationCount)">@openEqaDeviationCount</span></td></tr>
                                 <tr><td>Auditorías planificadas/en curso</td><td><span class="badge bg-info text-dark">@plannedOrInProgressAuditCount</span></td></tr>
                                 <tr><td>Hallazgos NC sin vincular</td><td><span class="badge @GetWarningBadgeClass(pendingAuditNcFindingCount)">@pendingAuditNcFindingCount</span></td></tr>
+                                <tr><td>Hallazgos de auditoría vencidos</td><td><span class="badge @GetWarningBadgeClass(overdueAuditFindingCount)">@overdueAuditFindingCount</span></td></tr>
                                 <tr><td>Proveedores con atencion</td><td><span class="badge @GetWarningBadgeClass(failedSupplierEvaluationCount)">@failedSupplierEvaluationCount</span></td></tr>
                             </tbody>
                         </TableCard>
@@ -558,6 +567,7 @@
     private int overdueIndicatorActionCount;
     private int openReviewActionCount;
     private int overdueReviewActionCount;
+    private int overdueAuditFindingCount;
 
     private Risk riskModel = NewRisk();
     private AuditPlan auditModel = NewAudit();
@@ -613,6 +623,7 @@
         overdueIndicatorActionCount = qualityIndicators.Count(IsIndicatorActionOverdue);
         openReviewActionCount = reviews.Count(ReviewHasOpenAction);
         overdueReviewActionCount = reviews.Count(IsReviewActionOverdue);
+        overdueAuditFindingCount = auditFindings.Count(IsAuditFindingOverdue);
     }
 
     private async Task SaveRisk()
@@ -803,7 +814,7 @@
         target.ReportDocumentId = source.ReportDocumentId;
     }
 
-    private async Task CreateAuditFinding()
+    private async Task SaveAuditFinding()
     {
         if (findingModel.AuditPlanId == Guid.Empty || string.IsNullOrWhiteSpace(findingModel.Description)) return;
         if (IsNonconformityFinding(findingModel.Type) &&
@@ -815,18 +826,71 @@
             return;
         }
 
-        findingModel.Id = Guid.NewGuid();
-        DbContext.AuditFindings.Add(findingModel);
-
-        var audit = await DbContext.AuditPlans.FindAsync(findingModel.AuditPlanId);
-        if (audit != null && audit.Status == AuditStatus.PLANNED)
+        if (findingModel.Id == Guid.Empty)
         {
-            audit.Status = AuditStatus.IN_PROGRESS;
+            findingModel.Id = Guid.NewGuid();
+            DbContext.AuditFindings.Add(findingModel);
+
+            var audit = await DbContext.AuditPlans.FindAsync(findingModel.AuditPlanId);
+            if (audit != null && audit.Status == AuditStatus.PLANNED)
+            {
+                audit.Status = AuditStatus.IN_PROGRESS;
+            }
+
+            AddAuditLog("CREATE", "AuditFinding", findingModel.Id, $"Hallazgo de auditoría registrado: {findingModel.Description}");
+            await SaveAndReload("Hallazgo de auditoría registrado.");
+        }
+        else
+        {
+            var existing = await DbContext.AuditFindings.FindAsync(findingModel.Id);
+            if (existing == null)
+            {
+                SetError("No se encontro el hallazgo de auditoría seleccionado.");
+                return;
+            }
+
+            CopyAuditFindingFields(findingModel, existing);
+            AddAuditLog("UPDATE", "AuditFinding", existing.Id, $"Hallazgo de auditoría actualizado: {existing.Description}");
+            await SaveAndReload("Hallazgo de auditoría actualizado.");
         }
 
-        AddAuditLog("CREATE", "AuditFinding", findingModel.Id, $"Hallazgo de auditoría registrado: {findingModel.Description}");
-        await SaveAndReload("Hallazgo de auditoría registrado.");
         findingModel = NewFinding();
+    }
+
+    private void EditAuditFinding(AuditFinding finding)
+    {
+        findingModel = new AuditFinding
+        {
+            Id = finding.Id,
+            AuditPlanId = finding.AuditPlanId,
+            Description = finding.Description,
+            Type = finding.Type,
+            IsoRequirement = finding.IsoRequirement,
+            Responsible = finding.Responsible,
+            DueDate = finding.DueDate,
+            EffectivenessReview = finding.EffectivenessReview,
+            RelatedNCId = finding.RelatedNCId
+        };
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private void CancelFindingEdit()
+    {
+        findingModel = NewFinding();
+        successMessage = null;
+        errorMessage = null;
+    }
+
+    private static void CopyAuditFindingFields(AuditFinding source, AuditFinding target)
+    {
+        target.AuditPlanId = source.AuditPlanId;
+        target.Description = source.Description;
+        target.Type = source.Type;
+        target.IsoRequirement = source.IsoRequirement;
+        target.Responsible = source.Responsible;
+        target.DueDate = source.DueDate;
+        target.EffectivenessReview = source.EffectivenessReview;
     }
 
     private async Task CreateNCFromFinding(AuditFinding finding)
@@ -1237,7 +1301,7 @@
             $"- Indicadores fuera de objetivo: {indicatorOutOfTargetCount}.",
             $"- Equipos no aptos o restringidos: {equipmentAttentionCount}.",
             $"- EQA con revisión/acción pendiente: {eqaAttentionCount}; desviaciones EQA abiertas: {openEqaDeviationCount}.",
-            $"- Auditorías planificadas/en curso: {plannedOrInProgressAuditCount}; hallazgos NC sin vincular: {pendingAuditNcFindingCount}.",
+            $"- Auditorías planificadas/en curso: {plannedOrInProgressAuditCount}; hallazgos NC sin vincular: {pendingAuditNcFindingCount}; hallazgos vencidos: {overdueAuditFindingCount}.",
             $"- Evaluaciones de proveedores no aprobadas: {failedSupplierEvaluationCount}.",
             "- Revisión de acciones, recursos, cambios que afectan al sistema de gestión y oportunidades de mejora.");
     }
@@ -1333,6 +1397,53 @@
     private static string GetWarningBadgeClass(int count)
     {
         return count > 0 ? "bg-warning text-dark" : "bg-success";
+    }
+
+    private static bool IsAuditFindingOverdue(AuditFinding finding)
+    {
+        if (!finding.DueDate.HasValue || finding.DueDate.Value.Date >= DateTime.Today)
+        {
+            return false;
+        }
+
+        if (IsNonconformityFinding(finding.Type))
+        {
+            return !finding.RelatedNCId.HasValue;
+        }
+
+        return string.IsNullOrWhiteSpace(finding.EffectivenessReview);
+    }
+
+    private static string GetAuditFindingStatusLabel(AuditFinding finding)
+    {
+        if (IsNonconformityFinding(finding.Type) && finding.RelatedNCId.HasValue)
+        {
+            return "NC vinculada";
+        }
+
+        if (!IsNonconformityFinding(finding.Type) && !string.IsNullOrWhiteSpace(finding.EffectivenessReview))
+        {
+            return "Cerrado";
+        }
+
+        if (IsAuditFindingOverdue(finding))
+        {
+            return "Vencido";
+        }
+
+        return finding.DueDate.HasValue ? "Pendiente" : "Sin plazo";
+    }
+
+    private static string GetAuditFindingBadgeClass(AuditFinding finding)
+    {
+        return GetAuditFindingStatusLabel(finding) switch
+        {
+            "NC vinculada" => "bg-success",
+            "Cerrado" => "bg-success",
+            "Vencido" => "bg-danger",
+            "Pendiente" => "bg-warning text-dark",
+            _ => "bg-secondary"
+        };
     }
 
     private static bool IsRiskActionOverdue(Risk risk)
