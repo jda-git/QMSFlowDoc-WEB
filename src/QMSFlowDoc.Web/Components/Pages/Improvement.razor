@@ -616,6 +616,11 @@
             SetError("Los riesgos altos o críticos deben tener acción o mitigación planificada.");
             return;
         }
+        if (riskModel.RiskScore >= 12 && (string.IsNullOrWhiteSpace(riskModel.Responsible) || !riskModel.DueDate.HasValue))
+        {
+            SetError("Los riesgos altos o criticos deben incluir responsable y fecha limite.");
+            return;
+        }
         if (riskModel.Id == Guid.Empty)
         {
             riskModel.Id = Guid.NewGuid();
@@ -709,6 +714,14 @@
     private async Task SaveAudit()
     {
         if (string.IsNullOrWhiteSpace(auditModel.Title)) return;
+        if (string.IsNullOrWhiteSpace(auditModel.Scope) ||
+            string.IsNullOrWhiteSpace(auditModel.Criteria) ||
+            string.IsNullOrWhiteSpace(auditModel.LeadAuditor))
+        {
+            SetError("La auditoria debe incluir alcance, criterios/requisitos auditados y auditor lider.");
+            return;
+        }
+
         if (auditModel.Id == Guid.Empty)
         {
             auditModel.Id = Guid.NewGuid();
@@ -781,6 +794,15 @@
     private async Task CreateAuditFinding()
     {
         if (findingModel.AuditPlanId == Guid.Empty || string.IsNullOrWhiteSpace(findingModel.Description)) return;
+        if (IsNonconformityFinding(findingModel.Type) &&
+            (string.IsNullOrWhiteSpace(findingModel.IsoRequirement) ||
+             string.IsNullOrWhiteSpace(findingModel.Responsible) ||
+             !findingModel.DueDate.HasValue))
+        {
+            SetError("Los hallazgos de no conformidad deben incluir requisito ISO, responsable y fecha prevista de cierre.");
+            return;
+        }
+
         findingModel.Id = Guid.NewGuid();
         DbContext.AuditFindings.Add(findingModel);
 
@@ -829,6 +851,12 @@
             SetError("Para mitigar o aceptar un riesgo debe registrarse revisión de eficacia/aceptación.");
             return;
         }
+        if ((status == RiskStatus.MITIGATED || status == RiskStatus.ACCEPTED) &&
+            (!risk.ResidualRiskScore.HasValue || !risk.EffectivenessReviewDate.HasValue))
+        {
+            SetError("Para mitigar o aceptar un riesgo debe registrarse riesgo residual calculado y fecha de revision de eficacia.");
+            return;
+        }
         risk.Status = status;
         risk.UpdatedAt = DateTime.UtcNow;
         AddAuditLog("STATUS_CHANGE", "Risk", risk.Id, $"Estado de riesgo cambiado a {GetRiskStatusLabel(status)}: {risk.Title}");
@@ -847,7 +875,14 @@
         }
         if (status == AuditStatus.COMPLETED && !AuditHasCompletionEvidence(audit))
         {
-            SetError("No se puede completar la auditoría sin criterios/checklist, informe y conclusiones.");
+            SetError("No se puede completar la auditoria sin alcance, criterios, auditor, checklist, informe y conclusiones.");
+            return;
+        }
+        if (status == AuditStatus.COMPLETED &&
+            auditFindings.Any(f => f.AuditPlanId == audit.Id) &&
+            string.IsNullOrWhiteSpace(audit.FollowUpActions))
+        {
+            SetError("No se puede completar la auditoria con hallazgos sin registrar seguimiento de acciones.");
             return;
         }
 
@@ -860,6 +895,13 @@
 
     private async Task SaveReview()
     {
+        if (string.IsNullOrWhiteSpace(reviewModel.Participants) ||
+            string.IsNullOrWhiteSpace(reviewModel.Agenda))
+        {
+            SetError("La revision por direccion debe incluir participantes y agenda.");
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(reviewModel.Summary) ||
             string.IsNullOrWhiteSpace(reviewModel.Decisions) ||
             string.IsNullOrWhiteSpace(reviewModel.Actions))
@@ -867,6 +909,13 @@
             SetError("La revisión por dirección debe incluir resumen, decisiones y acciones acordadas.");
             return;
         }
+        if (!string.IsNullOrWhiteSpace(reviewModel.Actions) &&
+            (string.IsNullOrWhiteSpace(reviewModel.ActionOwner) || !reviewModel.ActionDueDate.HasValue))
+        {
+            SetError("Las acciones de revision por direccion deben incluir responsable y fecha limite.");
+            return;
+        }
+
         if (reviewModel.Id == Guid.Empty)
         {
             reviewModel.Id = Guid.NewGuid();
@@ -950,6 +999,15 @@
         ClampSupplierScores();
         supplierEvalModel.EvaluatorUserId = currentUserId;
         supplierEvalModel.EvaluatorName = string.IsNullOrWhiteSpace(supplierEvalModel.EvaluatorName) ? currentUserName : supplierEvalModel.EvaluatorName;
+        if (string.IsNullOrWhiteSpace(supplierEvalModel.EvaluatedPeriod) ||
+            string.IsNullOrWhiteSpace(supplierEvalModel.Scope) ||
+            string.IsNullOrWhiteSpace(supplierEvalModel.Criticality) ||
+            string.IsNullOrWhiteSpace(supplierEvalModel.EvaluatorName))
+        {
+            SetError("La evaluacion de proveedor debe incluir periodo, alcance, criticidad y evaluador.");
+            return;
+        }
+
         if (!supplierEvalModel.NextEvaluationDate.HasValue)
         {
             SetError("Toda evaluacion de proveedor debe incluir proxima fecha de evaluacion.");
@@ -1008,6 +1066,14 @@
         if (!indicatorModel.MeetsTarget && string.IsNullOrWhiteSpace(indicatorModel.ActionPlan))
         {
             SetError("Los indicadores fuera de objetivo deben incluir análisis/acción.");
+            return;
+        }
+        if (!indicatorModel.MeetsTarget &&
+            (string.IsNullOrWhiteSpace(indicatorModel.Analysis) ||
+             string.IsNullOrWhiteSpace(indicatorModel.Responsible) ||
+             !indicatorModel.DueDate.HasValue))
+        {
+            SetError("Los indicadores fuera de objetivo deben incluir analisis, responsable y fecha limite.");
             return;
         }
 
@@ -1321,7 +1387,10 @@
 
     private static bool AuditHasCompletionEvidence(AuditPlan audit)
     {
-        return !string.IsNullOrWhiteSpace(audit.ChecklistJson) &&
+        return !string.IsNullOrWhiteSpace(audit.Scope) &&
+               !string.IsNullOrWhiteSpace(audit.Criteria) &&
+               !string.IsNullOrWhiteSpace(audit.LeadAuditor) &&
+               !string.IsNullOrWhiteSpace(audit.ChecklistJson) &&
                !string.IsNullOrWhiteSpace(audit.SummaryReport) &&
                !string.IsNullOrWhiteSpace(audit.Conclusions);
     }
