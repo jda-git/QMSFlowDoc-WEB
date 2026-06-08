@@ -156,6 +156,8 @@ public class QualityIndicator
     public string? ActionPlan { get; set; }
     public string? Responsible { get; set; }
     public DateTime? DueDate { get; set; }
+    public string? EffectivenessReview { get; set; }
+    public DateTime? EffectivenessReviewDate { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 }
 

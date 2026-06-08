@@ -770,9 +770,13 @@ namespace QMSFlowDoc.Infrastructure.Seed
                     ActionPlan TEXT NULL,
                     Responsible TEXT NULL,
                     DueDate TEXT NULL,
+                    EffectivenessReview TEXT NULL,
+                    EffectivenessReviewDate TEXT NULL,
                     CreatedAt TEXT NOT NULL
                 );
                 """);
+            await EnsureColumnAsync(context, "QualityIndicators", "EffectivenessReview", "TEXT");
+            await EnsureColumnAsync(context, "QualityIndicators", "EffectivenessReviewDate", "TEXT");
             await context.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS IX_QualityIndicators_Name_Period ON QualityIndicators (Name, Period);");
         }
 

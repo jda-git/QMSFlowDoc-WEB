@@ -420,7 +420,11 @@
                         <label class="form-label small fw-semibold text-secondary mb-1">Responsable</label>
                         <input class="form-control mb-2" placeholder="Responsable" @bind="indicatorModel.Responsible" />
                         <label class="form-label small fw-semibold text-secondary mb-1">Fecha límite</label>
-                        <input type="date" class="form-control mb-3" @bind="indicatorModel.DueDate" />
+                        <input type="date" class="form-control mb-2" @bind="indicatorModel.DueDate" />
+                        <label class="form-label small fw-semibold text-secondary mb-1">Revisión de eficacia de la acción</label>
+                        <textarea class="form-control mb-2" rows="2" placeholder="Evidencia de cierre/eficacia de la acción" @bind="indicatorModel.EffectivenessReview"></textarea>
+                        <label class="form-label small fw-semibold text-secondary mb-1">Fecha de revisión de eficacia</label>
+                        <input type="date" class="form-control mb-3" @bind="indicatorModel.EffectivenessReviewDate" />
                         <button class="btn btn-primary w-100" @onclick="SaveQualityIndicator">@(indicatorModel.Id == Guid.Empty ? "Registrar indicador" : "Actualizar indicador")</button>
                         @if (indicatorModel.Id != Guid.Empty)
                         {
@@ -446,6 +450,10 @@
                                     @if (!string.IsNullOrWhiteSpace(i.ActionPlan))
                                     {
                                         <small class="text-primary">@i.ActionPlan</small>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(i.EffectivenessReview))
+                                    {
+                                        <div><small class="text-success">Eficacia: @i.EffectivenessReview @(i.EffectivenessReviewDate.HasValue ? $"({i.EffectivenessReviewDate.Value:dd/MM/yyyy})" : "")</small></div>
                                     }
                                 </td>
                                 <td><span class="badge @GetIndicatorActionBadgeClass(i) me-2">@GetIndicatorActionStatusLabel(i)</span><button class="btn btn-sm btn-outline-primary" @onclick="() => EditIndicator(i)">Editar</button></td>
@@ -1297,6 +1305,16 @@
             SetError("Los indicadores fuera de objetivo deben incluir analisis, responsable y fecha limite.");
             return;
         }
+        if (!string.IsNullOrWhiteSpace(indicatorModel.EffectivenessReview) && !indicatorModel.EffectivenessReviewDate.HasValue)
+        {
+            SetError("La revision de eficacia del indicador debe incluir fecha.");
+            return;
+        }
+        if (indicatorModel.EffectivenessReviewDate.HasValue && string.IsNullOrWhiteSpace(indicatorModel.EffectivenessReview))
+        {
+            SetError("La fecha de revision de eficacia requiere registrar la evidencia de eficacia.");
+            return;
+        }
 
         if (indicatorModel.Id == Guid.Empty)
         {
@@ -1341,6 +1359,8 @@
             ActionPlan = indicator.ActionPlan,
             Responsible = indicator.Responsible,
             DueDate = indicator.DueDate,
+            EffectivenessReview = indicator.EffectivenessReview,
+            EffectivenessReviewDate = indicator.EffectivenessReviewDate,
             CreatedAt = indicator.CreatedAt
         };
         successMessage = null;
@@ -1369,6 +1389,8 @@
         target.ActionPlan = source.ActionPlan;
         target.Responsible = source.Responsible;
         target.DueDate = source.DueDate;
+        target.EffectivenessReview = source.EffectivenessReview;
+        target.EffectivenessReviewDate = source.EffectivenessReviewDate;
     }
 
     private void UseIsoInputsInReviewAgenda()
@@ -1666,6 +1688,7 @@
     private static bool IsIndicatorActionOverdue(QualityIndicator indicator)
     {
         return !indicator.MeetsTarget &&
+               string.IsNullOrWhiteSpace(indicator.EffectivenessReview) &&
                indicator.DueDate.HasValue &&
                indicator.DueDate.Value.Date < DateTime.Today;
     }
@@ -1677,6 +1700,11 @@
             return "Cumple";
         }
 
+        if (!string.IsNullOrWhiteSpace(indicator.EffectivenessReview))
+        {
+            return "Accion cerrada";
+        }
+
         return IsIndicatorActionOverdue(indicator) ? "Vencida" : "En seguimiento";
     }
 
@@ -1685,6 +1713,7 @@
         return GetIndicatorActionStatusLabel(indicator) switch
         {
             "Cumple" => "bg-success",
+            "Accion cerrada" => "bg-success",
             "Vencida" => "bg-danger",
             _ => "bg-warning text-dark"
         };
