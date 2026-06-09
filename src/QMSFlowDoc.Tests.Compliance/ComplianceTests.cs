@@ -5,6 +5,7 @@ using QMSFlowDoc.Infrastructure.Services.EQA;
 using QMSFlowDoc.Infrastructure.Services.Quality;
 using QMSFlowDoc.Infrastructure.Services.Staff;
 using QMSFlowDoc.Infrastructure.Services.Equipment;
+using QMSFlowDoc.Infrastructure.Services.Inventory;
 using QMSFlowDoc.Shared.DTOs;
 using SharedModels = QMSFlowDoc.Shared.Models;
 using System;
@@ -362,6 +363,160 @@ namespace QMSFlowDoc.Tests.Compliance
             var ex2 = await Assert.ThrowsAsync<InvalidOperationException>(() =>
                 eqaService.UpdateRoundAsync(round));
             Assert.Contains("estado 'Cerrada'", ex2.Message);
+        }
+
+        [Fact]
+        public async Task InventoryService_AdjustStock_AllowsWasteOnQuarantinedOrExpiredLot()
+        {
+            using var context = new QmsDbContext(_options);
+            var service = new InventoryService(context);
+
+            var reagentId = Guid.NewGuid();
+            var reagent = new Reagent
+            {
+                Id = reagentId,
+                Name = "CD4 Test",
+                Reference = "12345",
+                ReagentType = "Anticuerpo",
+                Status = ReagentStatus.ACTIVO
+            };
+            context.Reagents.Add(reagent);
+
+            var lotId = Guid.NewGuid();
+            var lot = new ReagentLot
+            {
+                Id = lotId,
+                ReagentId = reagentId,
+                LotNumber = "LOT001",
+                ReceivedQty = 5,
+                AvailableQty = 5,
+                ExpiryDate = DateTime.UtcNow.AddDays(-10), // Expired
+                Status = LotStatus.QUARANTINE,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.ReagentLots.Add(lot);
+            await context.SaveChangesAsync();
+
+            // Act - Discard expired lot in quarantine as WASTE
+            var request = new AdjustStockRequest(
+                ReagentId: reagentId,
+                ReagentLotId: lotId,
+                MovementType: SharedModels.InventoryMovementType.WASTE,
+                Qty: -5,
+                Reason: "Descarte por caducidad",
+                Notes: "Manual",
+                UserId: Guid.NewGuid()
+            );
+
+            var ok = await service.AdjustStockAsync(request);
+
+            // Assert
+            Assert.True(ok);
+            var updatedLot = await context.ReagentLots.FindAsync(lotId);
+            Assert.NotNull(updatedLot);
+            Assert.Equal(0, updatedLot.AvailableQty);
+            Assert.Equal(LotStatus.EXPIRED, updatedLot.Status); // Changed to EXPIRED because it's a WASTE total consumption
+        }
+
+        [Fact]
+        public async Task InventoryService_AdjustStock_AllowsAdjustOnQuarantinedLot()
+        {
+            using var context = new QmsDbContext(_options);
+            var service = new InventoryService(context);
+
+            var reagentId = Guid.NewGuid();
+            var reagent = new Reagent
+            {
+                Id = reagentId,
+                Name = "CD4 Test 2",
+                Reference = "123456",
+                ReagentType = "Anticuerpo",
+                Status = ReagentStatus.ACTIVO
+            };
+            context.Reagents.Add(reagent);
+
+            var lotId = Guid.NewGuid();
+            var lot = new ReagentLot
+            {
+                Id = lotId,
+                ReagentId = reagentId,
+                LotNumber = "LOT002",
+                ReceivedQty = 5,
+                AvailableQty = 5,
+                ExpiryDate = DateTime.UtcNow.AddDays(100),
+                Status = LotStatus.QUARANTINE,
+                CreatedAt = DateTime.UtcNow
+            };
+            context.ReagentLots.Add(lot);
+            await context.SaveChangesAsync();
+
+            // Act - Make negative ADJUST to correct mistake on quarantined lot
+            var request = new AdjustStockRequest(
+                ReagentId: reagentId,
+                ReagentLotId: lotId,
+                MovementType: SharedModels.InventoryMovementType.ADJUST,
+                Qty: -2,
+                Reason: "Error de conteo",
+                Notes: "Manual",
+                UserId: Guid.NewGuid()
+            );
+
+            var ok = await service.AdjustStockAsync(request);
+
+            // Assert
+            Assert.True(ok);
+            var updatedLot = await context.ReagentLots.FindAsync(lotId);
+            Assert.NotNull(updatedLot);
+            Assert.Equal(3, updatedLot.AvailableQty);
+            Assert.Equal(LotStatus.QUARANTINE, updatedLot.Status); // Remains in QUARANTINE since it wasn't WASTE and not completely consumed
+        }
+
+        [Fact]
+        public async Task InventoryService_AdjustStock_BlocksOutOnQuarantinedOrExpiredLot()
+        {
+            using var context = new QmsDbContext(_options);
+            var service = new InventoryService(context);
+
+            var reagentId = Guid.NewGuid();
+            var reagent = new Reagent
+            {
+                Id = reagentId,
+                Name = "CD4 Test 3",
+                Reference = "1234567",
+                ReagentType = "Anticuerpo",
+                Status = ReagentStatus.ACTIVO
+            };
+            context.Reagents.Add(reagent);
+
+            var lotId = Guid.NewGuid();
+            var lot = new ReagentLot
+            {
+                Id = lotId,
+                ReagentId = reagentId,
+                LotNumber = "LOT003",
+                ReceivedQty = 5,
+                AvailableQty = 5,
+                ExpiryDate = DateTime.UtcNow.AddDays(100),
+                Status = LotStatus.QUARANTINE, // In quarantine
+                CreatedAt = DateTime.UtcNow
+            };
+            context.ReagentLots.Add(lot);
+            await context.SaveChangesAsync();
+
+            // Act & Assert - Clinical OUT should be blocked on quarantined lot
+            var request = new AdjustStockRequest(
+                ReagentId: reagentId,
+                ReagentLotId: lotId,
+                MovementType: SharedModels.InventoryMovementType.OUT,
+                Qty: -1,
+                Reason: "Clinical Use",
+                Notes: "Manual",
+                UserId: Guid.NewGuid()
+            );
+
+            var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                service.AdjustStockAsync(request));
+            Assert.Contains("Liberado o En Uso", ex.Message);
         }
     }
 }

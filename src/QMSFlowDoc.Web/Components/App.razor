@@ -45,6 +45,18 @@
             a.click();
             setTimeout(function () { document.body.removeChild(a); URL.revokeObjectURL(url); }, 100);
         };
+
+        window.setupBarcodeSubmitPrevention = function (inputId) {
+            var input = document.getElementById(inputId);
+            if (input) {
+                input.addEventListener('keydown', function (e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        input.dispatchEvent(new Event('change'));
+                    }
+                });
+            }
+        };
     </script>
 </body>
 

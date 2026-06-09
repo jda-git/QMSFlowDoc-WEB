@@ -268,23 +268,27 @@ public class InventoryService : IInventoryService
         var lot = await _context.ReagentLots.FindAsync(request.ReagentLotId);
         if (lot == null) return false;
 
-        // Validaciones estrictas ISO 15189 para salidas de stock (consumo)
+        // Validaciones estrictas ISO 15189 para salidas de stock (consumo clínico)
         if (request.Qty < 0)
         {
-            var consumableStatuses = new[] { LotStatus.RELEASED, LotStatus.IN_USE };
-            if (!consumableStatuses.Contains(lot.Status))
+            // Solo se aplican validaciones clínicas para consumos ordinarios (OUT)
+            if (request.MovementType == QMSFlowDoc.Shared.Models.InventoryMovementType.OUT)
             {
-                throw new InvalidOperationException($"No se permite el consumo del lote {lot.LotNumber} porque su estado es {lot.Status}. Debe estar Liberado o En Uso.");
+                var consumableStatuses = new[] { LotStatus.RELEASED, LotStatus.IN_USE };
+                if (!consumableStatuses.Contains(lot.Status))
+                {
+                    throw new InvalidOperationException($"No se permite el consumo del lote {lot.LotNumber} porque su estado es {lot.Status}. Debe estar Liberado o En Uso.");
+                }
+
+                if (lot.ExpiryDate < DateTime.UtcNow)
+                {
+                    throw new InvalidOperationException($"El lote {lot.LotNumber} está caducado (fecha de caducidad: {lot.ExpiryDate:dd/MM/yyyy}). No se puede utilizar en clínica.");
+                }
             }
 
             if (Math.Abs(request.Qty) > lot.AvailableQty)
             {
                 throw new InvalidOperationException($"Stock insuficiente en el lote {lot.LotNumber}. Disponible: {lot.AvailableQty}, Solicitado: {Math.Abs(request.Qty)}.");
-            }
-
-            if (lot.ExpiryDate < DateTime.UtcNow)
-            {
-                throw new InvalidOperationException($"El lote {lot.LotNumber} está caducado (fecha de caducidad: {lot.ExpiryDate:dd/MM/yyyy}). No se puede utilizar en clínica.");
             }
         }
 
@@ -292,7 +296,9 @@ public class InventoryService : IInventoryService
         if (lot.AvailableQty <= 0)
         {
             lot.AvailableQty = 0;
-            lot.Status = LotStatus.CONSUMED;
+            lot.Status = request.MovementType == QMSFlowDoc.Shared.Models.InventoryMovementType.WASTE 
+                ? LotStatus.EXPIRED 
+                : LotStatus.CONSUMED;
         }
 
         var movement = new InventoryMovement

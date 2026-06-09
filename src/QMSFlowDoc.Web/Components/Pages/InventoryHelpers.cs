@@ -236,4 +236,133 @@ public static class InventoryHelpers
 
     private static string? Enc(string? value)
         => string.IsNullOrEmpty(value) ? value : System.Net.WebUtility.HtmlEncode(value);
+
+    // ── Barcode Scanner Helpers ───────────────────────────────────────────────
+
+    public class BarcodeParseResult
+    {
+        public bool Success { get; set; }
+        public string Reference { get; set; } = string.Empty;
+        public string Lot { get; set; } = string.Empty;
+        public DateTime? ExpirationDate { get; set; }
+        public string ErrorMessage { get; set; } = string.Empty;
+    }
+
+    public static BarcodeParseResult ParseBarcode(string barcode)
+    {
+        if (string.IsNullOrWhiteSpace(barcode))
+        {
+            return new BarcodeParseResult { Success = false, ErrorMessage = "Código de barras vacío" };
+        }
+
+        var normalized = barcode.Replace("(", "").Replace(")", "").Replace("[", "").Replace("]", "").Trim();
+
+        // 1. BD (Becton Dickinson) GS1 format check
+        if (normalized.StartsWith("01") && normalized.Length >= 27)
+        {
+            // Standard BD layout check: 01 (GTIN, 14 chars) + 17 (Expiry, 6 chars) + 10 (Lot, variable)
+            bool isStandardBD = normalized.Substring(16, 2) == "17" && normalized.Substring(24, 2) == "10";
+            if (isStandardBD)
+            {
+                string reference = normalized.Substring(9, 6);
+                string expiryStr = normalized.Substring(18, 6);
+                string lot = normalized.Substring(26);
+
+                if (TryParseExpiryDate(expiryStr, out DateTime expiryDate))
+                {
+                    return new BarcodeParseResult
+                    {
+                        Success = true,
+                        Reference = reference,
+                        Lot = lot,
+                        ExpirationDate = expiryDate
+                    };
+                }
+                else
+                {
+                    return new BarcodeParseResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"Fecha de caducidad incorrecta: {expiryStr}"
+                    };
+                }
+            }
+
+            // Fallback for general GS1 layout sequence: 01 + 17 + 10 anywhere
+            string gtin = normalized.Substring(2, 14);
+            string referenceFallback = normalized.Substring(9, 6);
+            string remaining = normalized.Substring(16);
+
+            if (remaining.StartsWith("17") && remaining.Length >= 8)
+            {
+                string expiryStr = remaining.Substring(2, 6);
+                if (TryParseExpiryDate(expiryStr, out DateTime parsedExp))
+                {
+                    string rest = remaining.Substring(8);
+                    if (rest.StartsWith("10") && rest.Length > 2)
+                    {
+                        string lot = rest.Substring(2);
+                        return new BarcodeParseResult
+                        {
+                            Success = true,
+                            Reference = referenceFallback,
+                            Lot = lot,
+                            ExpirationDate = parsedExp
+                        };
+                    }
+                }
+            }
+        }
+
+        // 2. BioLegend split format: whitespace separated, exactly 2 parts
+        var parts = normalized.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 2)
+        {
+            return new BarcodeParseResult
+            {
+                Success = true,
+                Reference = parts[0],
+                Lot = parts[1],
+                ExpirationDate = null
+            };
+        }
+
+        return new BarcodeParseResult
+        {
+            Success = false,
+            ErrorMessage = "Código de barras no reconocido. Debe ser BD o BioLegend."
+        };
+    }
+
+    public static bool IsReferenceMatch(string barcodeRef, string reagentRef)
+    {
+        return NormalizeReference(barcodeRef) == NormalizeReference(reagentRef);
+    }
+
+    private static string NormalizeReference(string refStr)
+    {
+        if (string.IsNullOrEmpty(refStr)) return string.Empty;
+        return refStr.Replace("-", "").Replace(" ", "").Trim().TrimStart('0').ToLowerInvariant();
+    }
+
+    private static bool TryParseExpiryDate(string yyMMdd, out DateTime date)
+    {
+        date = default;
+        if (yyMMdd.Length != 6) return false;
+
+        try
+        {
+            int yy = int.Parse(yyMMdd.Substring(0, 2));
+            int mm = int.Parse(yyMMdd.Substring(2, 2));
+            int dd = int.Parse(yyMMdd.Substring(4, 2));
+
+            int year = 2000 + yy;
+            date = new DateTime(year, mm, dd);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

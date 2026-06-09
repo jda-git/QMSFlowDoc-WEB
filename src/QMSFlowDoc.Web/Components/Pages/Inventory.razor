@@ -867,9 +867,14 @@ else
                                 <label class="form-label fw-medium text-secondary">Leer código de barras</label>
                                 <div class="input-group">
                                     <span class="input-group-text"><i class="bi bi-qr-code-scan text-success"></i></span>
-                                    <input type="text" class="form-control form-control-premium bg-light" placeholder="Escanee el código de barras aquí..." readonly />
+                                    <input type="text" 
+                                           id="barcodeInput"
+                                           class="form-control form-control-premium" 
+                                           placeholder="Escanee el código de barras aquí..." 
+                                           @bind="scannedBarcode"
+                                           @bind:after="OnBarcodeScanned" />
                                 </div>
-                                <small class="text-muted small-badge bg-light text-secondary border mt-1 d-inline-block">Futura implementación: extracción automática de lote y caducidad</small>
+                                <small class="text-muted small-badge bg-light text-secondary border mt-1 d-inline-block">Extracción automática de lote y caducidad (BD y BioLegend)</small>
                             </div>
                         </div>
 
@@ -1215,6 +1220,9 @@ else
     private AdjustFormModel adjustModel = new();
     private SupplierFormModel supplierModel = new();
 
+    private string scannedBarcode = string.Empty;
+    private bool barcodeSetupDone = false;
+
     // Validation Errors
     private string reagentError = string.Empty;
     private string lotError = string.Empty;
@@ -1235,6 +1243,23 @@ else
 
     [CascadingParameter]
     private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (showRegisterLotModal && !barcodeSetupDone)
+        {
+            barcodeSetupDone = true;
+            try
+            {
+                await Task.Delay(50);
+                await JS.InvokeVoidAsync("setupBarcodeSubmitPrevention", "barcodeInput");
+            }
+            catch
+            {
+                // Ignorar si JS no está listo o en pre-renderizado
+            }
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -1514,6 +1539,8 @@ else
         };
 
         lotError = string.Empty;
+        scannedBarcode = string.Empty;
+        barcodeSetupDone = false;
         showRegisterLotModal = true;
     }
 
@@ -1863,6 +1890,38 @@ else
         catch (Exception ex)
         {
             lotError = $"Error: {ex.Message}";
+        }
+    }
+
+    private void OnBarcodeScanned()
+    {
+        lotError = string.Empty;
+        if (string.IsNullOrWhiteSpace(scannedBarcode)) return;
+
+        var result = InventoryHelpers.ParseBarcode(scannedBarcode);
+        if (!result.Success)
+        {
+            lotError = result.ErrorMessage;
+            return;
+        }
+
+        if (targetReagent == null)
+        {
+            lotError = "No hay ningún reactivo destino seleccionado.";
+            return;
+        }
+
+        if (!InventoryHelpers.IsReferenceMatch(result.Reference, targetReagent.Reference))
+        {
+            lotError = $"El código de barras contiene la referencia '{result.Reference}', que no coincide con la referencia del reactivo seleccionado '{targetReagent.Reference}'.";
+            return;
+        }
+
+        lotModel.LotNumber = result.Lot;
+
+        if (result.ExpirationDate.HasValue)
+        {
+            lotModel.ExpiryDate = result.ExpirationDate.Value;
         }
     }
 
