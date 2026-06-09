@@ -243,7 +243,10 @@
 
         foreach (var log in orderedLogs)
         {
-            var payload = $"{lastHash}|{log.Id}|{log.Timestamp:o}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}";
+            var timestampStr = log.Timestamp.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(log.Timestamp, DateTimeKind.Utc).ToString("o")
+                : log.Timestamp.ToUniversalTime().ToString("o");
+            var payload = $"{lastHash}|{log.Id}|{timestampStr}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}";
             string computedHash;
             using (var sha256 = System.Security.Cryptography.SHA256.Create())
             {
