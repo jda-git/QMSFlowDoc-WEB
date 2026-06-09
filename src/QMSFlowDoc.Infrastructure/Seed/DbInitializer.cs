@@ -325,6 +325,23 @@ namespace QMSFlowDoc.Infrastructure.Seed
                 await context.SaveChangesAsync();
             }
 
+            // 3.6 Seed Default Document Types if empty
+            if (await context.DocumentTypes.CountAsync() == 0)
+            {
+                var docTypes = new List<QMSFlowDoc.Domain.Entities.DocumentType>
+                {
+                    new() { Id = Guid.NewGuid(), TypeCode = "PRO", Name = "Procedimiento", Description = "Procedimientos Normalizados de Trabajo (PNT)" },
+                    new() { Id = Guid.NewGuid(), TypeCode = "IT", Name = "Instrucción Técnica", Description = "Instrucciones técnicas de equipos o procesos" },
+                    new() { Id = Guid.NewGuid(), TypeCode = "FOR", Name = "Formulario", Description = "Registros, formularios y plantillas de trabajo" },
+                    new() { Id = Guid.NewGuid(), TypeCode = "MAN", Name = "Manual", Description = "Manuales de calidad, bioseguridad, etc." },
+                    new() { Id = Guid.NewGuid(), TypeCode = "GUI", Name = "Guía", Description = "Guías rápidas y material de referencia" },
+                    new() { Id = Guid.NewGuid(), TypeCode = "POL", Name = "Política", Description = "Políticas y directrices de la organización" }
+                };
+                context.DocumentTypes.AddRange(docTypes);
+                await context.SaveChangesAsync();
+                Console.WriteLine("✔ Seeded default Document Types.");
+            }
+
             // 4. Seed Default Admin User if no users exist in database (fallback)
             const string adminUser = "admin";
             const string adminEmail = "admin@qmsflowdoc.com";

@@ -58,6 +58,12 @@
                     <i class="bi bi-cloud-arrow-up-fill me-2"></i>Copia de Seguridad
                 </button>
             </li>
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == "docTypes" ? "active text-primary fw-semibold" : "text-secondary")"
+                        @onclick='() => SetTab("docTypes")'>
+                    <i class="bi bi-file-earmark-medical-fill me-2"></i>Tipos de Documento
+                </button>
+            </li>
         }
     </ul>
 
@@ -490,6 +496,75 @@
                 </div>
             </div>
         }
+        else if (activeTab == "docTypes" && isAdmin)
+        {
+            <!-- Document Types Tab -->
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <div>
+                    <h5 class="fw-bold mb-0 text-dark">Tipos de Documento</h5>
+                    <span class="text-muted small">Gestione los tipos de documentos predefinidos para la clasificación del gestor documental.</span>
+                </div>
+                <button class="btn btn-premium px-4" @onclick="OpenAddDocTypeModal">
+                    <i class="bi bi-file-earmark-plus-fill me-2"></i> Nuevo Tipo de Documento
+                </button>
+            </div>
+
+            @if (!string.IsNullOrEmpty(docTypesSuccessMessage))
+            {
+                <div class="alert alert-success py-2 small mb-3">
+                    <i class="bi bi-check-circle-fill me-2"></i>@docTypesSuccessMessage
+                </div>
+            }
+            @if (!string.IsNullOrEmpty(docTypesErrorMessage))
+            {
+                <div class="alert alert-danger py-2 small mb-3">
+                    <i class="bi bi-exclamation-triangle-fill me-2"></i>@docTypesErrorMessage
+                </div>
+            }
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light border-bottom text-muted small text-uppercase">
+                        <tr>
+                            <th class="ps-3" style="width: 20%;">Código de Tipo</th>
+                            <th style="width: 30%;">Nombre del Tipo</th>
+                            <th style="width: 35%;">Descripción</th>
+                            <th class="text-end pe-3" style="width: 15%;">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (docTypesList == null || !docTypesList.Any())
+                        {
+                            <tr>
+                                <td colspan="4" class="text-center py-5 text-muted">
+                                    <i class="bi bi-file-earmark-medical fs-2 d-block mb-2 text-secondary"></i>
+                                    No hay tipos de documento registrados en el sistema.
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var type in docTypesList)
+                            {
+                                <tr>
+                                    <td class="ps-3 fw-bold text-primary font-monospace">@type.TypeCode</td>
+                                    <td class="fw-semibold text-dark">@type.Name</td>
+                                    <td class="text-muted small">@type.Description</td>
+                                    <td class="text-end pe-3">
+                                        <button class="btn btn-outline-secondary btn-sm rounded-3 px-3 me-1" @onclick="() => OpenEditDocTypeModal(type)" title="Editar Tipo">
+                                            <i class="bi bi-pencil-square"></i> Editar
+                                        </button>
+                                        <button class="btn btn-light btn-sm rounded-3 border px-2.5 text-danger" @onclick="() => ConfirmDeleteDocType(type)" title="Eliminar Tipo">
+                                            <i class="bi bi-trash"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </div>
 </div>
 
@@ -687,6 +762,80 @@
     </div>
 }
 
+<!-- MODAL: REGISTRAR/EDITAR TIPO DE DOCUMENTO -->
+@if (showDocTypeModal && isAdmin)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content card shadow border-0 rounded-4 w-100">
+                <div class="card-header bg-primary text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h5 class="mb-0 fw-bold">
+                        <i class="bi bi-file-earmark-medical-fill me-2"></i>@(isEditingDocType ? "Editar Tipo de Documento" : "Nuevo Tipo de Documento")
+                    </h5>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showDocTypeModal = false"></button>
+                </div>
+                <div class="card-body p-4">
+                    @if (!string.IsNullOrEmpty(docTypeModalError))
+                    {
+                        <div class="alert alert-danger py-2 small mb-3">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>@docTypeModalError
+                        </div>
+                    }
+                    <div class="row g-3">
+                        <div class="col-12">
+                            <label class="form-label fw-medium text-secondary small">Código del Tipo (Prefijo) *</label>
+                            <input type="text" class="form-control form-control-premium font-monospace text-uppercase" 
+                                   @bind="editingDocTypeModel.TypeCode" placeholder="Ej. PRO, IT, FOR" maxlength="30" />
+                            <div class="form-text small">El código corto usado para identificar el tipo de documento.</div>
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-medium text-secondary small">Nombre del Tipo *</label>
+                            <input type="text" class="form-control form-control-premium" 
+                                   @bind="editingDocTypeModel.Name" placeholder="Ej. Procedimiento Normalizado" maxlength="200" />
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label fw-medium text-secondary small">Descripción (Opcional)</label>
+                            <textarea class="form-control form-control-premium" rows="2" 
+                                      @bind="editingDocTypeModel.Description" placeholder="Ej. Documentos que detallan los procedimientos de trabajo..."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="d-flex gap-2 justify-content-end mt-4">
+                        <button type="button" class="btn btn-light" @onclick="() => showDocTypeModal = false">Cancelar</button>
+                        <button type="button" class="btn btn-primary px-4" @onclick="SaveDocType">Guardar Tipo</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- MODAL CONFIRMACIÓN: ELIMINAR TIPO DE DOCUMENTO -->
+@if (showDeleteDocTypeConfirm && isAdmin && docTypeToDelete != null)
+{
+    <div class="modal fade show d-block" style="background: rgba(0,0,0,0.5)">
+        <div class="modal-dialog modal-dialog-centered modal-sm">
+            <div class="modal-content card shadow border-0 rounded-4">
+                <div class="card-header bg-danger text-white py-3 border-0 rounded-top-4 d-flex justify-content-between">
+                    <h6 class="mb-0 fw-bold">
+                        <i class="bi bi-exclamation-triangle-fill me-2"></i>Eliminar Tipo de Documento
+                    </h6>
+                    <button type="button" class="btn-close btn-close-white" @onclick="() => showDeleteDocTypeConfirm = false"></button>
+                </div>
+                <div class="card-body p-3">
+                    <p class="small text-secondary mb-3">
+                        ¿Está seguro de que desea eliminar el tipo de documento <strong>@docTypeToDelete.Name (@docTypeToDelete.TypeCode)</strong>? Esta acción no se puede deshacer.
+                    </p>
+                    <div class="d-flex gap-2 justify-content-end">
+                        <button type="button" class="btn btn-light btn-sm" @onclick="() => showDeleteDocTypeConfirm = false">Cancelar</button>
+                        <button type="button" class="btn btn-danger btn-sm px-3 fw-bold text-white" @onclick="DeleteDocType">Eliminar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 <style>
     .custom-tabs .nav-link {
         border: none;
@@ -837,6 +986,17 @@
     private List<RolePermissionViewModel> permissions = new();
     private Dictionary<string, List<RolePermissionViewModel>> matrixGroupedBySection = new();
 
+    // Document Types Tab Variables
+    private List<QMSFlowDoc.Domain.Entities.DocumentType> docTypesList = new();
+    private bool showDocTypeModal = false;
+    private bool isEditingDocType = false;
+    private QMSFlowDoc.Domain.Entities.DocumentType editingDocTypeModel = new();
+    private string? docTypeModalError = null;
+    private string? docTypesSuccessMessage = null;
+    private string? docTypesErrorMessage = null;
+    private bool showDeleteDocTypeConfirm = false;
+    private QMSFlowDoc.Domain.Entities.DocumentType? docTypeToDelete;
+
     private string userSearchQuery = string.Empty;
 
     // Modals visibility toggles
@@ -953,10 +1113,12 @@
             matrixGroupedBySection = permissions
                 .GroupBy(p => p.Section)
                 .ToDictionary(g => g.Key, g => g.ToList());
+
+            docTypesList = await DbContext.DocumentTypes.ToListAsync();
         }
     }
 
-    private void SetTab(string tab)
+    private async Task SetTab(string tab)
     {
         activeTab = tab;
         userSuccessMessage = null;
@@ -964,6 +1126,13 @@
         permissionsErrorMessage = null;
         labSettingsSuccessMessage = null;
         labSettingsErrorMessage = null;
+        docTypesSuccessMessage = null;
+        docTypesErrorMessage = null;
+
+        if (tab == "docTypes")
+        {
+            docTypesList = await DbContext.DocumentTypes.ToListAsync();
+        }
     }
 
     private async Task LoadLaboratorySettingsAsync()
@@ -1894,5 +2063,138 @@
         public bool VerifyOnlyPassed { get; set; }
         public string Status { get; set; } = "OK"; // "OK", "FAILED", "VERIFY_FAILED"
         public string? ErrorMessage { get; set; }
+    }
+
+    // Document Types CRUD Logic
+    private void OpenAddDocTypeModal()
+    {
+        editingDocTypeModel = new QMSFlowDoc.Domain.Entities.DocumentType();
+        isEditingDocType = false;
+        docTypeModalError = null;
+        showDocTypeModal = true;
+    }
+
+    private void OpenEditDocTypeModal(QMSFlowDoc.Domain.Entities.DocumentType type)
+    {
+        editingDocTypeModel = new QMSFlowDoc.Domain.Entities.DocumentType
+        {
+            Id = type.Id,
+            TypeCode = type.TypeCode,
+            Name = type.Name,
+            Description = type.Description
+        };
+        isEditingDocType = true;
+        docTypeModalError = null;
+        showDocTypeModal = true;
+    }
+
+    private async Task SaveDocType()
+    {
+        docTypeModalError = null;
+        if (string.IsNullOrWhiteSpace(editingDocTypeModel.TypeCode))
+        {
+            docTypeModalError = "El código de tipo es obligatorio.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(editingDocTypeModel.Name))
+        {
+            docTypeModalError = "El nombre del tipo es obligatorio.";
+            return;
+        }
+
+        editingDocTypeModel.TypeCode = editingDocTypeModel.TypeCode.Trim().ToUpper();
+        editingDocTypeModel.Name = editingDocTypeModel.Name.Trim();
+        editingDocTypeModel.Description = editingDocTypeModel.Description?.Trim();
+
+        try
+        {
+            if (isEditingDocType)
+            {
+                // Verify uniqueness of Code (excluding current)
+                var exists = await DbContext.DocumentTypes.AnyAsync(t => t.TypeCode == editingDocTypeModel.TypeCode && t.Id != editingDocTypeModel.Id);
+                if (exists)
+                {
+                    docTypeModalError = $"Ya existe un tipo de documento con el código '{editingDocTypeModel.TypeCode}'.";
+                    return;
+                }
+
+                var dbType = await DbContext.DocumentTypes.FindAsync(editingDocTypeModel.Id);
+                if (dbType != null)
+                {
+                    dbType.TypeCode = editingDocTypeModel.TypeCode;
+                    dbType.Name = editingDocTypeModel.Name;
+                    dbType.Description = editingDocTypeModel.Description;
+                    await DbContext.SaveChangesAsync();
+                    docTypesSuccessMessage = "Tipo de documento actualizado correctamente.";
+                }
+            }
+            else
+            {
+                // Verify uniqueness of Code
+                var exists = await DbContext.DocumentTypes.AnyAsync(t => t.TypeCode == editingDocTypeModel.TypeCode);
+                if (exists)
+                {
+                    docTypeModalError = $"Ya existe un tipo de documento con el código '{editingDocTypeModel.TypeCode}'.";
+                    return;
+                }
+
+                editingDocTypeModel.Id = Guid.NewGuid();
+                DbContext.DocumentTypes.Add(editingDocTypeModel);
+                await DbContext.SaveChangesAsync();
+                docTypesSuccessMessage = "Tipo de documento creado correctamente.";
+            }
+
+            showDocTypeModal = false;
+            docTypesList = await DbContext.DocumentTypes.ToListAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            docTypeModalError = $"Error al guardar: {ex.Message}";
+        }
+    }
+
+    private void ConfirmDeleteDocType(QMSFlowDoc.Domain.Entities.DocumentType type)
+    {
+        docTypeToDelete = type;
+        showDeleteDocTypeConfirm = true;
+    }
+
+    private async Task DeleteDocType()
+    {
+        if (docTypeToDelete == null) return;
+        
+        docTypesErrorMessage = null;
+        docTypesSuccessMessage = null;
+
+        try
+        {
+            // Check if there are active documents using this type
+            var inUse = await DbContext.Documents.AnyAsync(d => d.DocumentTypeId == docTypeToDelete.Id && !d.IsDeleted);
+            if (inUse)
+            {
+                docTypesErrorMessage = $"No se puede eliminar el tipo '{docTypeToDelete.Name}' porque está siendo utilizado por uno o más documentos activos.";
+                showDeleteDocTypeConfirm = false;
+                return;
+            }
+
+            var dbType = await DbContext.DocumentTypes.FindAsync(docTypeToDelete.Id);
+            if (dbType != null)
+            {
+                DbContext.DocumentTypes.Remove(dbType);
+                await DbContext.SaveChangesAsync();
+                docTypesSuccessMessage = "Tipo de documento eliminado correctamente.";
+            }
+
+            showDeleteDocTypeConfirm = false;
+            docTypeToDelete = null;
+            docTypesList = await DbContext.DocumentTypes.ToListAsync();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            docTypesErrorMessage = $"Error al eliminar: {ex.Message}";
+            showDeleteDocTypeConfirm = false;
+        }
     }
 }

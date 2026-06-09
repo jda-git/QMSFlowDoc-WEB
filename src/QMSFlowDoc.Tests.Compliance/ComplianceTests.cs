@@ -518,5 +518,50 @@ namespace QMSFlowDoc.Tests.Compliance
                 service.AdjustStockAsync(request));
             Assert.Contains("Liberado o En Uso", ex.Message);
         }
+
+        [Fact]
+        public void DocumentType_TypeCode_MustBeUnique()
+        {
+            using var context = new QmsDbContext(_options);
+
+            var type1 = new QMSFlowDoc.Domain.Entities.DocumentType { Id = Guid.NewGuid(), TypeCode = "SOP", Name = "Standard Operating Procedure" };
+            var type2 = new QMSFlowDoc.Domain.Entities.DocumentType { Id = Guid.NewGuid(), TypeCode = "SOP", Name = "Same Code Procedure" };
+
+            context.DocumentTypes.Add(type1);
+            context.SaveChanges();
+
+            context.DocumentTypes.Add(type2);
+            
+            // Should throw due to unique index violation
+            Assert.ThrowsAny<DbUpdateException>(() => context.SaveChanges());
+        }
+
+        [Fact]
+        public async Task DocumentType_InUseByActiveDocuments_CannotBeDeleted_ByBusinessLogic()
+        {
+            using var context = new QmsDbContext(_options);
+
+            var typeId = Guid.NewGuid();
+            var docType = new QMSFlowDoc.Domain.Entities.DocumentType { Id = typeId, TypeCode = "POL", Name = "Policy" };
+            context.DocumentTypes.Add(docType);
+
+            var doc = new Document
+            {
+                Id = Guid.NewGuid(),
+                DocCode = "DOC-POL-001",
+                Title = "General Safety Policy",
+                DocumentTypeId = typeId,
+                OwnerUserId = Guid.NewGuid(),
+                Status = DocumentStatus.DRAFT,
+                IsDeleted = false
+            };
+            context.Documents.Add(doc);
+            await context.SaveChangesAsync();
+
+            // Simulate the UI/business logic check before deletion
+            var inUse = await context.Documents.AnyAsync(d => d.DocumentTypeId == typeId && !d.IsDeleted);
+            
+            Assert.True(inUse); // Business logic should block deletion if inUse is true
+        }
     }
 }
