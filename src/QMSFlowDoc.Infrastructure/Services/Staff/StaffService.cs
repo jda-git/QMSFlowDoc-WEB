@@ -294,9 +294,16 @@ public class StaffService : IStaffService
             throw new InvalidOperationException("Debe especificarse un evaluador para registrar la evaluación de competencia.");
         }
 
+        var actualUserId = evaluatorUserId.Value;
+        var staffProfile = await _context.StaffProfiles.FindAsync(evaluatorUserId.Value);
+        if (staffProfile != null && staffProfile.UserId.HasValue && staffProfile.UserId.Value != Guid.Empty)
+        {
+            actualUserId = staffProfile.UserId.Value;
+        }
+
         var isAuthorized = await (from ur in _context.UserRoles
                                   join r in _context.Roles on ur.RoleId equals r.Id
-                                  where ur.UserId == evaluatorUserId.Value && 
+                                  where ur.UserId == actualUserId && 
                                         (r.Name == "Administrador" || r.Name == "Facultativo" || r.Name == "Responsable calidad")
                                   select r).AnyAsync();
         if (!isAuthorized)

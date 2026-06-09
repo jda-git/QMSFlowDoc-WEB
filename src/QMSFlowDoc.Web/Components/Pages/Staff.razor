@@ -813,6 +813,15 @@ else
                 </div>
                 <div class="card-body p-4">
                     <h6 class="fw-bold mb-3 text-secondary">Empleado: @selectedStaffDetail?.FullName</h6>
+                    
+                    @if (!string.IsNullOrEmpty(evaluationErrorMessage))
+                    {
+                        <div class="alert alert-danger d-flex align-items-center rounded-3 p-3 mb-3" role="alert">
+                            <i class="bi bi-exclamation-triangle-fill me-2"></i>
+                            <div>@evaluationErrorMessage</div>
+                        </div>
+                    }
+
                     <EditForm Model="evaluationModel" OnValidSubmit="SaveCompetencyEvaluation">
                         <div class="row g-3">
                             <div class="col-12">
@@ -1314,6 +1323,7 @@ else
     private AuthorizationCatalogDto? deletingAuthorizationCatalog;
     private string? catalogErrorMessage;
     private string? authorizationErrorMessage;
+    private string? evaluationErrorMessage;
     private string revocationReason = string.Empty;
     private string? revocationErrorMessage;
     private List<DocumentDto> systemDocuments = new();
@@ -1532,6 +1542,7 @@ else
             EvaluationDate = DateTime.Today,
             Outcome = "COMPETENTE"
         };
+        evaluationErrorMessage = null;
         isEditingEvaluation = false;
         editingEvaluationId = null;
         showEvaluationModal = true;
@@ -1548,6 +1559,7 @@ else
             Outcome = ev.Outcome == "PASS" || ev.Outcome == "APTO" || ev.Outcome == "COMPETENTE" ? "COMPETENTE" : "NO_COMPETENTE",
             Findings = ev.Evidence
         };
+        evaluationErrorMessage = null;
         isEditingEvaluation = true;
         editingEvaluationId = ev.Id;
         showEvaluationModal = true;
@@ -1577,35 +1589,44 @@ else
         if (!canEdit) return;
         if (evaluationModel.CompetencyId == Guid.Empty || evaluationModel.EvaluatorStaffId == Guid.Empty) return;
 
-        var comp = competencyCatalog.First(c => c.Id == evaluationModel.CompetencyId);
-        var outcomeEnum = evaluationModel.Outcome == "COMPETENTE" ? QMSFlowDoc.Shared.Models.CompetencyOutcome.PASS : QMSFlowDoc.Shared.Models.CompetencyOutcome.FAIL;
-
-        var req = new AssessCompetencyRequest(
-            evaluationModel.StaffId,
-            comp.Name,
-            comp.Area,
-            outcomeEnum,
-            evaluationModel.EvaluationDate,
-            evaluationModel.EvaluationDate.AddMonths(comp.DefaultReassessmentMonths),
-            evaluationModel.Findings,
-            evaluationModel.EvaluatorStaffId
-        );
-
-        if (isEditingEvaluation && editingEvaluationId.HasValue)
+        evaluationErrorMessage = null;
+        try
         {
-            await StaffService.UpdateCompetencyEvaluationAsync(editingEvaluationId.Value, req);
-        }
-        else
-        {
-            await StaffService.RecordCompetencyEvaluationAsync(req);
-        }
+            var comp = competencyCatalog.First(c => c.Id == evaluationModel.CompetencyId);
+            var outcomeEnum = evaluationModel.Outcome == "COMPETENTE" ? QMSFlowDoc.Shared.Models.CompetencyOutcome.PASS : QMSFlowDoc.Shared.Models.CompetencyOutcome.FAIL;
 
-        showEvaluationModal = false;
-        if (selectedStaffDetail != null)
-        {
-            await SelectStaff(selectedStaffDetail.Id);
+            var req = new AssessCompetencyRequest(
+                evaluationModel.StaffId,
+                comp.Name,
+                comp.Area,
+                outcomeEnum,
+                evaluationModel.EvaluationDate,
+                evaluationModel.EvaluationDate.AddMonths(comp.DefaultReassessmentMonths),
+                evaluationModel.Findings,
+                evaluationModel.EvaluatorStaffId
+            );
+
+            if (isEditingEvaluation && editingEvaluationId.HasValue)
+            {
+                await StaffService.UpdateCompetencyEvaluationAsync(editingEvaluationId.Value, req);
+            }
+            else
+            {
+                await StaffService.RecordCompetencyEvaluationAsync(req);
+            }
+
+            showEvaluationModal = false;
+            if (selectedStaffDetail != null)
+            {
+                await SelectStaff(selectedStaffDetail.Id);
+            }
+            await LoadData();
         }
-        await LoadData();
+        catch (Exception ex)
+        {
+            evaluationErrorMessage = ex.Message;
+            StateHasChanged();
+        }
     }
 
     private void OpenAddAuthorizationModal()
