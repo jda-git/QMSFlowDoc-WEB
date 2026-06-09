@@ -1010,9 +1010,21 @@ else
                                         <label class="form-label small fw-semibold">Detectores (Canales)</label>
                                         <input type="number" class="form-control bg-white" @bind="formModel.CytoDetectorsCount" />
                                     </div>
-                                    <div class="col-md-8 mt-2">
+                                    <div class="col-md-5 mt-2">
                                         <label class="form-label small fw-semibold">Software Adquisición</label>
-                                        <input type="text" class="form-control bg-white" placeholder="Nombre y versión software" @bind="formModel.CytoAcquisitionSoftware" />
+                                        <input type="text" class="form-control bg-white" placeholder="Ej: Diva, FACS Suite" @bind="formModel.CytoAcquisitionSoftware" />
+                                    </div>
+                                    <div class="col-md-3 mt-2">
+                                        <label class="form-label small fw-semibold">Versión</label>
+                                        <input type="text" class="form-control bg-white" placeholder="Ej: 8.0.1" @bind="formModel.CytoAcquisitionSoftwareVersion" />
+                                    </div>
+                                    <div class="col-md-6 mt-2">
+                                        <label class="form-label small fw-semibold">Ordenador de Adquisición</label>
+                                        <input type="text" class="form-control bg-white" placeholder="Ej: PC-BD-01" @bind="formModel.CytoAssociatedComputer" />
+                                    </div>
+                                    <div class="col-md-6 mt-2">
+                                        <label class="form-label small fw-semibold">Ruta de exportación FCS</label>
+                                        <input type="text" class="form-control bg-white" placeholder="Ej: D:\ExportedFCS" @bind="formModel.CytoFcsExportPath" />
                                     </div>
                                 </div>
                             }
@@ -2146,6 +2158,7 @@ else
             CytoWavelengths = eq.CytoWavelengths,
             CytoDetectorsCount = eq.CytoDetectorsCount,
             CytoAcquisitionSoftware = eq.CytoAcquisitionSoftware,
+            CytoAcquisitionSoftwareVersion = eq.CytoAcquisitionSoftwareVersion,
             CytoAssociatedComputer = eq.CytoAssociatedComputer,
             CytoFcsExportPath = eq.CytoFcsExportPath,
 
