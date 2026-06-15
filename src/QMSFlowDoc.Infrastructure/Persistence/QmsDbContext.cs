@@ -569,6 +569,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(nc => nc.Origin).HasMaxLength(100);
                 e.Property(nc => nc.RowVersion).IsRowVersion();
                 e.HasMany(nc => nc.Actions).WithOne(a => a.Nonconformity!).HasForeignKey(a => a.NCId).OnDelete(DeleteBehavior.Cascade);
+                e.HasQueryFilter(nc => !nc.IsDeleted);
             });
 
             modelBuilder.Entity<CapaAction>(e =>
@@ -577,6 +578,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.HasKey(a => a.Id);
                 e.Property(a => a.ActionType).HasConversion<int>();
                 e.Property(a => a.Status).HasConversion<int>();
+                e.HasQueryFilter(a => !a.IsDeleted);
             });
 
             modelBuilder.Entity<Complaint>(e =>
@@ -590,6 +592,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(c => c.Status).HasConversion<int>();
                 e.Property(c => c.RowVersion).IsRowVersion();
                 e.HasMany(c => c.Actions).WithOne().HasForeignKey(a => a.ComplaintId).OnDelete(DeleteBehavior.Cascade);
+                e.HasQueryFilter(c => !c.IsDeleted);
             });
 
             modelBuilder.Entity<ComplaintAction>(e =>
@@ -705,6 +708,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.HasMany(p => p.Enrollments).WithOne().HasForeignKey(en => en.ProgramId).OnDelete(DeleteBehavior.Cascade);
                 e.HasMany(p => p.TestMappings).WithOne().HasForeignKey(m => m.ProgramId).OnDelete(DeleteBehavior.Cascade);
                 e.HasMany(p => p.Rounds).WithOne().HasForeignKey(r => r.ProgramId).OnDelete(DeleteBehavior.Cascade);
+                e.HasQueryFilter(p => !p.IsDeleted);
             });
 
             modelBuilder.Entity<EQAEnrollment>(e =>
@@ -719,6 +723,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(en => en.Cost).HasColumnType("decimal(18,2)");
                 e.Property(en => en.EvidenceFileName).HasMaxLength(500);
                 e.Property(en => en.EvidenceFilePath).HasMaxLength(1000);
+                e.HasQueryFilter(en => !en.IsDeleted);
             });
 
             modelBuilder.Entity<EQAMapping>(e =>
@@ -731,6 +736,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(m => m.ResultType).HasConversion<int>();
                 e.Property(m => m.CoverageLevel).HasMaxLength(100);
                 e.Property(m => m.Criticidad).HasMaxLength(50);
+                e.HasQueryFilter(m => !m.IsDeleted);
             });
 
             modelBuilder.Entity<EQARound>(e =>
@@ -749,6 +755,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(r => r.GlobalScore).HasColumnType("decimal(10,2)");
                 e.HasMany(r => r.Samples).WithOne().HasForeignKey(s => s.RoundId).OnDelete(DeleteBehavior.Cascade);
                 e.HasMany(r => r.Deviations).WithOne().HasForeignKey(d => d.RoundId).OnDelete(DeleteBehavior.Cascade);
+                e.HasQueryFilter(r => !r.IsDeleted);
             });
 
             modelBuilder.Entity<EQASample>(e =>
@@ -783,6 +790,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(d => d.EvidenceFilePath).HasMaxLength(1000);
                 e.Property(d => d.EffectivenessOutcome).HasMaxLength(50);
                 e.Property(d => d.EffectivenessEvidencePath).HasMaxLength(1000);
+                e.HasQueryFilter(d => !d.IsDeleted);
             });
 
             // ── Methods ──

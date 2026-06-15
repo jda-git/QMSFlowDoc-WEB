@@ -646,6 +646,8 @@ else
                                 {
                                     <button class="btn btn-sm btn-outline-warning rounded-pill px-3" @onclick="() => ChangeComplaintStatus(ComplaintStatus.RESOLVED)">Resolver</button>
                                 }
+                                <input type="password" class="form-control form-control-sm rounded-pill" style="max-width: 260px;"
+                                       placeholder="Contraseña para cerrar queja" @bind="complaintClosePassword" autocomplete="current-password" />
                                 <button class="btn btn-sm btn-outline-success rounded-pill px-3" @onclick="() => ChangeComplaintStatus(ComplaintStatus.CLOSED)">
                                     <i class="bi bi-check-lg me-1"></i>Cerrar
                                 </button>
@@ -1008,6 +1010,7 @@ else
     private Guid? editingComplaintId;
     private string? ncErrorMessage;
     private string? ncClosePassword;
+    private string? complaintClosePassword;
     private string deleteConfirmMessage = "";
     private Func<Task>? deleteAction;
 
@@ -1269,10 +1272,11 @@ else
     private async Task SelectComplaint(Guid id)
     {
         ncErrorMessage = null;
+        complaintClosePassword = null;
         selectedComplaint = await QualityService.GetComplaintByIdAsync(id);
         await LoadVisibleHistory("Complaint", id);
     }
-    private void CloseComplaintDetail() { selectedComplaint = null; selectedHistory.Clear(); ncErrorMessage = null; }
+    private void CloseComplaintDetail() { selectedComplaint = null; selectedHistory.Clear(); ncErrorMessage = null; complaintClosePassword = null; }
 
     private void OpenCreateComplaintModal()
     {
@@ -1343,7 +1347,12 @@ else
         ncErrorMessage = null;
         try
         {
-            await QualityService.UpdateComplaintStatusAsync(selectedComplaint.Id, status, currentUserId, currentUserName);
+            var confirmPassword = status == ComplaintStatus.CLOSED ? complaintClosePassword : null;
+            await QualityService.UpdateComplaintStatusAsync(selectedComplaint.Id, status, currentUserId, currentUserName, confirmPassword);
+            if (status == ComplaintStatus.CLOSED)
+            {
+                complaintClosePassword = string.Empty;
+            }
             selectedComplaint = await QualityService.GetComplaintByIdAsync(selectedComplaint.Id);
             if (selectedComplaint != null) await LoadVisibleHistory("Complaint", selectedComplaint.Id);
             await LoadData();

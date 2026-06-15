@@ -447,7 +447,7 @@ public class QualityService : IQualityService
         return await _context.SaveChangesAsync() > 0;
     }
 
-    public async Task<bool> UpdateComplaintStatusAsync(Guid id, SharedModels.ComplaintStatus status, Guid? userId = null, string? userName = null)
+    public async Task<bool> UpdateComplaintStatusAsync(Guid id, SharedModels.ComplaintStatus status, Guid? userId = null, string? userName = null, string? confirmPassword = null)
     {
         var complaint = await _context.Complaints.FindAsync(id);
         if (complaint == null || complaint.IsDeleted) return false;
@@ -469,6 +469,8 @@ public class QualityService : IQualityService
                 throw new InvalidOperationException("No se puede cerrar la queja sin registrar la evidencia de resolución (comunicación al cliente).");
             }
 
+            await ValidateComplaintClosureSignatureAsync(userId, confirmPassword);
+
             complaint.ClosedAt = DateTime.UtcNow;
             complaint.ClosedByUserId = userId;
         }
@@ -482,6 +484,30 @@ public class QualityService : IQualityService
 
         await LogAuditAsync("STATUS_CHANGE", "Complaint", complaint.Id, $"Queja estado cambiado a {status}", userId, userName);
         return await _context.SaveChangesAsync() > 0;
+    }
+
+    private async Task ValidateComplaintClosureSignatureAsync(Guid? userId, string? confirmPassword)
+    {
+        if (!userId.HasValue)
+        {
+            throw new InvalidOperationException("Usuario no identificado para firmar el cierre de la Queja.");
+        }
+
+        if (string.IsNullOrWhiteSpace(confirmPassword))
+        {
+            throw new InvalidOperationException("Se requiere la contraseña del usuario para firmar el cierre de la Queja.");
+        }
+
+        if (_userManager == null)
+        {
+            throw new InvalidOperationException("No se pudo validar la firma electronica del cierre de la Queja.");
+        }
+
+        var user = await _userManager.FindByIdAsync(userId.Value.ToString());
+        if (user == null || !await _userManager.CheckPasswordAsync(user, confirmPassword))
+        {
+            throw new InvalidOperationException("La contraseña de firma no es valida. No se pudo cerrar la Queja.");
+        }
     }
 
     public async Task<bool> DeleteComplaintAsync(Guid id, Guid? userId = null, string? userName = null)

@@ -1,5 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.Extensions.Logging;
 using QMSFlowDoc.Domain.Entities;
+using QMSFlowDoc.Domain.Identity;
 using QMSFlowDoc.Infrastructure.Persistence;
 using QMSFlowDoc.Infrastructure.Services.EQA;
 using QMSFlowDoc.Infrastructure.Services.Quality;
@@ -100,7 +103,7 @@ namespace QMSFlowDoc.Tests.Compliance
 
             // 4. Verify physically present in context with IsDeleted = true
             context.Entry(prog).State = EntityState.Detached; // clear tracker to load from db
-            var dbRecord = await context.EQAPrograms.FindAsync(programId);
+            var dbRecord = await context.EQAPrograms.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == programId);
             Assert.NotNull(dbRecord);
             Assert.True(dbRecord.IsDeleted);
             Assert.NotNull(dbRecord.DeletedAt);
@@ -147,11 +150,11 @@ namespace QMSFlowDoc.Tests.Compliance
             context.Entry(round).State = EntityState.Detached;
             context.Entry(dev).State = EntityState.Detached;
 
-            var dbProg = await context.EQAPrograms.FindAsync(programId);
-            var dbEnrollment = await context.EQAEnrollments.FindAsync(enrollmentId);
-            var dbMapping = await context.EQAMappings.FindAsync(mappingId);
-            var dbRound = await context.EQARounds.FindAsync(roundId);
-            var dbDev = await context.EQADeviations.FindAsync(devId);
+            var dbProg = await context.EQAPrograms.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == programId);
+            var dbEnrollment = await context.EQAEnrollments.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == enrollmentId);
+            var dbMapping = await context.EQAMappings.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == mappingId);
+            var dbRound = await context.EQARounds.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == roundId);
+            var dbDev = await context.EQADeviations.IgnoreQueryFilters().FirstOrDefaultAsync(x => x.Id == devId);
 
             Assert.NotNull(dbProg);
             Assert.True(dbProg.IsDeleted);
@@ -710,6 +713,145 @@ namespace QMSFlowDoc.Tests.Compliance
             var inUse = await context.Documents.AnyAsync(d => d.DocumentTypeId == typeId && !d.IsDeleted);
             
             Assert.True(inUse); // Business logic should block deletion if inUse is true
+        }
+
+        private UserManager<ApplicationUser> CreateUserManager(QmsDbContext context)
+        {
+            var userStore = new Microsoft.AspNetCore.Identity.EntityFrameworkCore.UserStore<ApplicationUser, ApplicationRole, QmsDbContext, Guid>(context);
+            var options = Microsoft.Extensions.Options.Options.Create(new IdentityOptions());
+            var passwordHasher = new PasswordHasher<ApplicationUser>();
+            var userValidators = new List<IUserValidator<ApplicationUser>> { new UserValidator<ApplicationUser>() };
+            var passwordValidators = new List<IPasswordValidator<ApplicationUser>> { new PasswordValidator<ApplicationUser>() };
+            var keyNormalizer = new UpperInvariantLookupNormalizer();
+            var errors = new IdentityErrorDescriber();
+            return new UserManager<ApplicationUser>(
+                userStore, options, passwordHasher, userValidators, passwordValidators, keyNormalizer, errors, null, new DummyLogger());
+        }
+
+        private class DummyLogger : ILogger<UserManager<ApplicationUser>>, IDisposable
+        {
+            public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+            public bool IsEnabled(LogLevel logLevel) => false;
+            public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) {}
+            public void Dispose() {}
+        }
+
+        [Fact]
+        public async Task GlobalQueryFilters_ExcludesSoftDeletedEntities()
+        {
+            using var context = new QmsDbContext(_options);
+
+            // 1. Create entities
+            var ncId = Guid.NewGuid();
+            var nc = new Nonconformity { Id = ncId, Title = "Soft Deleted NC", IsDeleted = true };
+            context.Nonconformities.Add(nc);
+
+            var capaId = Guid.NewGuid();
+            var capa = new CapaAction { Id = capaId, Description = "Soft Deleted CAPA", IsDeleted = true };
+            context.CapaActions.Add(capa);
+
+            var complaintId = Guid.NewGuid();
+            var complaint = new Complaint { Id = complaintId, Source = "Customer", Description = "Soft Deleted Complaint", IsDeleted = true };
+            context.Complaints.Add(complaint);
+
+            var progId = Guid.NewGuid();
+            var prog = new EQAProgram { Id = progId, InternalCode = "EQA_DEL", Name = "Deleted Program", IsDeleted = true };
+            context.EQAPrograms.Add(prog);
+
+            var enrollmentId = Guid.NewGuid();
+            var enrollment = new EQAEnrollment { Id = enrollmentId, ProgramId = progId, Year = 2026, IsDeleted = true };
+            context.EQAEnrollments.Add(enrollment);
+
+            var mappingId = Guid.NewGuid();
+            var mapping = new EQAMapping { Id = mappingId, ProgramId = progId, InternalTestName = "Deleted Test", IsDeleted = true };
+            context.EQAMappings.Add(mapping);
+
+            var roundId = Guid.NewGuid();
+            var round = new EQARound { Id = roundId, ProgramId = progId, ExternalCode = "ROUND_DEL", IsDeleted = true };
+            context.EQARounds.Add(round);
+
+            var devId = Guid.NewGuid();
+            var dev = new EQADeviation { Id = devId, RoundId = roundId, Status = "Abierta", IsDeleted = true };
+            context.EQADeviations.Add(dev);
+
+            await context.SaveChangesAsync();
+
+            // 2. Query through normal context (should be excluded)
+            Assert.False(await context.Nonconformities.AnyAsync(x => x.Id == ncId));
+            Assert.False(await context.CapaActions.AnyAsync(x => x.Id == capaId));
+            Assert.False(await context.Complaints.AnyAsync(x => x.Id == complaintId));
+            Assert.False(await context.EQAPrograms.AnyAsync(x => x.Id == progId));
+            Assert.False(await context.EQAEnrollments.AnyAsync(x => x.Id == enrollmentId));
+            Assert.False(await context.EQAMappings.AnyAsync(x => x.Id == mappingId));
+            Assert.False(await context.EQARounds.AnyAsync(x => x.Id == roundId));
+            Assert.False(await context.EQADeviations.AnyAsync(x => x.Id == devId));
+
+            // 3. Query ignoring filters (should exist)
+            Assert.True(await context.Nonconformities.IgnoreQueryFilters().AnyAsync(x => x.Id == ncId));
+            Assert.True(await context.CapaActions.IgnoreQueryFilters().AnyAsync(x => x.Id == capaId));
+            Assert.True(await context.Complaints.IgnoreQueryFilters().AnyAsync(x => x.Id == complaintId));
+            Assert.True(await context.EQAPrograms.IgnoreQueryFilters().AnyAsync(x => x.Id == progId));
+            Assert.True(await context.EQAEnrollments.IgnoreQueryFilters().AnyAsync(x => x.Id == enrollmentId));
+            Assert.True(await context.EQAMappings.IgnoreQueryFilters().AnyAsync(x => x.Id == mappingId));
+            Assert.True(await context.EQARounds.IgnoreQueryFilters().AnyAsync(x => x.Id == roundId));
+            Assert.True(await context.EQADeviations.IgnoreQueryFilters().AnyAsync(x => x.Id == devId));
+        }
+
+        [Fact]
+        public async Task ComplaintClosure_RequiresPasswordAndFailsOnIncorrectPassword()
+        {
+            using var context = new QmsDbContext(_options);
+            var userManager = CreateUserManager(context);
+            var qualityService = new QualityService(context, userManager);
+
+            // Create test user with secure password
+            var userId = Guid.NewGuid();
+            var user = new ApplicationUser 
+            { 
+                Id = userId, 
+                UserName = "qualitymgr", 
+                Email = "qualitymgr@lab.com", 
+                FullName = "Quality Manager" 
+            };
+            var createResult = await userManager.CreateAsync(user, "SecurePassword123!");
+            Assert.True(createResult.Succeeded);
+
+            // Create Complaint
+            var complaintId = Guid.NewGuid();
+            var complaint = new Complaint
+            {
+                Id = complaintId,
+                Source = "Paciente Directo",
+                Description = "Resultados demorados más de 24 horas",
+                InvestigationResult = "Falta de personal en turno de noche",
+                CorrectiveAction = "Reforzar guardias nocturnas",
+                ResolutionEvidence = "Llamada informativa y disculpa al paciente",
+                Status = ComplaintStatus.OPEN,
+                IsDeleted = false
+            };
+            context.Complaints.Add(complaint);
+            await context.SaveChangesAsync();
+
+            // 1. Try to close without password (confirmPassword = null) -> should fail
+            var ex1 = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                qualityService.UpdateComplaintStatusAsync(complaintId, SharedModels.ComplaintStatus.CLOSED, userId, "qualitymgr", null));
+            Assert.Contains("contraseña", ex1.Message, StringComparison.OrdinalIgnoreCase);
+
+            // 2. Try to close with incorrect password -> should fail
+            var ex2 = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                qualityService.UpdateComplaintStatusAsync(complaintId, SharedModels.ComplaintStatus.CLOSED, userId, "qualitymgr", "WrongPass123!"));
+            Assert.Contains("no es valida", ex2.Message, StringComparison.OrdinalIgnoreCase);
+
+            // 3. Close with correct password -> should succeed
+            var success = await qualityService.UpdateComplaintStatusAsync(complaintId, SharedModels.ComplaintStatus.CLOSED, userId, "qualitymgr", "SecurePassword123!");
+            Assert.True(success);
+
+            // Verify closure state in database
+            var dbComplaint = await context.Complaints.FindAsync(complaintId);
+            Assert.NotNull(dbComplaint);
+            Assert.Equal(Domain.Entities.ComplaintStatus.CLOSED, dbComplaint.Status);
+            Assert.NotNull(dbComplaint.ClosedAt);
+            Assert.Equal(userId, dbComplaint.ClosedByUserId);
         }
     }
 }

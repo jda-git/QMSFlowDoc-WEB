@@ -14,8 +14,9 @@ builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
 // Add services to the container.
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection") 
+var connectionStringRaw = builder.Configuration.GetConnectionString("DefaultConnection") 
     ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
+var connectionString = ResolvePortableConnectionString(connectionStringRaw);
 
 await PendingRestoreService.ApplyPendingRestoreAsync(builder.Configuration);
 
@@ -43,13 +44,22 @@ builder.Services.AddScoped<IPasswordHasher<ApplicationUser>, QMSFlowDoc.Web.Secu
 
 // Document Storage and Document Management Services
 var documentStorageConfig = builder.Configuration.GetSection("DocumentStorage");
-var rootPath = documentStorageConfig["RootPath"] ?? throw new InvalidOperationException("DocumentStorage:RootPath not configured.");
+var rootPathConfig = documentStorageConfig["RootPath"] ?? throw new InvalidOperationException("DocumentStorage:RootPath not configured.");
+var rootPath = ResolvePortablePath(rootPathConfig);
 var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"]
     ?? Path.Combine(rootPath, "DataProtection-Keys");
 
-Directory.CreateDirectory(dataProtectionKeysPath);
-builder.Services.AddDataProtection()
-    .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+try
+{
+    Directory.CreateDirectory(dataProtectionKeysPath);
+    builder.Services.AddDataProtection()
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"⚠ Warning: Unable to create or use DataProtection directory '{dataProtectionKeysPath}': {ex.Message}. Falling back to Ephemeral Data Protection.");
+    builder.Services.AddDataProtection();
+}
 
 builder.Services.AddSingleton<QMSFlowDoc.DocumentStorage.IDocumentStorageService>(sp =>
     new QMSFlowDoc.DocumentStorage.CentralDocumentStorageService(rootPath, sp.GetRequiredService<ILogger<QMSFlowDoc.DocumentStorage.CentralDocumentStorageService>>()));
@@ -113,3 +123,37 @@ using (var scope = app.Services.CreateScope())
 }
 
 await app.RunAsync();
+
+#pragma warning disable CS8321 // Local function is declared but never used
+string ResolvePortableConnectionString(string connStr)
+{
+    try
+    {
+        var connBuilder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connStr);
+        if (!string.IsNullOrWhiteSpace(connBuilder.DataSource) && connBuilder.DataSource != ":memory:")
+        {
+            connBuilder.DataSource = ResolvePortablePath(connBuilder.DataSource);
+            return connBuilder.ToString();
+        }
+    }
+    catch
+    {
+        // Fallback to original
+    }
+    return connStr;
+}
+
+string ResolvePortablePath(string configuredPath)
+{
+    if (string.IsNullOrWhiteSpace(configuredPath)) return configuredPath;
+    
+    if (configuredPath.Contains(@"C:\Users\SERVIDOR", StringComparison.OrdinalIgnoreCase))
+    {
+        var myDocuments = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+        var subPath = configuredPath.Replace(@"C:\Users\SERVIDOR\Documents\", "", StringComparison.OrdinalIgnoreCase)
+                                     .Replace(@"C:\Users\SERVIDOR\", "", StringComparison.OrdinalIgnoreCase);
+        return Path.Combine(myDocuments, "QMS", subPath);
+    }
+    return configuredPath;
+}
+#pragma warning restore CS8321

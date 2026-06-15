@@ -23,22 +23,36 @@ namespace QMSFlowDoc.Infrastructure.Seed
         {
             var context = serviceProvider.GetRequiredService<QmsDbContext>();
             
-            // 1. Apply EF migrations to target database
-            if (IsSqlite(context))
+            // 1. Apply EF migrations to target database with retry policy for transient locks
+            int retries = 5;
+            while (retries > 0)
             {
-                if (!await IsMigrationAppliedAsync(context, IsoImprovementMigrationId))
+                try
                 {
-                    await context.Database.MigrateAsync(PreviousIsoImprovementMigrationId);
-                    await EnsureIsoImprovementSqliteSchemaAsync(context);
-                    await MarkMigrationAppliedAsync(context, IsoImprovementMigrationId, EfProductVersion);
-                }
+                    if (IsSqlite(context))
+                    {
+                        if (!await IsMigrationAppliedAsync(context, IsoImprovementMigrationId))
+                        {
+                            await context.Database.MigrateAsync(PreviousIsoImprovementMigrationId);
+                            await EnsureIsoImprovementSqliteSchemaAsync(context);
+                            await MarkMigrationAppliedAsync(context, IsoImprovementMigrationId, EfProductVersion);
+                        }
 
-                await context.Database.MigrateAsync();
-                await EnsureIsoImprovementSqliteSchemaAsync(context);
-            }
-            else
-            {
-                await context.Database.MigrateAsync();
+                        await context.Database.MigrateAsync();
+                        await EnsureIsoImprovementSqliteSchemaAsync(context);
+                    }
+                    else
+                    {
+                        await context.Database.MigrateAsync();
+                    }
+                    break;
+                }
+                catch (Exception ex) when (IsSqlite(context) && retries > 1)
+                {
+                    retries--;
+                    Console.WriteLine($"⚠ Migrations blocked (SQLite). Retrying in 1 second... ({retries} retries left). Error: {ex.Message}");
+                    await Task.Delay(1000);
+                }
             }
 
             // Fix invalid Guid values in database from older legacy seeds

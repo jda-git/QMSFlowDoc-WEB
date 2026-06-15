@@ -130,8 +130,10 @@ public static class PendingRestoreService
 
     public static string GetSqliteDatabasePath(IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
+        var connectionStringRaw = configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("No se ha encontrado la cadena de conexion DefaultConnection.");
+
+        var connectionString = ResolvePortableConnectionString(connectionStringRaw);
 
         var builder = new SqliteConnectionStringBuilder(connectionString);
         if (string.IsNullOrWhiteSpace(builder.DataSource) ||
@@ -143,6 +145,38 @@ public static class PendingRestoreService
         return Path.IsPathRooted(builder.DataSource)
             ? builder.DataSource
             : Path.GetFullPath(builder.DataSource);
+    }
+
+    private static string ResolvePortableConnectionString(string connStr)
+    {
+        try
+        {
+            var connBuilder = new SqliteConnectionStringBuilder(connStr);
+            if (!string.IsNullOrWhiteSpace(connBuilder.DataSource) && connBuilder.DataSource != ":memory:")
+            {
+                connBuilder.DataSource = ResolvePortablePath(connBuilder.DataSource);
+                return connBuilder.ToString();
+            }
+        }
+        catch
+        {
+            // Fallback
+        }
+        return connStr;
+    }
+
+    private static string ResolvePortablePath(string configuredPath)
+    {
+        if (string.IsNullOrWhiteSpace(configuredPath)) return configuredPath;
+        
+        if (configuredPath.Contains(@"C:\Users\SERVIDOR", StringComparison.OrdinalIgnoreCase))
+        {
+            var myDocuments = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            var subPath = configuredPath.Replace(@"C:\Users\SERVIDOR\Documents\", "", StringComparison.OrdinalIgnoreCase)
+                                         .Replace(@"C:\Users\SERVIDOR\", "", StringComparison.OrdinalIgnoreCase);
+            return Path.Combine(myDocuments, "QMS", subPath);
+        }
+        return configuredPath;
     }
 
     public static async Task VerifyPendingRestoreAsync(PendingRestoreRequest request, CancellationToken ct = default)

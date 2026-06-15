@@ -1,0 +1,1029 @@
+@page "/iqc"
+@attribute [Microsoft.AspNetCore.Authorization.Authorize]
+@rendermode InteractiveServer
+@using Microsoft.EntityFrameworkCore
+@using QMSFlowDoc.Domain.Entities
+@using QMSFlowDoc.Infrastructure.Persistence
+@using QMSFlowDoc.Application.Services.Identity
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Forms
+@inject QmsDbContext DbContext
+@inject IPermissionService PermissionService
+@inject IJSRuntime JS
+
+<PageTitle>Control Interno de Calidad (IQC) — QMSFlowDoc</PageTitle>
+
+<div class="container-fluid py-4 px-4">
+    @if (!isAuthorized)
+    {
+        <div class="alert alert-danger rounded-4 shadow-sm p-4 d-flex align-items-center" role="alert">
+            <i class="bi bi-shield-lock-fill fs-1 me-4"></i>
+            <div>
+                <h4 class="alert-heading fw-bold mb-1">Acceso Denegado</h4>
+                <p class="mb-0">No tiene los permisos de lectura suficientes para acceder a la gestión de Control de Calidad Interno (ISO 15189 §7.3.7.2).</p>
+            </div>
+        </div>
+    }
+    else
+    {
+        <!-- Header -->
+        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+            <div>
+                <h2 class="fw-bold text-dark mb-1">
+                    <i class="bi bi-graph-up text-primary me-2"></i>Control Interno de Calidad (IQC)
+                </h2>
+                <p class="text-muted mb-0">Monitorización del desempeño de sistemas analíticos y validación de reglas de Westgard (ISO 15189:2022 §7.3.7.2).</p>
+            </div>
+            <div class="d-flex gap-2">
+                <button class="btn btn-outline-secondary rounded-pill px-3" @onclick="LoadData">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Actualizar
+                </button>
+                @if (canCreate)
+                {
+                    <button class="btn btn-primary rounded-pill px-4" @onclick="OpenAddResultModal">
+                        <i class="bi bi-plus-circle me-2"></i>Registrar Resultado
+                    </button>
+                }
+            </div>
+        </div>
+
+        @if (!string.IsNullOrEmpty(statusMessage))
+        {
+            <div class="alert alert-success alert-dismissible fade show rounded-3 mb-4" role="alert">
+                <i class="bi bi-check-circle-fill me-2"></i>@statusMessage
+                <button type="button" class="btn-close" @onclick="() => statusMessage = null" aria-label="Close"></button>
+            </div>
+        }
+
+        <!-- Filter & Summary Row -->
+        <div class="row g-4 mb-4">
+            <!-- Filter Panel -->
+            <div class="col-lg-4">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body p-4">
+                        <h5 class="fw-bold text-dark mb-3"><i class="bi bi-funnel-fill text-secondary me-2"></i>Filtros de Configuración</h5>
+                        
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold text-secondary">Equipo Analítico</label>
+                            <select class="form-select form-select-premium" @bind="selectedEquipment" @bind:after="OnFilterChanged">
+                                <option value="">-- Todos los equipos --</option>
+                                @foreach (var eq in equipmentList)
+                                {
+                                    <option value="@eq">@eq</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold text-secondary">Analito</label>
+                            <select class="form-select form-select-premium" @bind="selectedAnalyte" @bind:after="OnFilterChanged" disabled="@(string.IsNullOrEmpty(selectedEquipment))">
+                                <option value="">-- Seleccionar analito --</option>
+                                @foreach (var an in analyteList)
+                                {
+                                    <option value="@an">@an</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="mb-3">
+                            <label class="form-label small fw-semibold text-secondary">Nivel de Control</label>
+                            <select class="form-select form-select-premium" @bind="selectedLevel" @bind:after="OnFilterChanged" disabled="@(string.IsNullOrEmpty(selectedAnalyte))">
+                                <option value="">-- Seleccionar nivel --</option>
+                                @foreach (var lvl in levelList)
+                                {
+                                    <option value="@lvl">@lvl</option>
+                                }
+                            </select>
+                        </div>
+
+                        @if (hasData && activeResults.Any())
+                        {
+                            <hr class="my-4" />
+                            <h6 class="fw-bold text-secondary mb-3">Estadísticas del Lote</h6>
+                            <div class="row g-2">
+                                <div class="col-6">
+                                    <div class="p-2.5 bg-light rounded-3 text-center">
+                                        <span class="d-block small text-muted">Media Diana</span>
+                                        <span class="fw-bold text-dark fs-5">@targetMean.ToString("F3")</span>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="p-2.5 bg-light rounded-3 text-center">
+                                        <span class="d-block small text-muted">DE Diana</span>
+                                        <span class="fw-bold text-dark fs-5">@targetSD.ToString("F3")</span>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="p-2.5 bg-light rounded-3 text-center">
+                                        <span class="d-block small text-muted">Nº Registros</span>
+                                        <span class="fw-bold text-dark fs-5">@activeResults.Count</span>
+                                    </div>
+                                </div>
+                                <div class="col-6">
+                                    <div class="p-2.5 bg-light rounded-3 text-center">
+                                        <span class="d-block small text-muted">C.V. Diana</span>
+                                        <span class="fw-bold text-dark fs-5">@(targetMean > 0 ? ((targetSD / targetMean) * 100).ToString("F2") : "0")%</span>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chart / Placeholder Panel -->
+            <div class="col-lg-8">
+                <div class="card border-0 shadow-sm rounded-4 h-100">
+                    <div class="card-body p-4 d-flex flex-column justify-content-between">
+                        @if (string.IsNullOrEmpty(selectedEquipment) || string.IsNullOrEmpty(selectedAnalyte) || string.IsNullOrEmpty(selectedLevel))
+                        {
+                            <div class="text-center py-5 my-auto text-muted">
+                                <i class="bi bi-graph-up-arrow fs-1 opacity-50 mb-3 d-block"></i>
+                                <h5 class="fw-semibold">Seleccione un Equipo, Analito y Nivel de Control</h5>
+                                <p class="small mb-4">Debe seleccionar todos los filtros de configuración para visualizar el gráfico de Levey-Jennings.</p>
+                                <button class="btn btn-outline-primary rounded-pill px-4" @onclick="GenerateDemoData">
+                                    <i class="bi bi-magic me-2"></i>Cargar Datos de Demostración
+                                </button>
+                            </div>
+                        }
+                        else if (!activeResults.Any())
+                        {
+                            <div class="text-center py-5 my-auto text-muted">
+                                <i class="bi bi-folder-x fs-1 opacity-50 mb-3 d-block"></i>
+                                <h5 class="fw-semibold">No hay resultados registrados</h5>
+                                <p class="small mb-0">Registre un resultado o cargue datos de demostración para esta combinación.</p>
+                                <div class="d-flex justify-content-center gap-2 mt-4">
+                                    @if (canCreate)
+                                    {
+                                        <button class="btn btn-primary rounded-pill px-4" @onclick="OpenAddResultModal">
+                                            <i class="bi bi-plus-circle me-2"></i>Registrar Primero
+                                        </button>
+                                    }
+                                    <button class="btn btn-outline-secondary rounded-pill px-4" @onclick="GenerateDemoData">
+                                        Generar Simulación
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div>
+                                <div class="d-flex justify-content-between align-items-center mb-3">
+                                    <h5 class="fw-bold text-dark mb-0">
+                                        Gráfico de Levey-Jennings: @selectedAnalyte (@selectedLevel)
+                                    </h5>
+                                    <span class="small text-muted">
+                                        Equipo: <strong>@selectedEquipment</strong>
+                                    </span>
+                                </div>
+
+                                <!-- SVG Chart -->
+                                <div class="svg-container bg-dark-subtle rounded-4 p-3 border mb-3 overflow-hidden" style="background-color: #0f172a !important;">
+                                    <svg viewBox="0 0 800 400" width="100%" height="320" xmlns="http://www.w3.org/2000/svg">
+                                        <!-- Y Axis reference lines -->
+                                        @for (int sdVal = -3; sdVal <= 3; sdVal++)
+                                        {
+                                            var y = GetYCoordinate(sdVal);
+                                            var strokeColor = sdVal switch
+                                            {
+                                                3 or -3 => "#ef4444",   // Red for 3SD
+                                                2 or -2 => "#eab308",   // Yellow for 2SD
+                                                1 or -1 => "#475569",   // Gray for 1SD
+                                                _ => "#22c55e"          // Green for Mean
+                                            };
+                                            var strokeStyle = sdVal == 0 ? "solid" : "2,4";
+                                            var label = sdVal == 0 ? "Media" : (sdVal > 0 ? $"+{sdVal} DE" : $"{sdVal} DE");
+                                            var actualVal = targetMean + (sdVal * targetSD);
+
+                                            <line x1="60" y1="@y" x2="760" y2="@y" stroke="@strokeColor" stroke-dasharray="@(sdVal == 0 ? "" : "3,3")" stroke-width="@(sdVal == 0 ? "1.5" : "1")" opacity="@(sdVal == 0 ? "0.8" : "0.5")" />
+                                            @((MarkupString)$"<text x=\"50\" y=\"{y + 4}\" fill=\"{strokeColor}\" font-size=\"10\" text-anchor=\"end\" font-weight=\"bold\">{label}</text>")
+                                            @((MarkupString)$"<text x=\"765\" y=\"{y + 4}\" fill=\"#64748b\" font-size=\"9\" text-anchor=\"start\">{actualVal.ToString("F2")}</text>")
+                                        }
+
+                                        <!-- Connective Line -->
+                                        @if (chartPoints.Count > 1)
+                                        {
+                                            <path d="@GeneratePathData()" fill="none" stroke="#6366f1" stroke-width="2" opacity="0.8" />
+                                        }
+
+                                        <!-- Points -->
+                                        @for (int i = 0; i < chartPoints.Count; i++)
+                                        {
+                                            var pt = chartPoints[i];
+                                            var index = i;
+                                            var fill = pt.Status switch
+                                            {
+                                                IQCStatus.REJECTED => "#ef4444",
+                                                IQCStatus.WARNING => "#eab308",
+                                                _ => "#22c55e"
+                                            };
+                                            var radius = selectedIndex == index ? 7 : 5;
+                                            var stroke = selectedIndex == index ? "#ffffff" : "none";
+                                            var strokeWidth = selectedIndex == index ? 2 : 0;
+
+                                            <circle cx="@pt.X" cy="@pt.Y" r="@radius" fill="@fill" stroke="@stroke" stroke-width="@strokeWidth" style="cursor:pointer;" @onclick="() => SelectPoint(index)" />
+                                            
+                                            <!-- Simple dot date label at bottom if there are few points -->
+                                            @if (chartPoints.Count <= 15 || i % (chartPoints.Count / 10 + 1) == 0)
+                                            {
+                                                @((MarkupString)$"<text x=\"{pt.X}\" y=\"380\" fill=\"#94a3b8\" font-size=\"9\" text-anchor=\"middle\" transform=\"rotate(-30 {pt.X} 380)\">{pt.Date.ToString("dd/MM HH:mm")}</text>")
+                                            }
+                                        }
+                                    </svg>
+                                </div>
+                            </div>
+
+                            <!-- Selected Point Details / Help -->
+                            @if (selectedPoint != null)
+                            {
+                                <div class="p-3 rounded-4 border border-info-subtle bg-info-subtle bg-opacity-10 d-flex justify-content-between align-items-center animate__animated animate__fadeIn">
+                                    <div>
+                                        <h6 class="fw-bold text-dark mb-1">
+                                            Corrida del @selectedPoint.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                        </h6>
+                                        <p class="mb-0 text-muted small">
+                                            Valor: <strong class="text-dark">@selectedPoint.Value.ToString("F3")</strong> 
+                                            (Desviación: @(((selectedPoint.Value - selectedPoint.Mean) / (selectedPoint.SD > 0 ? selectedPoint.SD : 1)).ToString("F2")) DE)
+                                            @if (!string.IsNullOrEmpty(selectedPoint.Comments))
+                                            {
+                                                <span> | Nota: <em>@selectedPoint.Comments</em></span>
+                                            }
+                                        </p>
+                                    </div>
+                                    <div>
+                                        @if (selectedPoint.Status == IQCStatus.REJECTED)
+                                        {
+                                            <span class="badge bg-danger rounded-pill px-3 py-2">
+                                                ⛔ RECHAZADO — Regla @selectedPoint.WestgardRule violada
+                                            </span>
+                                        }
+                                        else if (selectedPoint.Status == IQCStatus.WARNING)
+                                        {
+                                            <span class="badge bg-warning text-dark rounded-pill px-3 py-2">
+                                                ⚠️ ALERTA — Regla @selectedPoint.WestgardRule
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="badge bg-success rounded-pill px-3 py-2">
+                                                ✅ Conforme
+                                            </span>
+                                        }
+                                    </div>
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="p-3 bg-light rounded-4 text-center">
+                                    <span class="text-muted small">Haga clic en cualquier punto del gráfico para ver sus detalles específicos y violaciones de reglas.</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- History Table -->
+        <div class="card border-0 shadow-sm rounded-4">
+            <div class="card-body p-0">
+                <div class="p-4 border-bottom d-flex justify-content-between align-items-center">
+                    <h5 class="fw-bold text-dark mb-0"><i class="bi bi-list-task text-secondary me-2"></i>Historial de Controles</h5>
+                </div>
+                <div class="table-responsive rounded-bottom-4">
+                    <table class="table table-hover align-middle mb-0">
+                        <thead class="bg-light small fw-bold text-secondary">
+                            <tr>
+                                <th scope="col" class="ps-4 py-3">Fecha y Hora</th>
+                                <th scope="col" class="py-3">Equipo</th>
+                                <th scope="col" class="py-3">Analito</th>
+                                <th scope="col" class="py-3">Nivel</th>
+                                <th scope="col" class="py-3 text-end">Valor</th>
+                                <th scope="col" class="py-3 text-end">Media Diana</th>
+                                <th scope="col" class="py-3 text-end">DE Diana</th>
+                                <th scope="col" class="py-3 text-center">Z-Score</th>
+                                <th scope="col" class="py-3">Estado</th>
+                                <th scope="col" class="py-3">Regla / Comentarios</th>
+                                @if (canDelete)
+                                {
+                                    <th scope="col" class="py-3 pe-4 text-end">Acciones</th>
+                                }
+                            </tr>
+                        </thead>
+                        <tbody class="small">
+                            @if (!activeResults.Any())
+                            {
+                                <tr>
+                                    <td colspan="@(canDelete ? 11 : 10)" class="text-center py-5 text-muted">
+                                        <i class="bi bi-journal-x fs-1 opacity-50 mb-2 d-block"></i>
+                                        No hay registros de control que coincidan con la selección.
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (var r in activeResults.OrderByDescending(x => x.Date))
+                                {
+                                    double z = r.SD > 0 ? (r.Value - r.Mean) / r.SD : 0;
+                                    <tr>
+                                        <td class="ps-4 py-3 text-nowrap fw-semibold text-secondary">
+                                            @r.Date.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                                        </td>
+                                        <td class="py-3">@r.EquipmentName</td>
+                                        <td class="py-3 fw-bold text-dark">@r.AnalyteName</td>
+                                        <td class="py-3">
+                                            <span class="badge bg-secondary-subtle text-secondary rounded-pill">
+                                                @r.Level
+                                            </span>
+                                        </td>
+                                        <td class="py-3 text-end fw-bold">@r.Value.ToString("F3")</td>
+                                        <td class="py-3 text-end text-muted">@r.Mean.ToString("F3")</td>
+                                        <td class="py-3 text-end text-muted">@r.SD.ToString("F3")</td>
+                                        <td class="py-3 text-center">
+                                            <span class="fw-semibold @(Math.Abs(z) >= 3.0 ? "text-danger" : (Math.Abs(z) >= 2.0 ? "text-warning" : "text-success"))">
+                                                @z.ToString("F2")
+                                            </span>
+                                        </td>
+                                        <td class="py-3">
+                                            @if (r.Status == IQCStatus.REJECTED)
+                                            {
+                                                <span class="badge bg-danger rounded-pill">RECHAZADO</span>
+                                            }
+                                            else if (r.Status == IQCStatus.WARNING)
+                                            {
+                                                <span class="badge bg-warning text-dark rounded-pill">ALERTA</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-success rounded-pill">CONFORME</span>
+                                            }
+                                        </td>
+                                        <td class="py-3 text-wrap" style="max-width: 250px;">
+                                            @if (!string.IsNullOrEmpty(r.WestgardRule))
+                                            {
+                                                <span class="text-danger fw-bold me-2">[@r.WestgardRule]</span>
+                                            }
+                                            <span class="text-muted">@r.Comments</span>
+                                        </td>
+                                        @if (canDelete)
+                                        {
+                                            <td class="py-3 pe-4 text-end">
+                                                <button class="btn btn-outline-danger btn-sm rounded-pill" @onclick="() => DeleteResult(r)" title="Eliminar Registro">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            </td>
+                                        }
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Result Modal -->
+        @if (showAddModal)
+        {
+            <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);" role="dialog">
+                <div class="modal-dialog modal-dialog-centered" role="document">
+                    <div class="modal-content border-0 shadow-lg rounded-4">
+                        <div class="modal-header border-bottom p-4">
+                            <h5 class="modal-title fw-bold text-dark">
+                                <i class="bi bi-plus-circle-fill text-primary me-2"></i>Registrar Resultado IQC
+                            </h5>
+                            <button type="button" class="btn-close" @onclick="CloseAddResultModal" aria-label="Close"></button>
+                        </div>
+                        <EditForm Model="@newResultModel" OnValidSubmit="HandleAddResult">
+                            <DataAnnotationsValidator />
+                            <div class="modal-body p-4">
+                                @if (!string.IsNullOrEmpty(modalError))
+                                {
+                                    <div class="alert alert-danger rounded-3 mb-3">
+                                        <i class="bi bi-exclamation-triangle-fill me-2"></i>@modalError
+                                    </div>
+                                }
+
+                                <div class="row g-3">
+                                    <div class="col-md-12">
+                                        <label class="form-label small fw-semibold text-secondary">Equipo Analítico</label>
+                                        <input type="text" class="form-control form-control-premium" placeholder="Ej. Citómetro BD FacsCanto" @bind-value="newResultModel.EquipmentName" required />
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-semibold text-secondary">Analito</label>
+                                        <input type="text" class="form-control form-control-premium" placeholder="Ej. Hemoglobina" @bind-value="newResultModel.AnalyteName" required />
+                                    </div>
+
+                                    <div class="col-md-6">
+                                        <label class="form-label small fw-semibold text-secondary">Nivel de Control</label>
+                                        <input type="text" class="form-control form-control-premium" placeholder="Ej. Normal" @bind-value="newResultModel.Level" required />
+                                    </div>
+
+                                    <div class="col-md-4">
+                                        <label class="form-label small fw-semibold text-secondary">Valor Obtenido</label>
+                                        <input type="number" step="0.001" class="form-control form-control-premium" @bind-value="newResultModel.Value" required />
+                                    </div>
+
+                                    <div class="col-md-4">
+                                        <label class="form-label small fw-semibold text-secondary">Media Diana</label>
+                                        <input type="number" step="0.001" class="form-control form-control-premium" @bind-value="newResultModel.Mean" required />
+                                    </div>
+
+                                    <div class="col-md-4">
+                                        <label class="form-label small fw-semibold text-secondary">DE Diana</label>
+                                        <input type="number" step="0.001" class="form-control form-control-premium" @bind-value="newResultModel.SD" required />
+                                    </div>
+
+                                    <div class="col-md-12">
+                                        <label class="form-label small fw-semibold text-secondary">Fecha y Hora Medida</label>
+                                        <input type="datetime-local" class="form-control form-control-premium" @bind-value="newResultModel.Date" required />
+                                    </div>
+
+                                    <div class="col-md-12">
+                                        <label class="form-label small fw-semibold text-secondary">Comentarios / Acciones correctivas</label>
+                                        <textarea class="form-control form-control-premium animate__animated" rows="3" placeholder="Ej. Nuevo lote de control..." @bind="newResultModel.Comments"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="modal-footer border-top p-4 d-flex justify-content-end gap-2">
+                                <button type="button" class="btn btn-outline-secondary rounded-pill px-4" @onclick="CloseAddResultModal">Cancelar</button>
+                                <button type="submit" class="btn btn-primary rounded-pill px-4">
+                                    <i class="bi bi-save me-2"></i>Guardar Registro
+                                </button>
+                            </div>
+                        </EditForm>
+                    </div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+<style>
+    .form-select-premium, .form-control-premium {
+        border-radius: 0.75rem;
+        border: 1px solid #e2e8f0;
+        padding: 0.6rem 1rem;
+        transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .form-select-premium:focus, .form-control-premium:focus {
+        border-color: #6366f1;
+        box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+    }
+    .badge {
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+    .svg-container {
+        position: relative;
+        width: 100%;
+        box-shadow: inset 0 2px 4px 0 rgba(0, 0, 0, 0.06);
+    }
+</style>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthStateTask { get; set; }
+
+    private bool isAuthorized = false;
+    private bool canCreate = false;
+    private bool canEdit = false;
+    private bool canDelete = false;
+
+    private List<IQCResult> allResults = new();
+    private List<IQCResult> activeResults = new();
+    private List<string> equipmentList = new();
+    private List<string> analyteList = new();
+    private List<string> levelList = new();
+
+    private string selectedEquipment = "";
+    private string selectedAnalyte = "";
+    private string selectedLevel = "";
+
+    private double targetMean = 0;
+    private double targetSD = 0;
+
+    private bool hasData => activeResults.Any();
+    private List<ChartPoint> chartPoints = new();
+    private int selectedIndex = -1;
+    private IQCResult? selectedPoint;
+
+    private bool showAddModal = false;
+    private CreateIQCRequest newResultModel = new();
+    private string? statusMessage;
+    private string? modalError;
+
+    private Guid? currentUserId;
+    private string? currentUserName;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (AuthStateTask != null)
+        {
+            var authState = await AuthStateTask;
+            var user = authState.User;
+
+            var hasQuality = (await PermissionService.GetPermissionsForUserAsync(user, "Quality")).CanRead;
+            isAuthorized = user.IsInRole("Administrador") || user.IsInRole("Director") || hasQuality;
+
+            canCreate = user.IsInRole("Administrador") || user.IsInRole("Director") || (await PermissionService.GetPermissionsForUserAsync(user, "Quality")).CanCreate;
+            canEdit = user.IsInRole("Administrador") || user.IsInRole("Director") || (await PermissionService.GetPermissionsForUserAsync(user, "Quality")).CanEdit;
+            canDelete = user.IsInRole("Administrador") || user.IsInRole("Director") || (await PermissionService.GetPermissionsForUserAsync(user, "Quality")).CanDelete;
+
+            var userIdClaim = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (Guid.TryParse(userIdClaim, out var parsedId))
+            {
+                currentUserId = parsedId;
+            }
+            currentUserName = user.Identity?.Name ?? "Usuario";
+        }
+
+        if (isAuthorized)
+        {
+            await LoadData();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        allResults = await DbContext.IQCResults.ToListAsync();
+        
+        // Re-extract lists for filters
+        equipmentList = allResults.Select(r => r.EquipmentName).Distinct().OrderBy(e => e).ToList();
+
+        if (!string.IsNullOrEmpty(selectedEquipment))
+        {
+            analyteList = allResults.Where(r => r.EquipmentName == selectedEquipment).Select(r => r.AnalyteName).Distinct().OrderBy(a => a).ToList();
+        }
+        else
+        {
+            analyteList.Clear();
+            selectedAnalyte = "";
+        }
+
+        if (!string.IsNullOrEmpty(selectedAnalyte))
+        {
+            levelList = allResults.Where(r => r.EquipmentName == selectedEquipment && r.AnalyteName == selectedAnalyte).Select(r => r.Level).Distinct().OrderBy(l => l).ToList();
+        }
+        else
+        {
+            levelList.Clear();
+            selectedLevel = "";
+        }
+
+        ApplyFilters();
+    }
+
+    private void ApplyFilters()
+    {
+        if (string.IsNullOrEmpty(selectedEquipment) || string.IsNullOrEmpty(selectedAnalyte) || string.IsNullOrEmpty(selectedLevel))
+        {
+            activeResults.Clear();
+            chartPoints.Clear();
+            selectedPoint = null;
+            selectedIndex = -1;
+            return;
+        }
+
+        activeResults = allResults
+            .Where(r => r.EquipmentName == selectedEquipment && r.AnalyteName == selectedAnalyte && r.Level == selectedLevel)
+            .OrderBy(r => r.Date)
+            .ToList();
+
+        // Run sequential Westgard validation
+        RunWestgardValidation(activeResults);
+
+        if (activeResults.Any())
+        {
+            // Pick target stats from the latest point
+            var latest = activeResults.Last();
+            targetMean = latest.Mean;
+            targetSD = latest.SD;
+
+            BuildChartPoints();
+        }
+        else
+        {
+            chartPoints.Clear();
+            selectedPoint = null;
+            selectedIndex = -1;
+        }
+    }
+
+    private void OnFilterChanged()
+    {
+        // Re-extract dependent lists if needed
+        if (string.IsNullOrEmpty(selectedEquipment))
+        {
+            selectedAnalyte = "";
+            selectedLevel = "";
+            analyteList.Clear();
+            levelList.Clear();
+        }
+        else
+        {
+            analyteList = allResults.Where(r => r.EquipmentName == selectedEquipment).Select(r => r.AnalyteName).Distinct().OrderBy(a => a).ToList();
+            if (!analyteList.Contains(selectedAnalyte))
+            {
+                selectedAnalyte = "";
+                selectedLevel = "";
+                levelList.Clear();
+            }
+            else
+            {
+                levelList = allResults.Where(r => r.EquipmentName == selectedEquipment && r.AnalyteName == selectedAnalyte).Select(r => r.Level).Distinct().OrderBy(l => l).ToList();
+                if (!levelList.Contains(selectedLevel))
+                {
+                    selectedLevel = "";
+                }
+            }
+        }
+
+        ApplyFilters();
+    }
+
+    private void BuildChartPoints()
+    {
+        chartPoints.Clear();
+        var list = activeResults.OrderBy(r => r.Date).ToList();
+        if (!list.Any()) return;
+
+        double width = 700; // 760 - 60
+
+        double xOffset = 60;
+        double yCenter = 200; // 0 SD
+
+        for (int i = 0; i < list.Count; i++)
+        {
+            var r = list[i];
+            double z = r.SD > 0 ? (r.Value - r.Mean) / r.SD : 0;
+            // Clamp z for visualization
+            double clampedZ = Math.Max(-4.0, Math.Min(4.0, z));
+
+            double x = list.Count > 1 
+                ? xOffset + (i * (width / (list.Count - 1))) 
+                : xOffset + (width / 2);
+            double y = yCenter - (clampedZ * 40); // 40px per SD
+
+            chartPoints.Add(new ChartPoint
+            {
+                X = x,
+                Y = y,
+                Value = r.Value,
+                Mean = r.Mean,
+                SD = r.SD,
+                Date = r.Date,
+                Status = r.Status,
+                WestgardRule = r.WestgardRule,
+                Comments = r.Comments,
+                Index = i
+            });
+        }
+
+        if (selectedIndex >= 0 && selectedIndex < chartPoints.Count)
+        {
+            SelectPoint(selectedIndex);
+        }
+        else
+        {
+            selectedPoint = null;
+            selectedIndex = -1;
+        }
+    }
+
+    private string GeneratePathData()
+    {
+        if (chartPoints.Count < 2) return "";
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"M {chartPoints[0].X:F2} {chartPoints[0].Y:F2}");
+        for (int i = 1; i < chartPoints.Count; i++)
+        {
+            sb.Append($" L {chartPoints[i].X:F2} {chartPoints[i].Y:F2}");
+        }
+        return sb.ToString();
+    }
+
+    private double GetYCoordinate(double sd)
+    {
+        double yCenter = 200;
+        return yCenter - (sd * 40);
+    }
+
+    private void SelectPoint(int index)
+    {
+        selectedIndex = index;
+        if (index >= 0 && index < activeResults.Count)
+        {
+            selectedPoint = activeResults[index];
+        }
+        else
+        {
+            selectedPoint = null;
+        }
+    }
+
+    private void OpenAddResultModal()
+    {
+        newResultModel = new CreateIQCRequest
+        {
+            EquipmentName = selectedEquipment,
+            AnalyteName = selectedAnalyte,
+            Level = selectedLevel,
+            Mean = targetMean > 0 ? targetMean : 10.0,
+            SD = targetSD > 0 ? targetSD : 0.5,
+            Value = targetMean > 0 ? targetMean : 10.0,
+            Date = DateTime.Now
+        };
+        modalError = null;
+        showAddModal = true;
+    }
+
+    private void CloseAddResultModal()
+    {
+        showAddModal = false;
+    }
+
+    private async Task HandleAddResult()
+    {
+        if (newResultModel.SD <= 0)
+        {
+            modalError = "La Desviación Estándar (DE) Diana debe ser mayor que 0.";
+            return;
+        }
+
+        var result = new IQCResult
+        {
+            Id = Guid.NewGuid(),
+            EquipmentName = newResultModel.EquipmentName,
+            AnalyteName = newResultModel.AnalyteName,
+            Level = newResultModel.Level,
+            Value = newResultModel.Value,
+            Mean = newResultModel.Mean,
+            SD = newResultModel.SD,
+            Date = newResultModel.Date.ToUniversalTime(),
+            Comments = newResultModel.Comments
+        };
+
+        // Determine Westgard status for the newly added result relative to existing points
+        var tempHistory = allResults
+            .Where(r => r.EquipmentName == result.EquipmentName && r.AnalyteName == result.AnalyteName && r.Level == result.Level)
+            .Concat(new[] { result })
+            .OrderBy(r => r.Date)
+            .ToList();
+
+        RunWestgardValidation(tempHistory);
+
+        // Copy computed status to our new result
+        var computedForSelf = tempHistory.First(h => h.Id == result.Id);
+        result.Status = computedForSelf.Status;
+        result.WestgardRule = computedForSelf.WestgardRule;
+
+        DbContext.IQCResults.Add(result);
+
+        // Audit Log
+        var audit = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Action = "CREATE",
+            EntityType = "IQCResult",
+            EntityId = result.Id,
+            Details = $"Resultado IQC '{result.AnalyteName}' registrado. Valor: {result.Value} (Diana: {result.Mean}±{result.SD}). Estado: {result.Status}. Regla: {result.WestgardRule ?? "Ninguna"}",
+            UserId = currentUserId ?? Guid.Empty,
+            UserName = currentUserName ?? "Sistema",
+            Timestamp = DateTime.UtcNow,
+            MachineName = Environment.MachineName,
+            Result = "Success"
+        };
+        DbContext.AuditLogs.Add(audit);
+
+        await DbContext.SaveChangesAsync();
+
+        statusMessage = $"Resultado de IQC guardado. Estado: {result.Status} (Z-Score: {((result.Value - result.Mean)/result.SD):F2} DE)";
+        showAddModal = false;
+
+        // Keep selections so user views their new result
+        selectedEquipment = result.EquipmentName;
+        selectedAnalyte = result.AnalyteName;
+        selectedLevel = result.Level;
+
+        await LoadData();
+    }
+
+    private async Task DeleteResult(IQCResult result)
+    {
+        DbContext.IQCResults.Remove(result);
+
+        var audit = new AuditLog
+        {
+            Id = Guid.NewGuid(),
+            Action = "DELETE",
+            EntityType = "IQCResult",
+            EntityId = result.Id,
+            Details = $"Resultado IQC '{result.AnalyteName}' eliminado. Valor: {result.Value} del {result.Date:dd/MM/yyyy}",
+            UserId = currentUserId ?? Guid.Empty,
+            UserName = currentUserName ?? "Sistema",
+            Timestamp = DateTime.UtcNow,
+            MachineName = Environment.MachineName,
+            Result = "Success"
+        };
+        DbContext.AuditLogs.Add(audit);
+
+        await DbContext.SaveChangesAsync();
+        statusMessage = "Registro de IQC eliminado del historial.";
+        
+        await LoadData();
+    }
+
+    private void RunWestgardValidation(List<IQCResult> points)
+    {
+        for (int i = 0; i < points.Count; i++)
+        {
+            var current = points[i];
+            if (current.SD <= 0)
+            {
+                current.Status = IQCStatus.OK;
+                current.WestgardRule = null;
+                continue;
+            }
+
+            double z = (current.Value - current.Mean) / current.SD;
+            double absZ = Math.Abs(z);
+
+            current.Status = IQCStatus.OK;
+            current.WestgardRule = null;
+
+            // 1. 1-3s Rule (Rejection)
+            if (absZ >= 3.0)
+            {
+                current.Status = IQCStatus.REJECTED;
+                current.WestgardRule = "1-3s";
+                continue;
+            }
+
+            // 2. 2-2s Rule (Rejection)
+            if (i >= 1)
+            {
+                var prev = points[i - 1];
+                double prevZ = (prev.Value - prev.Mean) / prev.SD;
+                if ((z >= 2.0 && prevZ >= 2.0) || (z <= -2.0 && prevZ <= -2.0))
+                {
+                    current.Status = IQCStatus.REJECTED;
+                    current.WestgardRule = "2-2s";
+                    continue;
+                }
+            }
+
+            // 3. R-4s Rule (Rejection)
+            if (i >= 1)
+            {
+                var prev = points[i - 1];
+                double prevZ = (prev.Value - prev.Mean) / prev.SD;
+                if ((z >= 2.0 && prevZ <= -2.0) || (z <= -2.0 && prevZ >= 2.0))
+                {
+                    current.Status = IQCStatus.REJECTED;
+                    current.WestgardRule = "R-4s";
+                    continue;
+                }
+            }
+
+            // 4. 4-1s Rule (Rejection)
+            if (i >= 3)
+            {
+                var p1 = points[i - 1];
+                var p2 = points[i - 2];
+                var p3 = points[i - 3];
+                double z1 = (p1.Value - p1.Mean) / p1.SD;
+                double z2 = (p2.Value - p2.Mean) / p2.SD;
+                double z3 = (p3.Value - p3.Mean) / p3.SD;
+
+                if ((z >= 1.0 && z1 >= 1.0 && z2 >= 1.0 && z3 >= 1.0) ||
+                    (z <= -1.0 && z1 <= -1.0 && z2 <= -1.0 && z3 <= -1.0))
+                {
+                    current.Status = IQCStatus.REJECTED;
+                    current.WestgardRule = "4-1s";
+                    continue;
+                }
+            }
+
+            // 5. 10-x Rule (Rejection)
+            if (i >= 9)
+            {
+                bool allAbove = true;
+                bool allBelow = true;
+                for (int k = 0; k < 10; k++)
+                {
+                    var p = points[i - k];
+                    double pZ = (p.Value - p.Mean) / p.SD;
+                    if (pZ < 0) allAbove = false;
+                    if (pZ > 0) allBelow = false;
+                }
+                if (allAbove || allBelow)
+                {
+                    current.Status = IQCStatus.REJECTED;
+                    current.WestgardRule = "10-x";
+                    continue;
+                }
+            }
+
+            // 6. 1-2s Rule (Warning)
+            if (absZ >= 2.0)
+            {
+                current.Status = IQCStatus.WARNING;
+                current.WestgardRule = "1-2s";
+                continue;
+            }
+        }
+    }
+
+    private async Task GenerateDemoData()
+    {
+        // Add 16 points for Hemoglobina, Normal, target mean 14.0, SD 0.4
+        string eqName = "Citómetro Hematología Sysmex";
+        string anName = "Hemoglobina";
+        string lvlName = "Normal Lot A";
+        double mean = 14.0;
+        double sd = 0.4;
+
+        // Clear existing demo records if any, to start fresh
+        var existing = allResults.Where(r => r.EquipmentName == eqName && r.AnalyteName == anName && r.Level == lvlName);
+        DbContext.IQCResults.RemoveRange(existing);
+
+        var now = DateTime.UtcNow.AddDays(-16);
+        
+        // Mock values demonstrating various rules:
+        // 1-10: In control, minor fluctuations
+        // 11: 1-2s Warning (value = 14.85, z = +2.125)
+        // 12: Back in control (value = 14.1)
+        // 13: 1-3s Rejection (value = 15.3, z = +3.25)
+        // 14: Back in control (value = 13.9)
+        // 15-16: 2-2s Rejection (values = 14.85, 14.90, both z > +2.0)
+        double[] values = new double[] {
+            13.95, 14.12, 13.88, 14.05, 14.22, 13.90, 14.01, 14.10, 13.98, 14.03, // 1-10 OK
+            14.85, // 11: 1-2s Warning
+            14.10, // 12: OK
+            15.30, // 13: 1-3s Rejection
+            13.90, // 14: OK
+            14.85, 14.90 // 15-16: 2-2s Rejection
+        };
+
+        for (int i = 0; i < values.Length; i++)
+        {
+            var result = new IQCResult
+            {
+                Id = Guid.NewGuid(),
+                EquipmentName = eqName,
+                AnalyteName = anName,
+                Level = lvlName,
+                Value = values[i],
+                Mean = mean,
+                SD = sd,
+                Date = now.AddDays(i).AddHours(i),
+                Comments = i switch
+                {
+                    10 => "Advertencia 1-2s simulada",
+                    12 => "Regla 1-3s violada (Rechazo analítico)",
+                    15 => "2-2s violada - punto 1",
+                    16 => "2-2s violada - punto 2 (Rechazo analítico)",
+                    _ => "Simulación de control en rango"
+                }
+            };
+            DbContext.IQCResults.Add(result);
+        }
+
+        await DbContext.SaveChangesAsync();
+
+        selectedEquipment = eqName;
+        selectedAnalyte = anName;
+        selectedLevel = lvlName;
+
+        statusMessage = "Datos de simulación para Hemoglobina generados correctamente.";
+        await LoadData();
+    }
+
+    public class CreateIQCRequest
+    {
+        public string EquipmentName { get; set; } = "";
+        public string AnalyteName { get; set; } = "";
+        public string Level { get; set; } = "";
+        public double Value { get; set; }
+        public double Mean { get; set; }
+        public double SD { get; set; }
+        public DateTime Date { get; set; } = DateTime.Now;
+        public string? Comments { get; set; }
+    }
+
+    public class ChartPoint
+    {
+        public double X { get; set; }
+        public double Y { get; set; }
+        public double Value { get; set; }
+        public double Mean { get; set; }
+        public double SD { get; set; }
+        public DateTime Date { get; set; }
+        public IQCStatus Status { get; set; }
+        public string? WestgardRule { get; set; }
+        public string? Comments { get; set; }
+        public int Index { get; set; }
+    }
+}

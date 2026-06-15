@@ -28,6 +28,6 @@ public interface IQualityService
     Task<Complaint?> GetComplaintByIdAsync(Guid id);
     Task<Guid> CreateComplaintAsync(CreateComplaintRequest request, Guid? userId = null, string? userName = null);
     Task<bool> UpdateComplaintAsync(Guid id, CreateComplaintRequest request, Guid? userId = null, string? userName = null);
-    Task<bool> UpdateComplaintStatusAsync(Guid id, ComplaintStatus status, Guid? userId = null, string? userName = null);
+    Task<bool> UpdateComplaintStatusAsync(Guid id, ComplaintStatus status, Guid? userId = null, string? userName = null, string? confirmPassword = null);
     Task<bool> DeleteComplaintAsync(Guid id, Guid? userId = null, string? userName = null);
 }
