@@ -234,6 +234,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.HasIndex(qc => new { qc.EquipmentId, qc.PerformedAt });
                 e.Property(qc => qc.Type).HasConversion<int>();
                 e.Property(qc => qc.Outcome).HasConversion<int>();
+                e.HasQueryFilter(qc => !qc.IsDeleted);
             });
 
             modelBuilder.Entity<EquipmentAcceptance>(e =>

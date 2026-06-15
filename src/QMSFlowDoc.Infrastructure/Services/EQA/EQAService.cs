@@ -100,7 +100,16 @@ public class EQAService : IEQAService
             r.DeletedByUserId = userId;
         }
 
-        await LogAuditAsync("DELETE", "EQAProgram", id, $"Programa EQA '{program.Name}' eliminado lógicamente", userId, userName);
+        var roundIds = rounds.Select(r => r.Id).ToList();
+        var devs = await _context.EQADeviations.Where(d => roundIds.Contains(d.RoundId) && !d.IsDeleted).ToListAsync();
+        foreach (var d in devs)
+        {
+            d.IsDeleted = true;
+            d.DeletedAt = DateTime.UtcNow;
+            d.DeletedByUserId = userId;
+        }
+
+        await LogAuditAsync("DELETE", "EQAProgram", id, $"Programa EQA '{program.Name}' eliminado lógicamente con cascada", userId, userName);
         return await _context.SaveChangesAsync() > 0;
     }
 

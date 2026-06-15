@@ -20,6 +20,7 @@ public interface IEquipmentService
 
     // Quality Control & Daily checks
     Task<bool> RegisterQCAsync(CreateDailyQCRequest request);
+    Task<bool> VoidQCAsync(Guid qcId, string reason, Guid userId);
 
     // Preventive Maintenance
     Task<bool> RegisterMaintenanceAsync(RegisterMaintenanceRequest request);

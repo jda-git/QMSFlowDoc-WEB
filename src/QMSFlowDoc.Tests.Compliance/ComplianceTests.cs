@@ -108,6 +108,154 @@ namespace QMSFlowDoc.Tests.Compliance
         }
 
         [Fact]
+        public async Task EQAService_SoftDelete_CascadeToChildren()
+        {
+            using var context = new QmsDbContext(_options);
+            var service = new EQAService(context);
+
+            var programId = Guid.NewGuid();
+            var prog = new EQAProgram { Id = programId, InternalCode = "PROG_CASCADE", Name = "Cascade Program" };
+            
+            var enrollmentId = Guid.NewGuid();
+            var enrollment = new EQAEnrollment { Id = enrollmentId, ProgramId = programId, Year = 2026, IsDeleted = false };
+            
+            var mappingId = Guid.NewGuid();
+            var mapping = new EQAMapping { Id = mappingId, ProgramId = programId, InternalTestName = "Cascade Test", IsDeleted = false };
+            
+            var roundId = Guid.NewGuid();
+            var round = new EQARound { Id = roundId, ProgramId = programId, ExternalCode = "ROUND_CASCADE", IsDeleted = false };
+            
+            var devId = Guid.NewGuid();
+            var dev = new EQADeviation { Id = devId, RoundId = roundId, Status = "Abierta", IsDeleted = false };
+
+            context.EQAPrograms.Add(prog);
+            context.EQAEnrollments.Add(enrollment);
+            context.EQAMappings.Add(mapping);
+            context.EQARounds.Add(round);
+            context.EQADeviations.Add(dev);
+            context.SaveChanges();
+
+            // Perform deletion
+            var deletedByUserId = Guid.NewGuid();
+            var result = await service.DeleteProgramAsync(programId, deletedByUserId, "CascadeUser");
+            Assert.True(result);
+
+            // Detach to force reload
+            context.Entry(prog).State = EntityState.Detached;
+            context.Entry(enrollment).State = EntityState.Detached;
+            context.Entry(mapping).State = EntityState.Detached;
+            context.Entry(round).State = EntityState.Detached;
+            context.Entry(dev).State = EntityState.Detached;
+
+            var dbProg = await context.EQAPrograms.FindAsync(programId);
+            var dbEnrollment = await context.EQAEnrollments.FindAsync(enrollmentId);
+            var dbMapping = await context.EQAMappings.FindAsync(mappingId);
+            var dbRound = await context.EQARounds.FindAsync(roundId);
+            var dbDev = await context.EQADeviations.FindAsync(devId);
+
+            Assert.NotNull(dbProg);
+            Assert.True(dbProg.IsDeleted);
+            Assert.Equal(deletedByUserId, dbProg.DeletedByUserId);
+
+            Assert.NotNull(dbEnrollment);
+            Assert.True(dbEnrollment.IsDeleted);
+            Assert.Equal(deletedByUserId, dbEnrollment.DeletedByUserId);
+
+            Assert.NotNull(dbMapping);
+            Assert.True(dbMapping.IsDeleted);
+            Assert.Equal(deletedByUserId, dbMapping.DeletedByUserId);
+
+            Assert.NotNull(dbRound);
+            Assert.True(dbRound.IsDeleted);
+            Assert.Equal(deletedByUserId, dbRound.DeletedByUserId);
+
+            Assert.NotNull(dbDev);
+            Assert.True(dbDev.IsDeleted);
+            Assert.Equal(deletedByUserId, dbDev.DeletedByUserId);
+        }
+
+        [Fact]
+        public async Task EquipmentService_VoidQC_UpdatesStatusAndRecalculates()
+        {
+            using var context = new QmsDbContext(_options);
+            var service = new EquipmentService(context);
+
+            var equipmentId = Guid.NewGuid();
+            var equipment = new Equipment
+            {
+                Id = equipmentId,
+                Name = "Test Cytometer",
+                Status = EquipmentStatus.IN_SERVICE,
+                IsVerified = true,
+                VerificationDate = DateTime.UtcNow.AddDays(-1)
+            };
+            context.Equipments.Add(equipment);
+
+            var qc1Id = Guid.NewGuid();
+            var qc1 = new EquipmentFunctionalQC
+            {
+                Id = qc1Id,
+                EquipmentId = equipmentId,
+                PerformedAt = DateTime.UtcNow.AddDays(-5),
+                PerformedByUserId = Guid.NewGuid(),
+                PerformedByUserName = "TechA",
+                IsPass = true,
+                Outcome = QCOutcome.CONFORME,
+                IsDeleted = false
+            };
+            context.EquipmentFunctionalQC.Add(qc1);
+
+            var qc2Id = Guid.NewGuid();
+            var qc2 = new EquipmentFunctionalQC
+            {
+                Id = qc2Id,
+                EquipmentId = equipmentId,
+                PerformedAt = DateTime.UtcNow.AddDays(-1),
+                PerformedByUserId = Guid.NewGuid(),
+                PerformedByUserName = "TechB",
+                IsPass = false,
+                Outcome = QCOutcome.NO_CONFORME,
+                EquipmentEndStatus = EquipmentStatus.QC_NON_CONFORMING,
+                IsDeleted = false
+            };
+            context.EquipmentFunctionalQC.Add(qc2);
+            context.SaveChanges();
+
+            // Set current equipment status to match the latest QC
+            equipment.Status = EquipmentStatus.QC_NON_CONFORMING;
+            equipment.IsVerified = false;
+            equipment.VerificationDate = qc2.PerformedAt;
+            context.SaveChanges();
+
+            var voidByUserId = Guid.NewGuid();
+            var result = await service.VoidQCAsync(qc2Id, "Bad controls used", voidByUserId);
+            Assert.True(result);
+
+            // Detach and reload
+            context.Entry(equipment).State = EntityState.Detached;
+            context.Entry(qc2).State = EntityState.Detached;
+
+            var dbEq = await context.Equipments.FindAsync(equipmentId);
+            var dbQc2 = await context.EquipmentFunctionalQC.IgnoreQueryFilters().FirstOrDefaultAsync(q => q.Id == qc2Id);
+
+            Assert.NotNull(dbQc2);
+            Assert.True(dbQc2.IsDeleted);
+            Assert.Equal("Bad controls used", dbQc2.VoidReason);
+            Assert.Equal(voidByUserId, dbQc2.DeletedByUserId);
+
+            // Verify status is reverted to QC1's pass status (IN_SERVICE) and date is QC1's date
+            Assert.NotNull(dbEq);
+            Assert.Equal(EquipmentStatus.IN_SERVICE, dbEq.Status);
+            Assert.True(dbEq.IsVerified);
+            Assert.Equal(qc1.PerformedAt, dbEq.VerificationDate);
+
+            // Verify history log has void entry
+            var history = await context.EquipmentHistory.Where(h => h.EquipmentId == equipmentId && h.ActionType == "QC_VOID").FirstOrDefaultAsync();
+            Assert.NotNull(history);
+            Assert.Contains("Bad controls used", history.Description);
+        }
+
+        [Fact]
         public void AuditLogs_ChainedCryptographicHash_VerifiesIntegrity()
         {
             using var context = new QmsDbContext(_options);

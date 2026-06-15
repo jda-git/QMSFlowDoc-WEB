@@ -788,6 +788,60 @@ else
                                                 </div>
                                             }
                                         </div>
+
+                                        <!-- Control de Calidad Funcional (QC) records -->
+                                        <div>
+                                            <div class="d-flex justify-content-between align-items-center border-bottom pb-1">
+                                                <h6 class="fw-bold text-dark mb-0"><i class="bi bi-shield-check me-2 text-primary"></i>Controles de Calidad Funcional (QC)</h6>
+                                                <div class="d-flex gap-1 no-print">
+                                                    <button class="btn btn-outline-success btn-xs" @onclick="OpenQCDialog"><i class="bi bi-plus-circle"></i> Nuevo QC</button>
+                                                </div>
+                                            </div>
+
+                                            @if (details.FunctionalQCs == null || !details.FunctionalQCs.Any(q => !q.IsDeleted))
+                                            {
+                                                <p class="text-muted small mt-2">No se han registrado controles de calidad funcional activos.</p>
+                                            }
+                                            else
+                                            {
+                                                <div class="table-responsive mt-2" style="max-height: 250px; overflow-y: auto;">
+                                                    <table class="table table-sm table-hover small">
+                                                        <thead>
+                                                             <tr>
+                                                                 <th>Fecha</th>
+                                                                 <th>Tipo</th>
+                                                                 <th>Lote Control</th>
+                                                                 <th>Resultado</th>
+                                                                 <th>Notas</th>
+                                                                 <th class="no-print text-end" style="width: 100px;">Acciones</th>
+                                                             </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                             @foreach (var qc in details.FunctionalQCs.Where(q => !q.IsDeleted).OrderByDescending(q => q.PerformedAt))
+                                                             {
+                                                                 <tr>
+                                                                     <td>@qc.PerformedAt.ToString("dd/MM/yyyy HH:mm")</td>
+                                                                     <td>@qc.Type.ToString()</td>
+                                                                     <td>@qc.LotNumber</td>
+                                                                     <td>
+                                                                         <span class="badge @(qc.IsPass ? "bg-success" : "bg-danger")">@(qc.IsPass ? "Conforme" : "No Conforme")</span>
+                                                                     </td>
+                                                                     <td>@qc.Notes</td>
+                                                                     <td class="no-print text-end">
+                                                                         @if (canDelete)
+                                                                         {
+                                                                             <button class="btn btn-link text-danger p-0 text-decoration-none" @onclick="() => VoidQC(qc)" title="Anular QC">
+                                                                                 <i class="bi bi-trash-fill"></i> Anular
+                                                                             </button>
+                                                                         }
+                                                                     </td>
+                                                                 </tr>
+                                                             }
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            }
+                                        </div>
                                     </div>
                                 </div>
 
@@ -2334,6 +2388,38 @@ else
         catch (Exception ex)
         {
             await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+        }
+    }
+
+    private async Task VoidQC(QMSFlowDoc.Shared.Models.EquipmentFunctionalQC qc)
+    {
+        if (!canDelete)
+        {
+            await JS.InvokeVoidAsync("alert", "No tiene permisos para anular registros de QC.");
+            return;
+        }
+
+        string reason = await JS.InvokeAsync<string>("prompt", "¿Está seguro de que desea anular este control de calidad funcional (QC)? Por favor, indique el motivo de la anulación:");
+        if (reason == null) return; // Cancelled by user
+        
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            await JS.InvokeVoidAsync("alert", "Error: Debe proporcionar un motivo para la anulación.");
+            return;
+        }
+
+        try
+        {
+            var ok = await EquipmentService.VoidQCAsync(qc.Id, reason, currentUserId);
+            if (ok)
+            {
+                await LoadData();
+                await JS.InvokeVoidAsync("alert", "Control de calidad funcional anulado correctamente.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error al anular el QC: {ex.Message}");
         }
     }
 

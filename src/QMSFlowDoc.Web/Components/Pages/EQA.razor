@@ -266,11 +266,17 @@
                                             <td class="text-end">
                                                 @if (canEdit)
                                                 {
-                                                    <button class="btn btn-outline-primary btn-sm rounded-pill me-1" @onclick="() => EditProgram(prog)">
+                                                    <button class="btn btn-outline-primary btn-sm rounded-pill me-1" @onclick="() => EditProgram(prog)" title="Editar Programa">
                                                         <i class="bi bi-pencil"></i>
                                                     </button>
-                                                    <button class="btn btn-outline-info btn-sm rounded-pill" @onclick="() => ManageMappings(prog)">
+                                                    <button class="btn btn-outline-info btn-sm rounded-pill me-1" @onclick="() => ManageMappings(prog)" title="Gestionar Pruebas">
                                                         <i class="bi bi-link-45deg"></i> Pruebas
+                                                    </button>
+                                                }
+                                                @if (canDelete)
+                                                {
+                                                    <button class="btn btn-outline-danger btn-sm rounded-pill" @onclick="() => DeleteProgram(prog)" title="Eliminar Programa">
+                                                        <i class="bi bi-trash"></i>
                                                     </button>
                                                 }
                                             </td>
@@ -524,6 +530,12 @@
                                 <p class="text-muted small mb-0">Estado de la Ronda: <strong>@selectedRound.Status</strong> | Tipo: <strong>@selectedRound.RoundType</strong></p>
                             </div>
                             <div class="d-flex gap-2">
+                                @if (canDelete)
+                                {
+                                    <button class="btn btn-outline-danger rounded-pill px-3" @onclick="DeleteActiveRound" title="Eliminar Ronda">
+                                        <i class="bi bi-trash me-1"></i>Eliminar Ronda
+                                    </button>
+                                }
                                 <button class="btn btn-outline-secondary rounded-pill px-3" @onclick="() => selectedRound = null">
                                     <i class="bi bi-arrow-left me-1"></i>Atrás
                                 </button>
@@ -929,6 +941,10 @@
                     </div>
                 </div>
                 <div class="modal-footer bg-light border-0">
+                    @if (editingEnrollment.Id != Guid.Empty && canDelete)
+                    {
+                        <button class="btn btn-outline-danger rounded-pill px-4 me-auto" @onclick="DeleteEnrollment">Eliminar Inscripción</button>
+                    }
                     <button class="btn btn-outline-secondary rounded-pill px-4" @onclick="() => showEnrollmentModal = false">Cancelar</button>
                     @if ((editingEnrollment.Id == Guid.Empty && canCreate) || (editingEnrollment.Id != Guid.Empty && canEdit))
                     {
@@ -1541,6 +1557,84 @@
             catch (Exception ex)
             {
                 await JS.InvokeVoidAsync("alert", $"Error al eliminar la prueba: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task DeleteProgram(EQAProgram prog)
+    {
+        if (!canDelete)
+        {
+            await JS.InvokeVoidAsync("alert", "No tiene permisos para eliminar programas.");
+            return;
+        }
+
+        bool confirm = await JS.InvokeAsync<bool>("confirm", $"¿Está seguro de que desea eliminar el programa '{prog.Name}'? Esto también ocultará sus rondas, mapeos, inscripciones y desviaciones asociadas.");
+        if (confirm)
+        {
+            try
+            {
+                await EQAService.DeleteProgramAsync(prog.Id, currentUserId, currentUserName);
+                await LoadData();
+                await JS.InvokeVoidAsync("alert", "Programa eliminado correctamente.");
+            }
+            catch (Exception ex)
+            {
+                await JS.InvokeVoidAsync("alert", $"Error al eliminar el programa: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task DeleteEnrollment()
+    {
+        if (editingEnrollment.Id == Guid.Empty) return;
+
+        if (!canDelete)
+        {
+            await JS.InvokeVoidAsync("alert", "No tiene permisos para eliminar inscripciones.");
+            return;
+        }
+
+        bool confirm = await JS.InvokeAsync<bool>("confirm", "¿Está seguro de que desea eliminar esta inscripción?");
+        if (confirm)
+        {
+            try
+            {
+                await EQAService.DeleteEnrollmentAsync(editingEnrollment.Id, currentUserId, currentUserName);
+                showEnrollmentModal = false;
+                await LoadData();
+                await JS.InvokeVoidAsync("alert", "Inscripción eliminada correctamente.");
+            }
+            catch (Exception ex)
+            {
+                await JS.InvokeVoidAsync("alert", $"Error al eliminar la inscripción: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task DeleteActiveRound()
+    {
+        if (selectedRound == null) return;
+
+        if (!canDelete)
+        {
+            await JS.InvokeVoidAsync("alert", "No tiene permisos para eliminar rondas.");
+            return;
+        }
+
+        bool confirm = await JS.InvokeAsync<bool>("confirm", $"¿Está seguro de que desea eliminar la ronda '{selectedRound.ExternalCode}'? Esto también eliminará las desviaciones asociadas.");
+        if (confirm)
+        {
+            try
+            {
+                await EQAService.DeleteRoundAsync(selectedRound.Id, currentUserId, currentUserName);
+                selectedRound = null;
+                await LoadData();
+                await JS.InvokeVoidAsync("alert", "Ronda eliminada correctamente.");
+            }
+            catch (Exception ex)
+            {
+                await JS.InvokeVoidAsync("alert", $"Error al eliminar la ronda: {ex.Message}");
             }
         }
     }

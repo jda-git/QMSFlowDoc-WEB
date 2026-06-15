@@ -44,6 +44,12 @@ public class EquipmentFunctionalQC
     public string? ActionTaken { get; set; } // Actions if QC failed
     public EquipmentStatus EquipmentEndStatus { get; set; } = EquipmentStatus.IN_SERVICE;
 
+    // Soft delete / anulación
+    public bool IsDeleted { get; set; } = false;
+    public DateTime? DeletedAt { get; set; }
+    public Guid? DeletedByUserId { get; set; }
+    public string? VoidReason { get; set; }
+
     // Navigation property
     public Equipment? Equipment { get; set; }
 }

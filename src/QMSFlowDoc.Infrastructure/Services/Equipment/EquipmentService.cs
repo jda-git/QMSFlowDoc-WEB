@@ -336,7 +336,11 @@ public class EquipmentService : IEquipmentService
             EvidencePath = qc.EvidencePath,
             Notes = qc.Notes,
             ActionTaken = qc.ActionTaken,
-            EquipmentEndStatus = (SharedModels.EquipmentStatus)qc.EquipmentEndStatus
+            EquipmentEndStatus = (SharedModels.EquipmentStatus)qc.EquipmentEndStatus,
+            IsDeleted = qc.IsDeleted,
+            DeletedAt = qc.DeletedAt,
+            DeletedByUserId = qc.DeletedByUserId,
+            VoidReason = qc.VoidReason
         }).ToList();
 
         var sharedCalPlans = calPlans.Select(p => new SharedModels.EquipmentCalibrationPlan
@@ -876,6 +880,69 @@ public class EquipmentService : IEquipmentService
 
         await _context.SaveChangesAsync();
         await RecalculateAlertsForEquipmentAsync(e.Id);
+        return true;
+    }
+
+    public async Task<bool> VoidQCAsync(Guid qcId, string reason, Guid userId)
+    {
+        var qc = await _context.EquipmentFunctionalQC.FindAsync(qcId);
+        if (qc == null || qc.IsDeleted) return false;
+
+        qc.IsDeleted = true;
+        qc.DeletedAt = DateTime.UtcNow;
+        qc.DeletedByUserId = userId;
+        qc.VoidReason = reason;
+
+        var e = await _context.Equipments.FindAsync(qc.EquipmentId);
+        if (e != null)
+        {
+            // Find the most recent active QC before this one
+            var lastActiveQc = await _context.EquipmentFunctionalQC
+                .Where(q => q.EquipmentId == qc.EquipmentId && q.Id != qcId && !q.IsDeleted)
+                .OrderByDescending(q => q.PerformedAt)
+                .FirstOrDefaultAsync();
+
+            if (lastActiveQc != null)
+            {
+                e.VerificationDate = lastActiveQc.PerformedAt;
+                e.IsVerified = lastActiveQc.IsPass;
+                if (e.Status == DomainEntities.EquipmentStatus.QC_NON_CONFORMING || e.Status == DomainEntities.EquipmentStatus.PENDING_QC_VERIFICATION)
+                {
+                    if (lastActiveQc.IsPass)
+                    {
+                        e.Status = DomainEntities.EquipmentStatus.IN_SERVICE;
+                        e.Aptitude = DomainEntities.EquipmentAptitude.APTO;
+                        e.Restrictions = null;
+                    }
+                    else
+                    {
+                        e.Status = lastActiveQc.EquipmentEndStatus == DomainEntities.EquipmentStatus.IN_SERVICE 
+                            ? DomainEntities.EquipmentStatus.QC_NON_CONFORMING 
+                            : lastActiveQc.EquipmentEndStatus;
+                        e.Aptitude = DomainEntities.EquipmentAptitude.NO_APTO;
+                        e.Restrictions = "QC Fallido (Restaurado): " + lastActiveQc.Notes;
+                    }
+                }
+            }
+            else
+            {
+                e.VerificationDate = null;
+                e.IsVerified = false;
+            }
+
+            var userName = (await _context.Users.FindAsync(userId))?.FullName ?? "Usuario";
+            await LogHistoryAsync(e.Id, userId, "QC_VOID",
+                $"Anulación de Verificación Funcional ({qc.Type}). Motivo: {reason}",
+                null, null, reason);
+            await LogAuditAsync("QC_VOID", "EquipmentFunctionalQC", qc.Id, 
+                $"Anulación de Verificación Funcional ({qc.Type}). Motivo: {reason} (Equipo: {e.Name})", userId, userName);
+        }
+
+        await _context.SaveChangesAsync();
+        if (e != null)
+        {
+            await RecalculateAlertsForEquipmentAsync(e.Id);
+        }
         return true;
     }
 
