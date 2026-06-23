@@ -91,6 +91,8 @@ else
                                 <div class="folder-actions pe-2">
                                     @if (canEdit)
                                     {
+                                        <button class="btn btn-sm btn-link text-muted p-0 me-1" @onclick="() => MoveFolderUp(folder.Id)" @onclick:stopPropagation="true" title="Subir"><i class="bi bi-chevron-up"></i></button>
+                                        <button class="btn btn-sm btn-link text-muted p-0 me-1" @onclick="() => MoveFolderDown(folder.Id)" @onclick:stopPropagation="true" title="Bajar"><i class="bi bi-chevron-down"></i></button>
                                         <button class="btn btn-sm btn-link text-muted p-0 me-1" @onclick="() => OpenRenameFolderModal(folder)" @onclick:stopPropagation="true" title="Renombrar"><i class="bi bi-pencil"></i></button>
                                     }
                                     @if (canDelete)
@@ -134,12 +136,24 @@ else
                     <table class="table table-hover align-middle mb-0">
                         <thead class="bg-light border-bottom text-muted small text-uppercase">
                             <tr>
-                                <th class="ps-3">Código</th>
-                                <th>Título</th>
-                                <th>Tipo</th>
-                                <th>Estado</th>
-                                <th>Versión</th>
-                                <th>Revisión</th>
+                                <th class="ps-3" @onclick='() => ChangeSort("CODE")' style="cursor: pointer; user-select: none;">
+                                    Código <i class="@GetSortIcon("CODE")"></i>
+                                </th>
+                                <th @onclick='() => ChangeSort("TITLE")' style="cursor: pointer; user-select: none;">
+                                    Título <i class="@GetSortIcon("TITLE")"></i>
+                                </th>
+                                <th @onclick='() => ChangeSort("TYPE")' style="cursor: pointer; user-select: none;">
+                                    Tipo <i class="@GetSortIcon("TYPE")"></i>
+                                </th>
+                                <th @onclick='() => ChangeSort("STATUS")' style="cursor: pointer; user-select: none;">
+                                    Estado <i class="@GetSortIcon("STATUS")"></i>
+                                </th>
+                                <th @onclick='() => ChangeSort("VERSION")' style="cursor: pointer; user-select: none;">
+                                    Versión <i class="@GetSortIcon("VERSION")"></i>
+                                </th>
+                                <th @onclick='() => ChangeSort("REVIEW")' style="cursor: pointer; user-select: none;">
+                                    Revisión <i class="@GetSortIcon("REVIEW")"></i>
+                                </th>
                                 <th class="text-end pe-3">Acciones</th>
                             </tr>
                         </thead>
@@ -399,7 +413,7 @@ else
                         <label for="folderParent" class="form-label fw-medium text-secondary">Carpeta Superior</label>
                         <select id="folderParent" class="form-select form-control-premium" @bind="folderModalParentId">
                             <option value="">[Carpeta Raíz]</option>
-                            @foreach (var f in folders.Where(f => !editingFolderId.HasValue || f.Id != editingFolderId.Value))
+                            @foreach (var f in folders.Where(f => !editingFolderId.HasValue || f.Id != editingFolderId.Value).OrderBy(f => f.DisplayOrder).ThenBy(f => f.Name))
                             {
                                 <option value="@f.Id">@f.Name</option>
                             }
@@ -455,7 +469,7 @@ else
                             <label class="form-label fw-medium text-secondary">Carpeta Destino</label>
                             <select class="form-select form-control-premium" @bind="newDocFolderId">
                                 <option value="">[Sin Carpeta - Raíz]</option>
-                                @foreach (var f in folders)
+                                @foreach (var f in folders.OrderBy(f => f.DisplayOrder).ThenBy(f => f.Name))
                                 {
                                     <option value="@f.Id">@f.Name</option>
                                 }
@@ -550,7 +564,7 @@ else
                             <label class="form-label fw-medium text-secondary">Carpeta</label>
                             <select class="form-select form-control-premium" @bind="editingDocFolderId">
                                 <option value="">[Sin Carpeta - Raíz]</option>
-                                @foreach (var f in folders)
+                                @foreach (var f in folders.OrderBy(f => f.DisplayOrder).ThenBy(f => f.Name))
                                 {
                                     <option value="@f.Id">@f.Name</option>
                                 }
@@ -813,7 +827,7 @@ else
 
     private void BuildFolderTree(List<FolderDto> allFolders, Guid? parentId, int depth)
     {
-        var children = allFolders.Where(f => f.ParentFolderId == parentId).OrderBy(f => f.Name).ToList();
+        var children = allFolders.Where(f => f.ParentFolderId == parentId).OrderBy(f => f.DisplayOrder).ThenBy(f => f.Name).ToList();
         foreach (var child in children)
         {
             displayedFolders.Add(new FolderNode { Folder = child, Depth = depth });
@@ -825,6 +839,8 @@ else
     private Guid? selectedFolderId = null;
     private string searchTerm = string.Empty;
     private bool includeObsolete = false;
+    private string sortColumn = "CODE";
+    private bool sortAscending = true;
     
     private DocumentDto? selectedDoc = null;
     private Document? selectedDocument = null; // Full entity with versions
@@ -835,13 +851,46 @@ else
     private Guid? currentUserId = null;
     private string currentUsername = "Usuario Web";
 
-    // Filters logic
-    private IEnumerable<DocumentDto> FilteredDocuments => allDocuments
-        .Where(d => selectedFolderId == null || d.FolderId == selectedFolderId)
-        .Where(d => includeObsolete || d.Status != QMSFlowDoc.Shared.Models.DocumentStatus.OBSOLETE)
-        .Where(d => string.IsNullOrEmpty(searchTerm) || 
-                   d.DocCode.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) || 
-                   d.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+    // Filters and Sorting logic
+    private IEnumerable<DocumentDto> FilteredDocuments
+    {
+        get
+        {
+            var query = allDocuments
+                .Where(d => selectedFolderId == null || d.FolderId == selectedFolderId)
+                .Where(d => includeObsolete || d.Status != QMSFlowDoc.Shared.Models.DocumentStatus.OBSOLETE)
+                .Where(d => string.IsNullOrEmpty(searchTerm) || 
+                           d.DocCode.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) || 
+                           d.Title.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+
+            if (sortAscending)
+            {
+                return sortColumn switch
+                {
+                    "CODE" => query.OrderBy(d => d.DocCode),
+                    "TITLE" => query.OrderBy(d => d.Title),
+                    "TYPE" => query.OrderBy(d => d.TypeName ?? ""),
+                    "STATUS" => query.OrderBy(d => GetStatusText(d.Status)),
+                    "VERSION" => query.OrderBy(d => d.CurrentVersionLabel ?? ""),
+                    "REVIEW" => query.OrderBy(d => d.NextReviewDue ?? DateTime.MaxValue),
+                    _ => query.OrderBy(d => d.DocCode)
+                };
+            }
+            else
+            {
+                return sortColumn switch
+                {
+                    "CODE" => query.OrderByDescending(d => d.DocCode),
+                    "TITLE" => query.OrderByDescending(d => d.Title),
+                    "TYPE" => query.OrderByDescending(d => d.TypeName ?? ""),
+                    "STATUS" => query.OrderByDescending(d => GetStatusText(d.Status)),
+                    "VERSION" => query.OrderByDescending(d => d.CurrentVersionLabel ?? ""),
+                    "REVIEW" => query.OrderByDescending(d => d.NextReviewDue ?? DateTime.MaxValue),
+                    _ => query.OrderByDescending(d => d.DocCode)
+                };
+            }
+        }
+    }
 
     // Modals visibility toggles
     private bool showFolderModal = false;
@@ -1458,6 +1507,60 @@ else
         catch (Exception ex)
         {
             transitionError = ex.Message;
+        }
+    }
+
+    private void ChangeSort(string column)
+    {
+        if (sortColumn == column)
+        {
+            sortAscending = !sortAscending;
+        }
+        else
+        {
+            sortColumn = column;
+            sortAscending = true;
+        }
+    }
+
+    private string GetSortIcon(string column)
+    {
+        if (sortColumn != column)
+        {
+            return "bi bi-arrow-down-up text-muted small ms-1";
+        }
+        return sortAscending ? "bi bi-sort-up text-primary ms-1" : "bi bi-sort-down text-primary ms-1";
+    }
+
+    private async Task MoveFolderUp(Guid id)
+    {
+        try
+        {
+            var success = await FolderService.MoveFolderUpAsync(id);
+            if (success)
+            {
+                await LoadFoldersAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error al mover carpeta: {ex.Message}");
+        }
+    }
+
+    private async Task MoveFolderDown(Guid id)
+    {
+        try
+        {
+            var success = await FolderService.MoveFolderDownAsync(id);
+            if (success)
+            {
+                await LoadFoldersAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error al mover carpeta: {ex.Message}");
         }
     }
 }

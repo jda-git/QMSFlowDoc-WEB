@@ -17,6 +17,7 @@ public class Folder
     public List<Folder> SubFolders { get; set; } = new();
     public List<Document> Documents { get; set; } = new();
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public int DisplayOrder { get; set; } = 0;
 }
 
 public class Document

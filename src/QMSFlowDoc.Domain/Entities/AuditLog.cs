@@ -18,4 +18,18 @@ public class AuditLog
     public string? IntegrityHash { get; set; } // SHA256 of event
     public string? Result { get; set; } // OK/FAIL
     public string MachineName { get; set; } = Environment.MachineName;
+
+    public static string GetNormalizedTimestampString(DateTime dt)
+    {
+        var utc = dt.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(dt, DateTimeKind.Utc)
+            : dt.ToUniversalTime();
+        return utc.ToString("yyyy-MM-ddTHH:mm:ss.fffffff'Z'", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    public static string BuildPayload(string lastHash, AuditLog log)
+    {
+        var timestampStr = GetNormalizedTimestampString(log.Timestamp);
+        return $"{lastHash}|{log.Id}|{timestampStr}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}";
+    }
 }

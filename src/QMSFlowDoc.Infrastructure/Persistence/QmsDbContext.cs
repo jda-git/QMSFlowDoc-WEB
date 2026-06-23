@@ -8,6 +8,8 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 {
     public class QmsDbContext : IdentityDbContext<ApplicationUser, ApplicationRole, Guid>
     {
+        public static readonly System.Threading.SemaphoreSlim AuditWriteLock = new System.Threading.SemaphoreSlim(1, 1);
+
         public QmsDbContext(DbContextOptions<QmsDbContext> options)
             : base(options) { }
 
@@ -892,16 +894,50 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
         public override int SaveChanges(bool acceptAllChangesOnSuccess)
         {
-            CaptureSnapshots();
-            ApplyAuditHashChaining();
-            return base.SaveChanges(acceptAllChangesOnSuccess);
+            var hasAuditLogs = ChangeTracker.Entries<AuditLog>().Any(e => e.State == EntityState.Added);
+            if (hasAuditLogs)
+            {
+                AuditWriteLock.Wait();
+                try
+                {
+                    CaptureSnapshots();
+                    ApplyAuditHashChaining();
+                    return base.SaveChanges(acceptAllChangesOnSuccess);
+                }
+                finally
+                {
+                    AuditWriteLock.Release();
+                }
+            }
+            else
+            {
+                CaptureSnapshots();
+                return base.SaveChanges(acceptAllChangesOnSuccess);
+            }
         }
 
         public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
         {
-            CaptureSnapshots();
-            await ApplyAuditHashChainingAsync();
-            return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            var hasAuditLogs = ChangeTracker.Entries<AuditLog>().Any(e => e.State == EntityState.Added);
+            if (hasAuditLogs)
+            {
+                await AuditWriteLock.WaitAsync(cancellationToken);
+                try
+                {
+                    CaptureSnapshots();
+                    await ApplyAuditHashChainingAsync();
+                    return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+                }
+                finally
+                {
+                    AuditWriteLock.Release();
+                }
+            }
+            else
+            {
+                CaptureSnapshots();
+                return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+            }
         }
 
         private void CaptureSnapshots()
@@ -986,7 +1022,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
             foreach (var log in newLogs)
             {
-                var payload = $"{lastHash}|{log.Id}|{log.Timestamp:o}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}";
+                var payload = AuditLog.BuildPayload(lastHash, log);
                 using (var sha256 = System.Security.Cryptography.SHA256.Create())
                 {
                     var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
@@ -1012,7 +1048,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
             foreach (var log in newLogs)
             {
-                var payload = $"{lastHash}|{log.Id}|{log.Timestamp:o}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}";
+                var payload = AuditLog.BuildPayload(lastHash, log);
                 using (var sha256 = System.Security.Cryptography.SHA256.Create())
                 {
                     var bytes = System.Text.Encoding.UTF8.GetBytes(payload);

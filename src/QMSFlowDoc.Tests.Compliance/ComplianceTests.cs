@@ -278,7 +278,7 @@ namespace QMSFlowDoc.Tests.Compliance
             Assert.NotEqual(log1.IntegrityHash, log2.IntegrityHash);
 
             // Reconstruct the expected payload for the chained log2
-            var expectedPayload = $"{log1.IntegrityHash}|{log2.Id}|{log2.Timestamp:o}|{log2.UserId}|{log2.UserName}|{log2.Action}|{log2.EntityType}|{log2.EntityId}|{log2.Details}|{log2.Reason}|{log2.Result}|{log2.MachineName}";
+            var expectedPayload = AuditLog.BuildPayload(log1.IntegrityHash, log2);
             
             using (var sha256 = System.Security.Cryptography.SHA256.Create())
             {

@@ -33,7 +33,8 @@ public class FolderService : IFolderService
                 Name = f.Name,
                 ParentFolderId = f.ParentFolderId,
                 SubFolderCount = _context.Folders.Count(sf => sf.ParentFolderId == f.Id),
-                DocumentCount = _context.Documents.Count(d => d.FolderId == f.Id && !d.IsDeleted)
+                DocumentCount = _context.Documents.Count(d => d.FolderId == f.Id && !d.IsDeleted),
+                DisplayOrder = f.DisplayOrder
             })
             .ToListAsync();
     }
@@ -48,7 +49,8 @@ public class FolderService : IFolderService
                 Name = f.Name,
                 ParentFolderId = f.ParentFolderId,
                 SubFolderCount = _context.Folders.Count(sf => sf.ParentFolderId == f.Id),
-                DocumentCount = _context.Documents.Count(d => d.FolderId == f.Id && !d.IsDeleted)
+                DocumentCount = _context.Documents.Count(d => d.FolderId == f.Id && !d.IsDeleted),
+                DisplayOrder = f.DisplayOrder
             })
             .ToListAsync();
     }
@@ -59,12 +61,18 @@ public class FolderService : IFolderService
         if (string.IsNullOrWhiteSpace(name))
             throw new ArgumentException("El nombre de la carpeta no puede estar vacío.", nameof(name));
 
+        var maxOrder = await _context.Folders
+            .Where(f => f.ParentFolderId == parentId)
+            .Select(f => (int?)f.DisplayOrder)
+            .MaxAsync() ?? 0;
+
         var folder = new Folder
         {
             Id = Guid.NewGuid(),
             Name = name,
             ParentFolderId = parentId,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            DisplayOrder = maxOrder + 1
         };
 
         _context.Folders.Add(folder);
@@ -101,6 +109,73 @@ public class FolderService : IFolderService
         }
 
         _context.Folders.Remove(folder);
+        return await _context.SaveChangesAsync() > 0;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> MoveFolderUpAsync(Guid id)
+    {
+        var folder = await _context.Folders.FindAsync(id);
+        if (folder == null) return false;
+
+        // Get siblings ordered by DisplayOrder, then Name
+        var siblings = await _context.Folders
+            .Where(f => f.ParentFolderId == folder.ParentFolderId)
+            .OrderBy(f => f.DisplayOrder)
+            .ThenBy(f => f.Name)
+            .ToListAsync();
+
+        var index = siblings.FindIndex(s => s.Id == id);
+        if (index <= 0) return false; // Already at the top
+
+        var prevFolder = siblings[index - 1];
+
+        // If they have the same order, normalize all display orders first
+        if (folder.DisplayOrder == prevFolder.DisplayOrder)
+        {
+            for (int i = 0; i < siblings.Count; i++)
+            {
+                siblings[i].DisplayOrder = i;
+            }
+        }
+
+        var temp = folder.DisplayOrder;
+        folder.DisplayOrder = prevFolder.DisplayOrder;
+        prevFolder.DisplayOrder = temp;
+
+        return await _context.SaveChangesAsync() > 0;
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> MoveFolderDownAsync(Guid id)
+    {
+        var folder = await _context.Folders.FindAsync(id);
+        if (folder == null) return false;
+
+        // Get siblings ordered by DisplayOrder, then Name
+        var siblings = await _context.Folders
+            .Where(f => f.ParentFolderId == folder.ParentFolderId)
+            .OrderBy(f => f.DisplayOrder)
+            .ThenBy(f => f.Name)
+            .ToListAsync();
+
+        var index = siblings.FindIndex(s => s.Id == id);
+        if (index < 0 || index >= siblings.Count - 1) return false; // Already at the bottom
+
+        var nextFolder = siblings[index + 1];
+
+        if (folder.DisplayOrder == nextFolder.DisplayOrder)
+        {
+            for (int i = 0; i < siblings.Count; i++)
+            {
+                siblings[i].DisplayOrder = i;
+            }
+        }
+
+        var temp = folder.DisplayOrder;
+        folder.DisplayOrder = nextFolder.DisplayOrder;
+        nextFolder.DisplayOrder = temp;
+
         return await _context.SaveChangesAsync() > 0;
     }
 }

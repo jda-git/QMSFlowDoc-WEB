@@ -31,4 +31,14 @@ public interface IFolderService
     /// Elimina una carpeta si está vacía.
     /// </summary>
     Task<bool> DeleteFolderAsync(Guid id);
+
+    /// <summary>
+    /// Mueve una carpeta una posición hacia arriba en el orden de visualización de sus hermanos.
+    /// </summary>
+    Task<bool> MoveFolderUpAsync(Guid id);
+
+    /// <summary>
+    /// Mueve una carpeta una posición hacia abajo en el orden de visualización de sus hermanos.
+    /// </summary>
+    Task<bool> MoveFolderDownAsync(Guid id);
 }

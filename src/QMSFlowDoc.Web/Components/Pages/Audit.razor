@@ -33,9 +33,24 @@
                 </h2>
                 <p class="text-muted mb-0">Trazabilidad y control transversal de acciones sobre no conformidades, personal, documentos y equipamiento (ISO 15189:2022 §8.4).</p>
             </div>
-            <button class="btn btn-primary rounded-pill px-4" @onclick="ExportToCsv">
-                <i class="bi bi-file-earmark-spreadsheet me-2"></i>Exportar CSV
-            </button>
+            <div class="d-flex gap-2">
+                @if (isAdmin)
+                {
+                    <button class="btn btn-outline-warning rounded-pill px-4" @onclick="RecalculateSignatures" disabled="@isRecalculating">
+                        @if (isRecalculating)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span><text>Saneando...</text>
+                        }
+                        else
+                        {
+                            <i class="bi bi-shield-shaded me-2"></i><text>Sanear Cadena</text>
+                        }
+                    </button>
+                }
+                <button class="btn btn-primary rounded-pill px-4" @onclick="ExportToCsv">
+                    <i class="bi bi-file-earmark-spreadsheet me-2"></i>Exportar CSV
+                </button>
+            </div>
         </div>
 
         <!-- Integrity Banner -->
@@ -202,6 +217,8 @@
     private Task<AuthenticationState>? AuthStateTask { get; set; }
 
     private bool isAuthorized = false;
+    private bool isAdmin = false;
+    private bool isRecalculating = false;
     private List<AuditLog>? auditLogs;
     private List<AuditLog>? filteredLogs;
     private bool isChainValid = true;
@@ -222,6 +239,7 @@
             // ISO 15189 Audits are high-level: restrict to admin, director, and quality roles
             var hasQualityRole = (await PermissionService.GetPermissionsForUserAsync(user, "Quality")).CanRead;
             isAuthorized = user.IsInRole("Administrador") || user.IsInRole("Director") || hasQualityRole;
+            isAdmin = user.IsInRole("Administrador");
         }
 
         if (isAuthorized)
@@ -249,10 +267,7 @@
 
         foreach (var log in orderedLogs)
         {
-            var timestampStr = log.Timestamp.Kind == DateTimeKind.Unspecified
-                ? DateTime.SpecifyKind(log.Timestamp, DateTimeKind.Utc).ToString("o")
-                : log.Timestamp.ToUniversalTime().ToString("o");
-            var payload = $"{lastHash}|{log.Id}|{timestampStr}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}";
+            var payload = AuditLog.BuildPayload(lastHash, log);
             string computedHash;
             using (var sha256 = System.Security.Cryptography.SHA256.Create())
             {
@@ -268,6 +283,53 @@
         }
 
         return true;
+    }
+
+    private async Task RecalculateSignatures()
+    {
+        if (!isAdmin || isRecalculating) return;
+
+        isRecalculating = true;
+        StateHasChanged();
+
+        // Lock writing of new logs while healing
+        await QmsDbContext.AuditWriteLock.WaitAsync();
+        try
+        {
+            // Fetch all logs from DB ordered chronologically
+            var allLogs = await DbContext.AuditLogs
+                .OrderBy(l => l.Timestamp)
+                .ThenBy(l => l.Id)
+                .ToListAsync();
+
+            string lastHash = string.Empty;
+            foreach (var log in allLogs)
+            {
+                var payload = AuditLog.BuildPayload(lastHash, log);
+                using (var sha256 = System.Security.Cryptography.SHA256.Create())
+                {
+                    var bytes = Encoding.UTF8.GetBytes(payload);
+                    var hashBytes = sha256.ComputeHash(bytes);
+                    log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                }
+                lastHash = log.IntegrityHash;
+                DbContext.Entry(log).State = EntityState.Modified;
+            }
+
+            await DbContext.SaveChangesAsync();
+        }
+        catch (Exception ex)
+        {
+            await JS.InvokeVoidAsync("alert", $"Error al recalcular las firmas: {ex.Message}");
+        }
+        finally
+        {
+            QmsDbContext.AuditWriteLock.Release();
+            isRecalculating = false;
+        }
+
+        // Reload and verify
+        await LoadLogs();
     }
 
     private void ApplyFilters()

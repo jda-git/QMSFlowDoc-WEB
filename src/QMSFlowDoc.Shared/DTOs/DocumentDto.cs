@@ -9,11 +9,16 @@ public class FolderDto
     public Guid? ParentFolderId { get; set; }
     public int SubFolderCount { get; set; }
     public int DocumentCount { get; set; }
+    public int DisplayOrder { get; set; }
 
     public FolderDto() { }
     public FolderDto(Guid id, string name, Guid? parent, int subFolders, int docs)
     {
         Id = id; Name = name; ParentFolderId = parent; SubFolderCount = subFolders; DocumentCount = docs;
+    }
+    public FolderDto(Guid id, string name, Guid? parent, int subFolders, int docs, int displayOrder)
+    {
+        Id = id; Name = name; ParentFolderId = parent; SubFolderCount = subFolders; DocumentCount = docs; DisplayOrder = displayOrder;
     }
 }
 
