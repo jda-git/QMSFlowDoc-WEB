@@ -365,4 +365,61 @@ public static class InventoryHelpers
             return false;
         }
     }
+
+    public static string BuildActiveReagentsHtml(List<ActiveReagentDto> activeReagents, DateTime date)
+    {
+        var sb = new System.Text.StringBuilder();
+        var headers = new[] { "Código Int.", "Nombre Reactivo", "Fluorescencia / Marca", "Tipo", "Proveedor", "Lote Activo", "Vencimiento", "Último Consumo", "Cant. Restante" };
+        sb.Append("<table><thead><tr>");
+        foreach (var h in headers) sb.Append("<th>").Append(h).Append("</th>");
+        sb.Append("</tr></thead><tbody>");
+
+        foreach (var r in activeReagents)
+        {
+            var expStr = r.ExpiryDate.HasValue ? r.ExpiryDate.Value.ToString("dd/MM/yyyy") : "—";
+            var expClass = "";
+            if (r.ExpiryDate.HasValue)
+            {
+                expClass = r.ExpiryDate.Value < DateTime.UtcNow ? "badge-danger" :
+                           r.ExpiryDate.Value < DateTime.UtcNow.AddDays(60) ? "badge-warn" : "badge-ok";
+            }
+
+            var lastConsStr = r.LastConsumedDate.HasValue 
+                ? $"{r.LastConsumedDate.Value.ToLocalTime():dd/MM/yyyy HH:mm} (-{r.LastConsumedQty:N0})"
+                : "—";
+
+            sb.Append("<tr>")
+              .Append("<td>").Append(Enc(r.InternalCode) ?? "—").Append("</td>")
+              .Append("<td><strong>").Append(Enc(r.ReagentName)).Append("</strong></td>")
+              .Append("<td>")
+              .Append(string.IsNullOrEmpty(r.Fluorescence) ? "" : $"<span class='badge-ok'>[{Enc(r.Fluorescence)}]</span> ")
+              .Append(Enc(r.Manufacturer) ?? "")
+              .Append("</td>")
+              .Append("<td>").Append(Enc(r.ReagentType)).Append("</td>")
+              .Append("<td>").Append(Enc(r.SupplierName) ?? "—").Append("</td>")
+              .Append("<td>").Append(Enc(r.LotNumber)).Append("</td>")
+              .Append("<td class='").Append(expClass).Append("'>").Append(expStr).Append("</td>")
+              .Append("<td>").Append(lastConsStr).Append("</td>")
+              .Append("<td class='text-right'>").Append(r.HistoricalQty.ToString("N2")).Append("</td>")
+              .Append("</tr>");
+        }
+        sb.Append("</tbody></table>");
+        var subtitle = $"Reactivos en activo el día {date:dd/MM/yyyy} — {activeReagents.Count} reactivos listados";
+        return WrapPrintHtml($"Reactivos en Activo ({date:dd/MM/yyyy})", sb.ToString(), subtitle);
+    }
+
+    public static string BuildActiveReagentsCsv(List<ActiveReagentDto> activeReagents)
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.AppendLine("Código Int.;Nombre Reactivo;Fluorescencia;Fabricante;Tipo;Proveedor;Lote Activo;Vencimiento;Último Consumo;Cant. Restante");
+        foreach (var r in activeReagents)
+        {
+            var expStr = r.ExpiryDate.HasValue ? r.ExpiryDate.Value.ToString("dd/MM/yyyy") : "—";
+            var lastConsStr = r.LastConsumedDate.HasValue 
+                ? $"{r.LastConsumedDate.Value.ToLocalTime():dd/MM/yyyy HH:mm} (-{r.LastConsumedQty:N0})"
+                : "—";
+            sb.AppendLine($"\"{r.InternalCode ?? ""}\";{EscCsv(r.ReagentName)};{EscCsv(r.Fluorescence)};{EscCsv(r.Manufacturer)};{EscCsv(r.ReagentType)};{EscCsv(r.SupplierName)};{EscCsv(r.LotNumber)};{expStr};{EscCsv(lastConsStr)};{r.HistoricalQty:N2}");
+        }
+        return sb.ToString();
+    }
 }

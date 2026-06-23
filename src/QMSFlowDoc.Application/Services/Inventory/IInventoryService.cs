@@ -24,4 +24,5 @@ public interface IInventoryService
     Task<Supplier?> CreateSupplierAsync(Supplier supplier);
     Task<bool> UpdateSupplierAsync(Supplier supplier);
     Task<bool> DeleteSupplierAsync(Guid id);
+    Task<List<ActiveReagentDto>> GetActiveReagentsAsync(DateTime date);
 }

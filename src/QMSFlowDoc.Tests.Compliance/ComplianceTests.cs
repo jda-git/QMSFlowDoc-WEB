@@ -853,5 +853,159 @@ namespace QMSFlowDoc.Tests.Compliance
             Assert.NotNull(dbComplaint.ClosedAt);
             Assert.Equal(userId, dbComplaint.ClosedByUserId);
         }
+
+        [Fact]
+        public async Task ActiveReagents_Calculation_Timeline_Correctness()
+        {
+            using var context = new QmsDbContext(_options);
+            var service = new InventoryService(context);
+
+            var reagentId = Guid.NewGuid();
+            var reagent = new Reagent
+            {
+                Id = reagentId,
+                Name = "CD4-FITC",
+                Manufacturer = "BD",
+                ReagentType = "Anticuerpo",
+                Reference = "345768",
+                Status = ReagentStatus.ACTIVO,
+                CreatedAt = new DateTime(2026, 6, 10, 12, 0, 0, DateTimeKind.Utc),
+                UpdatedAt = new DateTime(2026, 6, 10, 12, 0, 0, DateTimeKind.Utc)
+            };
+            context.Reagents.Add(reagent);
+
+            var lot1Id = Guid.NewGuid();
+            var lot1 = new ReagentLot
+            {
+                Id = lot1Id,
+                ReagentId = reagentId,
+                LotNumber = "LOT111",
+                ExpiryDate = new DateTime(2026, 12, 31, 0, 0, 0, DateTimeKind.Utc),
+                ReceivedDate = new DateTime(2026, 6, 10, 12, 0, 0, DateTimeKind.Utc),
+                ReceivedQty = 5,
+                AvailableQty = 3,
+                Status = LotStatus.RELEASED,
+                CreatedAt = new DateTime(2026, 6, 10, 12, 0, 0, DateTimeKind.Utc)
+            };
+            context.ReagentLots.Add(lot1);
+
+            var lot2Id = Guid.NewGuid();
+            var lot2 = new ReagentLot
+            {
+                Id = lot2Id,
+                ReagentId = reagentId,
+                LotNumber = "LOT222",
+                ExpiryDate = new DateTime(2026, 12, 31, 0, 0, 0, DateTimeKind.Utc),
+                ReceivedDate = new DateTime(2026, 6, 11, 12, 0, 0, DateTimeKind.Utc),
+                ReceivedQty = 5,
+                AvailableQty = 3,
+                Status = LotStatus.RELEASED,
+                CreatedAt = new DateTime(2026, 6, 11, 12, 0, 0, DateTimeKind.Utc)
+            };
+            context.ReagentLots.Add(lot2);
+
+            var mIn1 = new InventoryMovement
+            {
+                Id = Guid.NewGuid(),
+                ReagentId = reagentId,
+                ReagentLotId = lot1Id,
+                Qty = 5,
+                MovementType = InventoryMovementType.IN,
+                MovedAt = new DateTime(2026, 6, 10, 12, 0, 0, DateTimeKind.Utc)
+            };
+            var mIn2 = new InventoryMovement
+            {
+                Id = Guid.NewGuid(),
+                ReagentId = reagentId,
+                ReagentLotId = lot2Id,
+                Qty = 5,
+                MovementType = InventoryMovementType.IN,
+                MovedAt = new DateTime(2026, 6, 11, 12, 0, 0, DateTimeKind.Utc)
+            };
+            context.InventoryMovements.Add(mIn1);
+            context.InventoryMovements.Add(mIn2);
+
+            await context.SaveChangesAsync();
+
+            // Day June 15: First consume from LOT111
+            var d15Local = new DateTime(2026, 6, 15, 0, 0, 0, DateTimeKind.Local);
+            var m1 = new InventoryMovement
+            {
+                Id = Guid.NewGuid(),
+                ReagentId = reagentId,
+                ReagentLotId = lot1Id,
+                Qty = -1,
+                MovementType = InventoryMovementType.OUT,
+                MovedAt = d15Local.ToUniversalTime().AddHours(12)
+            };
+            context.InventoryMovements.Add(m1);
+
+            // Day June 17: Consume from LOT222
+            var d17Local = new DateTime(2026, 6, 17, 0, 0, 0, DateTimeKind.Local);
+            var m2 = new InventoryMovement
+            {
+                Id = Guid.NewGuid(),
+                ReagentId = reagentId,
+                ReagentLotId = lot2Id,
+                Qty = -1,
+                MovementType = InventoryMovementType.OUT,
+                MovedAt = d17Local.ToUniversalTime().AddHours(12)
+            };
+            context.InventoryMovements.Add(m2);
+
+            // Day June 19: Consume from LOT111 and LOT222 on the same day
+            var d19Local = new DateTime(2026, 6, 19, 0, 0, 0, DateTimeKind.Local);
+            var m3 = new InventoryMovement
+            {
+                Id = Guid.NewGuid(),
+                ReagentId = reagentId,
+                ReagentLotId = lot1Id,
+                Qty = -1,
+                MovementType = InventoryMovementType.OUT,
+                MovedAt = d19Local.ToUniversalTime().AddHours(10)
+            };
+            var m4 = new InventoryMovement
+            {
+                Id = Guid.NewGuid(),
+                ReagentId = reagentId,
+                ReagentLotId = lot2Id,
+                Qty = -1,
+                MovementType = InventoryMovementType.OUT,
+                MovedAt = d19Local.ToUniversalTime().AddHours(14)
+            };
+            context.InventoryMovements.Add(m3);
+            context.InventoryMovements.Add(m4);
+
+            await context.SaveChangesAsync();
+
+            // 1. Query for day June 14 (before any consumption): should return "No disponible"
+            var activeD14 = await service.GetActiveReagentsAsync(new DateTime(2026, 6, 14, 0, 0, 0, DateTimeKind.Local));
+            Assert.Single(activeD14);
+            Assert.Equal("No disponible", activeD14[0].LotNumber);
+
+            // 2. Query for day June 15 (first consumption of LOT111): should show LOT111
+            var activeD15 = await service.GetActiveReagentsAsync(d15Local);
+            Assert.Single(activeD15);
+            Assert.Equal("LOT111", activeD15[0].LotNumber);
+            Assert.Equal(4, activeD15[0].HistoricalQty);
+
+            // 3. Query for day June 16 (no consumption, last was LOT111): should show LOT111
+            var activeD16 = await service.GetActiveReagentsAsync(new DateTime(2026, 6, 16, 0, 0, 0, DateTimeKind.Local));
+            Assert.Single(activeD16);
+            Assert.Equal("LOT111", activeD16[0].LotNumber);
+            Assert.Equal(4, activeD16[0].HistoricalQty);
+
+            // 4. Query for day June 17 (consumption of LOT222): should show LOT222
+            var activeD17 = await service.GetActiveReagentsAsync(d17Local);
+            Assert.Single(activeD17);
+            Assert.Equal("LOT222", activeD17[0].LotNumber);
+            Assert.Equal(4, activeD17[0].HistoricalQty);
+
+            // 5. Query for day June 19 (consumption of LOT111 and LOT222): should show BOTH
+            var activeD19 = await service.GetActiveReagentsAsync(d19Local);
+            Assert.Equal(2, activeD19.Count);
+            Assert.Contains(activeD19, x => x.LotNumber == "LOT111");
+            Assert.Contains(activeD19, x => x.LotNumber == "LOT222");
+        }
     }
 }

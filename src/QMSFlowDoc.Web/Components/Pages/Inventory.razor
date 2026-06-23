@@ -132,148 +132,309 @@ else
 
     <!-- Main Content -->
     <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border">
-        <!-- Search & Filters -->
-        <div class="row g-3 align-items-center mb-4">
-            <div class="col-md-6 col-lg-5">
-                <div class="input-group">
-                    <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
-                    <input type="text" class="form-control form-control-premium border-start-0 ps-1" 
-                           placeholder="Buscar reactivo por nombre, código o fabricante..." 
-                           @bind="searchTerm" @bind:event="oninput" />
+        <!-- Tabs Navigation -->
+        <ul class="nav nav-tabs mb-4 border-bottom-0">
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == "catalog" ? "active fw-bold text-success border-bottom border-3 border-success border-0" : "text-secondary border-0") bg-transparent px-4 py-2.5" 
+                        @onclick='() => SetActiveTab("catalog")'>
+                    <i class="bi bi-box-seam me-2"></i>Catálogo de Reactivos
+                </button>
+            </li>
+            <li class="nav-item">
+                <button class="nav-link @(activeTab == "active" ? "active fw-bold text-success border-bottom border-3 border-success border-0" : "text-secondary border-0") bg-transparent px-4 py-2.5" 
+                        @onclick='() => SetActiveTab("active")'>
+                    <i class="bi bi-activity me-2"></i>Reactivos en Activo
+                </button>
+            </li>
+        </ul>
+
+        @if (activeTab == "catalog")
+        {
+            <!-- Search & Filters -->
+            <div class="row g-3 align-items-center mb-4">
+                <div class="col-md-6 col-lg-5">
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" class="form-control form-control-premium border-start-0 ps-1" 
+                               placeholder="Buscar reactivo por nombre, código o fabricante..." 
+                               @bind="searchTerm" @bind:event="oninput" />
+                    </div>
+                </div>
+                <div class="col-md-4 col-lg-3">
+                    <select class="form-select form-select-premium" @bind="stockFilter">
+                        <option value="all">Todos los Reactivos</option>
+                        <option value="active">Activos únicamente</option>
+                        <option value="low">Stock bajo el mínimo</option>
+                        <option value="order">Reactivos para pedir</option>
+                    </select>
+                </div>
+                <div class="col-md-2 col-lg-4 text-end">
+                    <span class="text-muted small">@FilteredReagents.Count() reactivos encontrados</span>
                 </div>
             </div>
-            <div class="col-md-4 col-lg-3">
-                <select class="form-select form-select-premium" @bind="stockFilter">
-                    <option value="all">Todos los Reactivos</option>
-                    <option value="active">Activos únicamente</option>
-                    <option value="low">Stock bajo el mínimo</option>
-                    <option value="order">Reactivos para pedir</option>
-                </select>
-            </div>
-            <div class="col-md-2 col-lg-4 text-end">
-                <span class="text-muted small">@FilteredReagents.Count() reactivos encontrados</span>
-            </div>
-        </div>
 
-        <!-- Reagents Table -->
-        <div class="table-responsive">
-            <table class="table table-hover align-middle mb-0">
-                <thead class="bg-light border-bottom text-muted small text-uppercase">
-                    <tr>
-                        <th class="ps-3 cursor-pointer" @onclick='() => SortTable("code")'>Código <i class="bi @GetSortIcon("code") small"></i></th>
-                        <th class="cursor-pointer" @onclick='() => SortTable("name")'>Nombre <i class="bi @GetSortIcon("name") small"></i></th>
-                        <th class="cursor-pointer" @onclick='() => SortTable("fluorescence")'>Fluorescencia / Marca <i class="bi @GetSortIcon("fluorescence") small"></i></th>
-                        <th class="cursor-pointer" @onclick='() => SortTable("type")'>Tipo / Clasificación <i class="bi @GetSortIcon("type") small"></i></th>
-                        <th class="cursor-pointer" @onclick='() => SortTable("supplier")'>Proveedor <i class="bi @GetSortIcon("supplier") small"></i></th>
-                        <th class="cursor-pointer" @onclick='() => SortTable("stock")'>Stock Actual <i class="bi @GetSortIcon("stock") small"></i></th>
-                        <th class="cursor-pointer" @onclick='() => SortTable("expiry")'>Próxima Caducidad <i class="bi @GetSortIcon("expiry") small"></i></th>
-                        <th class="text-end pe-3">Acciones</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    @if (isLoading)
-                    {
+            <!-- Reagents Table -->
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light border-bottom text-muted small text-uppercase">
                         <tr>
-                            <td colspan="8" class="text-center py-5">
-                                <div class="spinner-border text-success spinner-border-sm me-2" role="status"></div>
-                                <span class="text-muted">Cargando inventario...</span>
-                            </td>
+                            <th class="ps-3 cursor-pointer" @onclick='() => SortTable("code")'>Código <i class="bi @GetSortIcon("code") small"></i></th>
+                            <th class="cursor-pointer" @onclick='() => SortTable("name")'>Nombre <i class="bi @GetSortIcon("name") small"></i></th>
+                            <th class="cursor-pointer" @onclick='() => SortTable("fluorescence")'>Fluorescencia / Marca <i class="bi @GetSortIcon("fluorescence") small"></i></th>
+                            <th class="cursor-pointer" @onclick='() => SortTable("type")'>Tipo / Clasificación <i class="bi @GetSortIcon("type") small"></i></th>
+                            <th class="cursor-pointer" @onclick='() => SortTable("supplier")'>Proveedor <i class="bi @GetSortIcon("supplier") small"></i></th>
+                            <th class="cursor-pointer" @onclick='() => SortTable("stock")'>Stock Actual <i class="bi @GetSortIcon("stock") small"></i></th>
+                            <th class="cursor-pointer" @onclick='() => SortTable("expiry")'>Próxima Caducidad <i class="bi @GetSortIcon("expiry") small"></i></th>
+                            <th class="text-end pe-3">Acciones</th>
                         </tr>
-                    }
-                    else if (!FilteredReagents.Any())
-                    {
-                        <tr>
-                            <td colspan="8" class="text-center py-5 text-muted">
-                                <i class="bi bi-box-fill h2 d-block mb-2"></i> No se encontraron reactivos.
-                            </td>
-                        </tr>
-                    }
-                    else
-                    {
-                        @foreach (var reagent in FilteredReagents)
+                    </thead>
+                    <tbody>
+                        @if (isLoading)
                         {
-                            var isLow = reagent.TotalStock <= reagent.MinStock;
-                            <tr class="reagent-tr @(selectedReagent?.Id == reagent.Id ? "table-active" : "") cursor-pointer" @onclick="() => SelectReagent(reagent.Id)">
-                                <td class="ps-3 fw-bold text-secondary">@(reagent.InternalCode ?? "N/A")</td>
-                                <td>
-                                    <div class="fw-semibold text-dark">@reagent.Name</div>
-                                    @if (!string.IsNullOrEmpty(reagent.Reference))
-                                    {
-                                        <small class="text-muted font-monospace">Ref: @reagent.Reference</small>
-                                    }
-                                </td>
-                                <td>
-                                    @if (!string.IsNullOrEmpty(reagent.Fluorescence))
-                                    {
-                                        <span class="badge bg-info bg-opacity-10 text-info fw-bold me-1">@reagent.Fluorescence</span>
-                                    }
-                                    <span class="text-muted small">@reagent.Manufacturer</span>
-                                </td>
-                                <td>
-                                    <span class="badge bg-light text-secondary border">@reagent.ReagentType</span>
-                                    @if (!string.IsNullOrEmpty(reagent.Classification))
-                                    {
-                                        <span class="badge bg-light text-primary border">@reagent.Classification</span>
-                                    }
-                                </td>
-                                <td class="small text-secondary">@(reagent.SupplierName ?? "Sin proveedor")</td>
-                                <td>
-                                    <div class="d-flex align-items-center">
-                                        <span class="fw-bold @(isLow ? "text-danger" : "text-success")">
-                                            @reagent.TotalStock.ToString("N0")
-                                        </span>
-                                        <span class="text-muted small ms-1">/ @reagent.MinStock.ToString("N0") mín</span>
-                                        @if (isLow)
-                                        {
-                                            <span class="badge bg-danger bg-opacity-10 text-danger rounded-pill ms-2 small-badge">Stock Bajo</span>
-                                        }
-                                    </div>
-                                </td>
-                                <td>
-                                    @if (reagent.NearestExpiry.HasValue)
-                                    {
-                                        <span class="badge @GetExpiryBadgeClass(reagent.ExpiryStatus)">
-                                            <i class="bi bi-calendar-event me-1"></i>
-                                            @reagent.NearestExpiry.Value.ToString("dd/MM/yyyy")
-                                        </span>
-                                    }
-                                    else
-                                    {
-                                        <span class="text-muted small">-</span>
-                                    }
-                                </td>
-                                <td class="text-end pe-3" @onclick:stopPropagation="true">
-                                    <div class="btn-group shadow-sm border rounded bg-white">
-                                        @if (canEdit)
-                                        {
-                                            <button class="btn btn-white btn-sm px-2.5" @onclick="() => OpenRegisterLotModal(reagent)" title="Registrar Lote">
-                                                <i class="bi bi-plus-square text-success"></i>
-                                            </button>
-                                            <button class="btn btn-white btn-sm px-2.5" @onclick="() => OpenAdjustStockModal(reagent, null)" title="Ajuste Stock">
-                                                <i class="bi bi-sliders text-secondary"></i>
-                                            </button>
-                                            <button class="btn btn-white btn-sm px-2.5 text-primary" @onclick="() => OpenEditReagentModal(reagent)" title="Editar Reactivo">
-                                                <i class="bi bi-pencil"></i>
-                                            </button>
-                                        }
-                                        @if (canDelete)
-                                        {
-                                            <button class="btn btn-white btn-sm px-2.5 text-danger" @onclick="() => ConfirmDeleteReagent(reagent)" title="Eliminar">
-                                                <i class="bi bi-trash"></i>
-                                            </button>
-                                        }
-                                    </div>
+                            <tr>
+                                <td colspan="8" class="text-center py-5">
+                                    <div class="spinner-border text-success spinner-border-sm me-2" role="status"></div>
+                                    <span class="text-muted">Cargando inventario...</span>
                                 </td>
                             </tr>
                         }
-                    }
-                </tbody>
-            </table>
-        </div>
+                        else if (!FilteredReagents.Any())
+                        {
+                            <tr>
+                                <td colspan="8" class="text-center py-5 text-muted">
+                                    <i class="bi bi-box-fill h2 d-block mb-2"></i> No se encontraron reactivos.
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var reagent in FilteredReagents)
+                            {
+                                var isLow = reagent.TotalStock <= reagent.MinStock;
+                                <tr class="reagent-tr @(selectedReagent?.Id == reagent.Id ? "table-active" : "") cursor-pointer" @onclick="() => SelectReagent(reagent.Id)">
+                                    <td class="ps-3 fw-bold text-secondary">@(reagent.InternalCode ?? "N/A")</td>
+                                    <td>
+                                        <div class="fw-semibold text-dark">@reagent.Name</div>
+                                        @if (!string.IsNullOrEmpty(reagent.Reference))
+                                        {
+                                            <small class="text-muted font-monospace">Ref: @reagent.Reference</small>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(reagent.Fluorescence))
+                                        {
+                                            <span class="badge bg-info bg-opacity-10 text-info fw-bold me-1">@reagent.Fluorescence</span>
+                                        }
+                                        <span class="text-muted small">@reagent.Manufacturer</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-secondary border">@reagent.ReagentType</span>
+                                        @if (!string.IsNullOrEmpty(reagent.Classification))
+                                        {
+                                            <span class="badge bg-light text-primary border">@reagent.Classification</span>
+                                        }
+                                    </td>
+                                    <td class="small text-secondary">@(reagent.SupplierName ?? "Sin proveedor")</td>
+                                    <td>
+                                        <div class="d-flex align-items-center">
+                                            <span class="fw-bold @(isLow ? "text-danger" : "text-success")">
+                                                @reagent.TotalStock.ToString("N0")
+                                            </span>
+                                            <span class="text-muted small ms-1">/ @reagent.MinStock.ToString("N0") mín</span>
+                                            @if (isLow)
+                                            {
+                                                <span class="badge bg-danger bg-opacity-10 text-danger rounded-pill ms-2 small-badge">Stock Bajo</span>
+                                            }
+                                        </div>
+                                    </td>
+                                    <td>
+                                        @if (reagent.NearestExpiry.HasValue)
+                                        {
+                                            <span class="badge @GetExpiryBadgeClass(reagent.ExpiryStatus)">
+                                                <i class="bi bi-calendar-event me-1"></i>
+                                                @reagent.NearestExpiry.Value.ToString("dd/MM/yyyy")
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted small">-</span>
+                                        }
+                                    </td>
+                                    <td class="text-end pe-3" @onclick:stopPropagation="true">
+                                        <div class="btn-group shadow-sm border rounded bg-white">
+                                            @if (canEdit)
+                                            {
+                                                <button class="btn btn-white btn-sm px-2.5" @onclick="() => OpenRegisterLotModal(reagent)" title="Registrar Lote">
+                                                    <i class="bi bi-plus-square text-success"></i>
+                                                </button>
+                                                <button class="btn btn-white btn-sm px-2.5" @onclick="() => OpenAdjustStockModal(reagent, null)" title="Ajuste Stock">
+                                                    <i class="bi bi-sliders text-secondary"></i>
+                                                </button>
+                                                <button class="btn btn-white btn-sm px-2.5 text-primary" @onclick="() => OpenEditReagentModal(reagent)" title="Editar Reactivo">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
+                                            }
+                                            @if (canDelete)
+                                            {
+                                                <button class="btn btn-white btn-sm px-2.5 text-danger" @onclick="() => ConfirmDeleteReagent(reagent)" title="Eliminar">
+                                                    <i class="bi bi-trash"></i>
+                                                </button>
+                                            }
+                                        </div>
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+        else if (activeTab == "active")
+        {
+            <!-- Active Reagents Historical Search & Table -->
+            <div class="row g-3 align-items-end mb-4">
+                <div class="col-md-3">
+                    <label class="form-label text-muted small fw-bold">Fecha de Consulta</label>
+                    <input type="date" class="form-control form-control-premium" 
+                           value="@activeReagentDate.ToString("yyyy-MM-dd")" 
+                           @onchange="OnActiveReagentDateChanged" />
+                </div>
+                <div class="col-md-5">
+                    <label class="form-label text-muted small fw-bold">Buscar Reactivo en Activo</label>
+                    <div class="input-group">
+                        <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+                        <input type="text" class="form-control form-control-premium border-start-0 ps-1" 
+                               placeholder="Buscar por nombre, lote, fabricante o código..." 
+                               @bind="activeReagentSearchTerm" @bind:event="oninput" />
+                    </div>
+                </div>
+                <div class="col-md-4 text-end d-flex align-items-end justify-content-end gap-2">
+                    <button class="btn btn-outline-success px-3" @onclick="PrintActiveReagents" disabled="@(isActiveReagentsLoading || !activeReagentsList.Any())">
+                        <i class="bi bi-printer me-2"></i> Imprimir PDF
+                    </button>
+                    <button class="btn btn-outline-secondary px-3" @onclick="DownloadActiveReagentsCsv" disabled="@(isActiveReagentsLoading || !activeReagentsList.Any())">
+                        <i class="bi bi-file-earmark-excel me-2"></i> Exportar CSV
+                    </button>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-hover align-middle mb-0">
+                    <thead class="bg-light border-bottom text-muted small text-uppercase">
+                        <tr>
+                            <th class="ps-3">Código</th>
+                            <th>Reactivo</th>
+                            <th>Fluorescencia / Marca</th>
+                            <th>Tipo</th>
+                            <th>Proveedor</th>
+                            <th>Lote Activo</th>
+                            <th>F. Vencimiento</th>
+                            <th>Último Consumo</th>
+                            <th class="text-end pe-3">Cant. Restante</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @if (isActiveReagentsLoading)
+                        {
+                            <tr>
+                                <td colspan="9" class="text-center py-5">
+                                    <div class="spinner-border text-success spinner-border-sm me-2" role="status"></div>
+                                    <span class="text-muted">Cargando reactivos en activo...</span>
+                                </td>
+                            </tr>
+                        }
+                        else if (!FilteredActiveReagents.Any())
+                        {
+                            <tr>
+                                <td colspan="9" class="text-center py-5 text-muted">
+                                    <i class="bi bi-activity h2 d-block mb-2 text-secondary"></i> No se encontraron reactivos activos para esta fecha.
+                                </td>
+                            </tr>
+                        }
+                        else
+                        {
+                            @foreach (var item in FilteredActiveReagents)
+                            {
+                                var isNoDisp = item.LotNumber == "No disponible";
+                                var isExpired = item.ExpiryDate.HasValue && item.ExpiryDate.Value < DateTime.UtcNow;
+                                var isNearExpiry = item.ExpiryDate.HasValue && !isExpired && (item.ExpiryDate.Value - DateTime.UtcNow).TotalDays < 60;
+                                <tr>
+                                    <td class="ps-3 fw-bold text-secondary">@(item.InternalCode ?? "N/A")</td>
+                                    <td>
+                                        <div class="fw-semibold text-dark">@item.ReagentName</div>
+                                        @if (!string.IsNullOrEmpty(item.Reference))
+                                        {
+                                            <small class="text-muted font-monospace">Ref: @item.Reference</small>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrEmpty(item.Fluorescence))
+                                        {
+                                            <span class="badge bg-info bg-opacity-10 text-info fw-bold me-1">@item.Fluorescence</span>
+                                        }
+                                        <span class="text-muted small">@item.Manufacturer</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge bg-light text-secondary border">@item.ReagentType</span>
+                                    </td>
+                                    <td class="small text-secondary">@(item.SupplierName ?? "Sin proveedor")</td>
+                                    <td>
+                                        @if (isNoDisp)
+                                        {
+                                            <span class="text-muted italic">@item.LotNumber</span>
+                                        }
+                                        else
+                                        {
+                                            <span class="fw-bold text-dark">@item.LotNumber</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (item.ExpiryDate.HasValue)
+                                        {
+                                            <span class="badge @(isExpired ? "bg-danger text-white" : isNearExpiry ? "bg-warning text-dark" : "bg-success text-white")">
+                                                <i class="bi bi-calendar-event me-1"></i>
+                                                @item.ExpiryDate.Value.ToString("dd/MM/yyyy")
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (item.LastConsumedDate.HasValue)
+                                        {
+                                            <span class="small text-secondary">
+                                                @item.LastConsumedDate.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                                                <strong class="text-danger ms-1">(-@item.LastConsumedQty.ToString("N0"))</strong>
+                                            </span>
+                                        }
+                                        else
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                    </td>
+                                    <td class="text-end pe-3 fw-bold @(item.HistoricalQty <= 0 ? "text-danger" : "text-success")">
+                                        @if (isNoDisp)
+                                        {
+                                            <span>—</span>
+                                        }
+                                        else
+                                        {
+                                            @item.HistoricalQty.ToString("N2")
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
     </div>
 
     <!-- Reagent Detail Bottom Drawer / Side Drawer -->
-    @if (selectedReagent != null)
+    @if (activeTab == "catalog" && selectedReagent != null)
     {
         <div class="card border-0 shadow-lg rounded-4 p-4 bg-white mt-4 border border-success border-opacity-25 animate-slide-up">
             <div class="d-flex justify-content-between align-items-start border-bottom pb-3 mb-3">
@@ -1187,6 +1348,13 @@ else
     private Guid? currentUserId = null;
     private string currentUsername = "Usuario Web";
 
+    // Active Reagents Tab state
+    private string activeTab = "catalog";
+    private DateTime activeReagentDate = DateTime.Today;
+    private string activeReagentSearchTerm = "";
+    private List<ActiveReagentDto> activeReagentsList = new();
+    private bool isActiveReagentsLoading = false;
+
     // Selections / Lookups
     private List<StorageLocation> storageLocations = new();
     private List<Supplier> suppliers = new();
@@ -1317,6 +1485,73 @@ else
         {
             isLoading = false;
         }
+    }
+
+    private async Task SetActiveTab(string tab)
+    {
+        activeTab = tab;
+        if (activeTab == "active")
+        {
+            selectedReagent = null; // Clear selection when switching tabs
+            await LoadActiveReagentsAsync();
+        }
+    }
+
+    private async Task OnActiveReagentDateChanged(ChangeEventArgs e)
+    {
+        if (DateTime.TryParse(e.Value?.ToString(), out var dt))
+        {
+            activeReagentDate = dt;
+            await LoadActiveReagentsAsync();
+        }
+    }
+
+    private async Task LoadActiveReagentsAsync()
+    {
+        isActiveReagentsLoading = true;
+        try
+        {
+            activeReagentsList = await InventoryService.GetActiveReagentsAsync(activeReagentDate);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading active reagents: {ex.Message}");
+        }
+        finally
+        {
+            isActiveReagentsLoading = false;
+        }
+    }
+
+    private IEnumerable<ActiveReagentDto> FilteredActiveReagents
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(activeReagentSearchTerm))
+                return activeReagentsList;
+
+            var term = activeReagentSearchTerm.ToLowerInvariant();
+            return activeReagentsList.Where(r => 
+                r.ReagentName.ToLowerInvariant().Contains(term) ||
+                (r.InternalCode != null && r.InternalCode.ToLowerInvariant().Contains(term)) ||
+                (r.LotNumber != null && r.LotNumber.ToLowerInvariant().Contains(term)) ||
+                (r.Manufacturer != null && r.Manufacturer.ToLowerInvariant().Contains(term))
+            );
+        }
+    }
+
+    private async Task PrintActiveReagents()
+    {
+        if (isActiveReagentsLoading || !activeReagentsList.Any()) return;
+        var html = InventoryHelpers.BuildActiveReagentsHtml(activeReagentsList, activeReagentDate);
+        await InventoryHelpers.PrintAsync(JS, html);
+    }
+
+    private async Task DownloadActiveReagentsCsv()
+    {
+        if (isActiveReagentsLoading || !activeReagentsList.Any()) return;
+        var csv = InventoryHelpers.BuildActiveReagentsCsv(activeReagentsList);
+        await InventoryHelpers.DownloadCsvAsync(JS, csv, $"reactivos_activos_{activeReagentDate:yyyyMMdd}.csv");
     }
 
     private string currentSortColumn = "name";

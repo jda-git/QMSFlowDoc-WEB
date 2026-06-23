@@ -605,6 +605,156 @@ public class InventoryService : IInventoryService
         return MapSupplierDecisionToQualityStatus(evaluation.Decision);
     }
 
+    public async Task<List<ActiveReagentDto>> GetActiveReagentsAsync(DateTime date)
+    {
+        var localStart = date.Date;
+        var localEnd = localStart.AddDays(1).AddTicks(-1);
+        var utcStart = localStart.ToUniversalTime();
+        var utcEnd = localEnd.ToUniversalTime();
+
+        var reagents = await _context.Reagents
+            .Include(r => r.Supplier)
+            .Include(r => r.Lots)
+            .Where(r => !r.IsDeleted)
+            .ToListAsync();
+
+        var movements = await _context.InventoryMovements
+            .Where(m => m.MovedAt <= utcEnd)
+            .ToListAsync();
+
+        var movementsByLot = movements
+            .Where(m => m.ReagentLotId.HasValue)
+            .GroupBy(m => m.ReagentLotId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderBy(m => m.MovedAt).ToList());
+
+        var result = new List<ActiveReagentDto>();
+
+        foreach (var reagent in reagents)
+        {
+            var lotIds = reagent.Lots.Select(l => l.Id).ToHashSet();
+            var reagentMovements = movements
+                .Where(m => m.ReagentId == reagent.Id || (m.ReagentLotId.HasValue && lotIds.Contains(m.ReagentLotId.Value)))
+                .ToList();
+
+            var outMovements = reagentMovements
+                .Where(m => m.MovementType == InventoryMovementType.OUT)
+                .OrderByDescending(m => m.MovedAt)
+                .ToList();
+
+            if (!outMovements.Any())
+            {
+                // Si nunca consta que se hubiera consumido, poner "No disponible"
+                result.Add(new ActiveReagentDto
+                {
+                    ReagentId = reagent.Id,
+                    ReagentName = reagent.Name,
+                    Manufacturer = reagent.Manufacturer,
+                    InternalCode = reagent.InternalCode,
+                    Fluorescence = reagent.Fluorescence,
+                    ReagentType = reagent.ReagentType,
+                    Reference = reagent.Reference,
+                    Classification = reagent.Classification,
+                    SupplierName = reagent.Supplier?.Name,
+                    LotId = null,
+                    LotNumber = "No disponible",
+                    ExpiryDate = null,
+                    AvailableQty = 0,
+                    HistoricalQty = 0,
+                    LastConsumedDate = null,
+                    LastConsumedQty = 0
+                });
+                continue;
+            }
+
+            var dayOutMovements = outMovements
+                .Where(m => m.MovedAt >= utcStart && m.MovedAt <= utcEnd)
+                .ToList();
+
+            var activeLotIds = new List<Guid>();
+
+            if (dayOutMovements.Any())
+            {
+                // Si se usaron más de uno en el día, se muestran todos los involucrados
+                activeLotIds = dayOutMovements
+                    .Where(m => m.ReagentLotId.HasValue)
+                    .Select(m => m.ReagentLotId!.Value)
+                    .Distinct()
+                    .ToList();
+            }
+            else
+            {
+                // Buscar el consumo más reciente antes del día
+                var lastPriorOut = outMovements.FirstOrDefault(m => m.MovedAt < utcStart);
+                if (lastPriorOut != null && lastPriorOut.ReagentLotId.HasValue)
+                {
+                    activeLotIds.Add(lastPriorOut.ReagentLotId.Value);
+                }
+            }
+
+            if (!activeLotIds.Any())
+            {
+                // Si no hay consumos antes de esta fecha, reportar como no disponible
+                result.Add(new ActiveReagentDto
+                {
+                    ReagentId = reagent.Id,
+                    ReagentName = reagent.Name,
+                    Manufacturer = reagent.Manufacturer,
+                    InternalCode = reagent.InternalCode,
+                    Fluorescence = reagent.Fluorescence,
+                    ReagentType = reagent.ReagentType,
+                    Reference = reagent.Reference,
+                    Classification = reagent.Classification,
+                    SupplierName = reagent.Supplier?.Name,
+                    LotId = null,
+                    LotNumber = "No disponible",
+                    ExpiryDate = null,
+                    AvailableQty = 0,
+                    HistoricalQty = 0,
+                    LastConsumedDate = null,
+                    LastConsumedQty = 0
+                });
+                continue;
+            }
+
+            foreach (var lotId in activeLotIds)
+            {
+                var lot = reagent.Lots.FirstOrDefault(l => l.Id == lotId);
+                if (lot == null) continue;
+
+                decimal historicalQty = 0;
+                if (movementsByLot.TryGetValue(lotId, out var lotMoves))
+                {
+                    historicalQty = lotMoves.Where(m => m.MovedAt <= utcEnd).Sum(m => m.Qty);
+                }
+
+                var lastLotOut = outMovements
+                    .FirstOrDefault(m => m.ReagentLotId == lotId && m.MovedAt <= utcEnd);
+
+                result.Add(new ActiveReagentDto
+                {
+                    ReagentId = reagent.Id,
+                    ReagentName = reagent.Name,
+                    Manufacturer = reagent.Manufacturer,
+                    InternalCode = reagent.InternalCode,
+                    Fluorescence = reagent.Fluorescence,
+                    ReagentType = reagent.ReagentType,
+                    Reference = reagent.Reference,
+                    Classification = reagent.Classification,
+                    SupplierName = reagent.Supplier?.Name,
+                    LotId = lot.Id,
+                    LotNumber = lot.LotNumber,
+                    ExpiryDate = lot.ExpiryDate,
+                    AvailableQty = lot.AvailableQty,
+                    HistoricalQty = historicalQty,
+                    LastConsumedDate = lastLotOut?.MovedAt,
+                    LastConsumedQty = lastLotOut != null ? Math.Abs(lastLotOut.Qty) : 0
+                });
+            }
+        }
+
+        return result.OrderBy(r => r.InternalCode ?? r.ReagentName).ToList();
+    }
+
     private async Task LogAuditAsync(string action, string entityType, Guid? entityId, string details, Guid? userId, string username)
     {
         var audit = new AuditLog

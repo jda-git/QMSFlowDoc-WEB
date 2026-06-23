@@ -198,3 +198,28 @@ public record ReleaseLotRequest(
     string? Notes = null
 );
 
+public class ActiveReagentDto
+{
+    public Guid ReagentId { get; set; }
+    public string ReagentName { get; set; } = string.Empty;
+    public string? Manufacturer { get; set; }
+    public string? InternalCode { get; set; }
+    public string? Fluorescence { get; set; }
+    public string ReagentType { get; set; } = string.Empty;
+    public string Reference { get; set; } = string.Empty;
+    public string? Classification { get; set; }
+    public string? SupplierName { get; set; }
+
+    // Datos del lote activo
+    public Guid? LotId { get; set; }
+    public string LotNumber { get; set; } = "No disponible";
+    public DateTime? ExpiryDate { get; set; }
+    public decimal AvailableQty { get; set; }
+    public decimal HistoricalQty { get; set; }
+    
+    // Información del último consumo
+    public DateTime? LastConsumedDate { get; set; }
+    public decimal LastConsumedQty { get; set; }
+}
+
+
