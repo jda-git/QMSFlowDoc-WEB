@@ -212,34 +212,63 @@
                 </div>
             </div>
 
-            <!-- Right Info Section -->
+            <!-- Right Info Section: Alertas y Pendientes -->
             <div class="col-lg-4">
-                <div class="card border-0 shadow-sm rounded-4 bg-dark text-white p-4 h-100">
-                    <h5 class="fw-bold mb-3"><i class="bi bi-server me-2"></i>Entorno de Red</h5>
-                    
-                    <div class="d-flex align-items-center mb-4">
-                        <span class="status-dot online me-2"></span>
-                        <span class="small opacity-75">Servidor Web en Puerto 5130</span>
+                <div class="card border-0 shadow-sm rounded-4 p-4 h-100 border">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h5 class="fw-bold mb-0"><i class="bi bi-bell-fill text-warning me-2"></i>Alertas y Pendientes</h5>
+                        <span class="badge @(totalAlerts > 0 ? "bg-danger" : "bg-success") rounded-pill">@totalAlerts</span>
                     </div>
 
-                    <div class="mb-4 small border-top border-secondary pt-3">
-                        <div class="d-flex justify-content-between mb-2">
-                            <span class="opacity-50">Base de Datos:</span>
-                            <span class="fw-medium text-info">SQLite Local</span>
+                    <div class="alert-item d-flex align-items-center justify-content-between p-3 rounded-3 mb-2 @(openNCs > 0 ? "bg-danger-light" : "bg-light")">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-exclamation-octagon-fill @(openNCs > 0 ? "text-danger" : "text-muted") me-3 fs-5"></i>
+                            <div>
+                                <div class="small fw-bold">No Conformidades Abiertas</div>
+                                <div class="text-muted" style="font-size: 0.75rem;">NC pendientes de cierre</div>
+                            </div>
                         </div>
-                        <div class="d-flex justify-content-between mb-2">
-                            <span class="opacity-50">ORM:</span>
-                            <span class="fw-medium">EF Core 9.0</span>
-                        </div>
-                        <div class="d-flex justify-content-between">
-                            <span class="opacity-50">Framework:</span>
-                            <span class="fw-medium">Blazor Server</span>
-                        </div>
+                        <span class="badge @(openNCs > 0 ? "bg-danger" : "bg-light text-muted") rounded-pill fs-6">@openNCs</span>
                     </div>
 
-                    <button @onclick="LoadMetricsAsync" class="btn btn-outline-light btn-sm w-100 mt-auto py-2">
-                        <i class="bi bi-arrow-clockwise me-1"></i>Actualizar Datos
-                    </button>
+                    <div class="alert-item d-flex align-items-center justify-content-between p-3 rounded-3 mb-2 @(overdueCAPAs > 0 ? "bg-warning-light" : "bg-light")">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-clock-history @(overdueCAPAs > 0 ? "text-warning" : "text-muted") me-3 fs-5"></i>
+                            <div>
+                                <div class="small fw-bold">Acciones CAPA Vencidas</div>
+                                <div class="text-muted" style="font-size: 0.75rem;">Correctivas/Preventivas fuera de plazo</div>
+                            </div>
+                        </div>
+                        <span class="badge @(overdueCAPAs > 0 ? "bg-warning text-dark" : "bg-light text-muted") rounded-pill fs-6">@overdueCAPAs</span>
+                    </div>
+
+                    <div class="alert-item d-flex align-items-center justify-content-between p-3 rounded-3 mb-2 @(overdueReviewDocs > 0 ? "bg-blue-light" : "bg-light")">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-file-earmark-x @(overdueReviewDocs > 0 ? "text-primary" : "text-muted") me-3 fs-5"></i>
+                            <div>
+                                <div class="small fw-bold">Documentos Revisión Vencida</div>
+                                <div class="text-muted" style="font-size: 0.75rem;">Superada fecha de revisión programada</div>
+                            </div>
+                        </div>
+                        <span class="badge @(overdueReviewDocs > 0 ? "bg-primary" : "bg-light text-muted") rounded-pill fs-6">@overdueReviewDocs</span>
+                    </div>
+
+                    <div class="alert-item d-flex align-items-center justify-content-between p-3 rounded-3 mb-2 @(lotsExpiringSoon > 0 ? "bg-warning-light" : "bg-light")">
+                        <div class="d-flex align-items-center">
+                            <i class="bi bi-hourglass-bottom @(lotsExpiringSoon > 0 ? "text-warning" : "text-muted") me-3 fs-5"></i>
+                            <div>
+                                <div class="small fw-bold">Lotes Próximos a Caducar</div>
+                                <div class="text-muted" style="font-size: 0.75rem;">Caducidad en los próximos 30 días</div>
+                            </div>
+                        </div>
+                        <span class="badge @(lotsExpiringSoon > 0 ? "bg-warning text-dark" : "bg-light text-muted") rounded-pill fs-6">@lotsExpiringSoon</span>
+                    </div>
+
+                    <div class="mt-auto pt-2">
+                        <button @onclick="LoadMetricsAsync" class="btn btn-outline-secondary btn-sm w-100 py-2">
+                            <i class="bi bi-arrow-clockwise me-1"></i>Actualizar Datos
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
@@ -286,6 +315,12 @@
     private int activeReagents = 0;
     private int expiredLots = 0;
     private int outOfServiceEquipment = 0;
+    // Alertas y Pendientes
+    private int openNCs = 0;
+    private int overdueCAPAs = 0;
+    private int overdueReviewDocs = 0;
+    private int lotsExpiringSoon = 0;
+    private int totalAlerts => openNCs + overdueCAPAs + overdueReviewDocs + lotsExpiringSoon;
     private DateTime lastUpdate;
     private int refreshSeconds = 30;
     private System.Threading.Timer? timer;
@@ -313,6 +348,13 @@
             activeReagents = await Db.Reagents.CountAsync(r => r.Status == ReagentStatus.ACTIVO);
             expiredLots = await Db.ReagentLots.CountAsync(l => l.ExpiryDate < DateTime.UtcNow && l.Status != LotStatus.CONSUMED && l.AvailableQty > 0);
             outOfServiceEquipment = await Db.Equipments.CountAsync(e => e.Status == EquipmentStatus.OUT_OF_SERVICE);
+
+            // Alertas y Pendientes
+            openNCs = await Db.Nonconformities.CountAsync(nc => nc.Status != NCStatus.CLOSED);
+            overdueCAPAs = await Db.CapaActions.CountAsync(ca => ca.Status == CAPAStatus.OPEN && ca.DueDate.HasValue && ca.DueDate.Value < DateTime.UtcNow);
+            overdueReviewDocs = await Db.Documents.CountAsync(d => d.NextReviewDue.HasValue && d.NextReviewDue.Value < DateTime.UtcNow && d.Status == DocumentStatus.APPROVED);
+            var thirtyDaysFromNow = DateTime.UtcNow.AddDays(30);
+            lotsExpiringSoon = await Db.ReagentLots.CountAsync(l => l.ExpiryDate >= DateTime.UtcNow && l.ExpiryDate <= thirtyDaysFromNow && l.Status != LotStatus.CONSUMED && l.AvailableQty > 0);
         }
         catch (Exception ex)
         {
