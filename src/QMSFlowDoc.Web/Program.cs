@@ -51,8 +51,8 @@ builder.Services.AddScoped<IPasswordHasher<ApplicationUser>, QMSFlowDoc.Web.Secu
 var documentStorageConfig = builder.Configuration.GetSection("DocumentStorage");
 var rootPathConfig = documentStorageConfig["RootPath"] ?? throw new InvalidOperationException("DocumentStorage:RootPath not configured.");
 var rootPath = ResolvePortablePath(rootPathConfig);
-var dataProtectionKeysPath = builder.Configuration["DataProtection:KeysPath"]
-    ?? Path.Combine(rootPath, "DataProtection-Keys");
+var dataProtectionKeysPath = ResolvePortablePath(builder.Configuration["DataProtection:KeysPath"]
+    ?? Path.Combine(rootPath, "DataProtection-Keys"));
 
 try
 {
@@ -137,7 +137,7 @@ app.UseAuthorization();
 app.UseRateLimiter();
 app.UseAntiforgery();
 
-app.MapStaticAssets();
+app.MapStaticAssets().AllowAnonymous();
 app.MapControllers();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
