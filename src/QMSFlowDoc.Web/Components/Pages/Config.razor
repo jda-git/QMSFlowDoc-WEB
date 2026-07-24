@@ -1284,7 +1284,7 @@
         }
         catch (Exception ex)
         {
-            labSettingsErrorMessage = $"No se pudo guardar la información del laboratorio: {ex.Message}";
+            labSettingsErrorMessage = SafeError(ex, "saving laboratory settings");
         }
         finally
         {
@@ -1549,7 +1549,7 @@
         }
         catch (Exception ex)
         {
-            restoreError = $"Error al preparar la restauración: {ex.Message}";
+            restoreError = SafeError(ex, "preparing restore");
         }
         finally
         {
@@ -1641,7 +1641,7 @@
         }
         catch (Exception ex)
         {
-            permissionsErrorMessage = $"Error al guardar la matriz: {ex.Message}";
+            permissionsErrorMessage = SafeError(ex, "saving permissions matrix");
         }
         finally
         {
@@ -1727,7 +1727,7 @@
         }
         catch (Exception ex)
         {
-            backupErrorMessage = $"Error al guardar la configuración: {ex.Message}";
+            backupErrorMessage = SafeError(ex, "saving backup settings");
         }
     }
 

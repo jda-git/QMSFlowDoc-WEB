@@ -2364,7 +2364,7 @@ else
         }
         catch (Exception ex)
         {
-            statusValidationMessage = $"Error: {ex.Message}";
+            statusValidationMessage = SafeError(ex, "validating equipment status");
         }
     }
 
@@ -2396,7 +2396,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving quality control");
         }
     }
 
@@ -2501,7 +2501,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "registering maintenance");
         }
     }
 
@@ -2563,7 +2563,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving maintenance plan");
         }
     }
 
@@ -2620,7 +2620,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving calibration plan");
         }
     }
 
@@ -2695,7 +2695,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving calibration record");
         }
     }
 
@@ -2731,7 +2731,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "registering equipment incident");
         }
     }
 
@@ -2771,7 +2771,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "registering repair");
         }
     }
 
@@ -2843,7 +2843,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "decommissioning equipment");
         }
     }
 
