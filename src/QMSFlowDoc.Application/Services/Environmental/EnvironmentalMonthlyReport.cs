@@ -9,7 +9,8 @@ public sealed record EnvironmentalSourceStatistics(
 
 public sealed record EnvironmentalMonthlyReport(
     DateTime PeriodStart, DateTime PeriodEnd, IReadOnlyList<EnvironmentalSourceStatistics> Statistics,
-    IReadOnlyList<EnvironmentalReading> Incidents, IReadOnlyList<EnvironmentalReading> CentralEvents);
+    IReadOnlyList<EnvironmentalReading> Incidents, IReadOnlyList<EnvironmentalReading> CentralEvents,
+    IReadOnlyList<EnvironmentalReading> Readings);
 
 public static class EnvironmentalMonthlyReportBuilder
 {
@@ -24,7 +25,7 @@ public static class EnvironmentalMonthlyReportBuilder
                 Min(group.Select(r => r.HumidityPercent)), Max(group.Select(r => r.HumidityPercent)), Average(group.Select(r => r.HumidityPercent))))
             .ToList();
         return new EnvironmentalMonthlyReport(all.First().RecordedAt, all.Last().RecordedAt, measured,
-            all.Where(r => r.IsOutOfRange).ToList(), all.Where(r => r.Source == EnvironmentalSource.CENTRAL).ToList());
+            all.Where(r => r.IsOutOfRange).ToList(), all.Where(r => r.Source == EnvironmentalSource.CENTRAL).ToList(), all);
     }
 
     private static decimal? Min(IEnumerable<decimal?> values) => values.Where(v => v.HasValue).Select(v => v!.Value).DefaultIfEmpty().Min();
