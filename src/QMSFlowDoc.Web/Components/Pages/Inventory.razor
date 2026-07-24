@@ -10,6 +10,7 @@
 @inject IJSRuntime JS
 @inject IPermissionService PermissionService
 @inject IUserService UserService
+@inject ILogger<Inventory> Logger
 
 <PageTitle>Control de Inventario y Reactivos - QMSFlowDoc</PageTitle>
 
@@ -1980,7 +1981,7 @@ else
         }
         catch (Exception ex)
         {
-            supplierError = ex.Message;
+            supplierError = SafeError(ex, "saving supplier");
         }
     }
 
@@ -2021,7 +2022,7 @@ else
         }
         catch (Exception ex)
         {
-            supplierError = ex.Message;
+            supplierError = SafeError(ex, "deleting supplier");
         }
     }
 
@@ -2081,7 +2082,7 @@ else
         }
         catch (Exception ex)
         {
-            reagentError = $"Error: {ex.Message}";
+            reagentError = SafeError(ex, "saving reagent");
         }
     }
 
@@ -2124,7 +2125,7 @@ else
         }
         catch (Exception ex)
         {
-            lotError = $"Error: {ex.Message}";
+            lotError = SafeError(ex, "saving reagent lot");
         }
     }
 
@@ -2217,7 +2218,7 @@ else
         }
         catch (Exception ex)
         {
-            adjustError = $"Error: {ex.Message}";
+            adjustError = SafeError(ex, "adjusting inventory");
         }
     }
 
@@ -2275,7 +2276,7 @@ else
         }
         catch (Exception ex)
         {
-            releaseError = ex.Message;
+            releaseError = SafeError(ex, "releasing reagent lot");
         }
     }
 
@@ -2391,4 +2392,11 @@ else
         SupplierQualityStatus.NO_APTO => "bg-danger",
         _ => "bg-secondary"
     };
+
+    private string SafeError(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "Inventory error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        return $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.";
+    }
 }
