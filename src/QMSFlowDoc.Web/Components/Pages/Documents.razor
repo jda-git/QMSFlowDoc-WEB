@@ -1147,7 +1147,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await JS.InvokeVoidAsync("alert", SafeError(ex, "deleting folder"));
         }
     }
 
@@ -1545,7 +1545,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al mover carpeta: {ex.Message}");
+            await JS.InvokeVoidAsync("alert", SafeError(ex, "moving folder up"));
         }
     }
 
@@ -1561,7 +1561,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al mover carpeta: {ex.Message}");
+            await JS.InvokeVoidAsync("alert", SafeError(ex, "moving folder down"));
         }
     }
 
