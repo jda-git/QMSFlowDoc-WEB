@@ -59,7 +59,8 @@ try
     Directory.CreateDirectory(dataProtectionKeysPath);
     builder.Services.AddDataProtection()
         .SetApplicationName("QMSFlowDoc")
-        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
+        .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath))
+        .ProtectKeysWithDpapi();
 }
 catch (Exception ex)
 {

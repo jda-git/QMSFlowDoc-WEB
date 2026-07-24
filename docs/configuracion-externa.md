@@ -11,3 +11,5 @@ No guarde rutas, claves ni credenciales de produccion en `appsettings.json` ni e
 `QMSFLOWDOC_DATA` debe estar en un volumen local del servidor y contener la base SQLite y `DocumentStorage`. Restrinja mediante ACL el acceso a la cuenta de servicio de QMSFlowDoc y a administradores autorizados. Las copias deben ubicarse en otra unidad o recurso protegido, nunca dentro de `DocumentStorage`.
 
 Las copias de recuperación usan EFS de Windows por defecto (`BackupEncryption:Enabled=true`). La cuenta que ejecute QMSFlowDoc debe conservar su certificado EFS y los agentes de recuperación autorizados deben estar documentados; sin ellos, una restauración desde otro equipo no podrá leer la copia.
+
+Las claves internas de ASP.NET se cifran con DPAPI para la cuenta que inicia QMSFlowDoc. Ejecute siempre la aplicación o el servicio bajo la misma cuenta y conserve una copia protegida de su perfil/credenciales de recuperación según la política de continuidad del laboratorio.
