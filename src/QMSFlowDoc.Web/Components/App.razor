@@ -14,7 +14,19 @@
 </head>
 
 <body>
-    <Routes />
+    <ErrorBoundary>
+        <ChildContent>
+            <Routes />
+        </ChildContent>
+        <ErrorContent>
+            <main class="container py-5">
+                <div class="alert alert-danger" role="alert">
+                    <h1 class="h4">No se ha podido completar la operación</h1>
+                    <p class="mb-0">El incidente se ha registrado. Vuelva a intentarlo o contacte con el administrador del sistema.</p>
+                </div>
+            </main>
+        </ErrorContent>
+    </ErrorBoundary>
     <script src="lib/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="_framework/blazor.web.js"></script>
     <script>
