@@ -17,6 +17,7 @@
 @inject IJSRuntime JS
 @inject IPermissionService PermissionService
 @inject QMSFlowDoc.Application.Services.Quality.IQualityService QualityService
+@inject ILogger<Equipment> Logger
 
 <PageTitle>Gestión de Equipamiento — QMSFlowDoc</PageTitle>
 
@@ -2277,7 +2278,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al guardar equipo: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving equipment");
         }
     }
 
@@ -2325,7 +2326,7 @@ else
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al guardar aceptación: {ex.Message}");
+                await ShowSafeErrorAsync(ex, "saving equipment acceptance");
             }
         }
     }
@@ -2427,7 +2428,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al anular el QC: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "voiding quality control");
         }
     }
 
@@ -2808,7 +2809,7 @@ else
         }
         catch (Exception ex)
         {
-            impactErrorMessage = ex.Message;
+            impactErrorMessage = SafeError(ex, "saving impact assessment");
         }
     }
 
@@ -2855,4 +2856,14 @@ else
         }
         await JS.InvokeVoidAsync("window.print");
     }
+
+    private string SafeError(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "Equipment error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        return $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.";
+    }
+
+    private async Task ShowSafeErrorAsync(Exception exception, string operation) =>
+        await JS.InvokeVoidAsync("alert", SafeError(exception, operation));
 }
