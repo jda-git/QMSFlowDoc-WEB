@@ -27,9 +27,15 @@
         <h5>Importar fichero mensual</h5>
         <p class="small text-muted">Formato: <code>fecha;hora;NEVERA;temp;tempCongelador/NC</code>, <code>HABITACION;temp;humedad</code> y eventos <code>CENTRAL</code>.</p>
         <InputFile OnChange="ImportAsync" accept=".txt,text/plain" class="form-control" />
-        <div class="mt-3"><label class="small me-2">Lote mensual</label><select class="form-select d-inline-block w-auto" @bind="selectedBatchId">@foreach (var batch in batches) { <option value="@batch">@batch</option> }</select>
-        <button class="btn btn-outline-primary ms-2" @onclick="DownloadReportAsync" disabled="@(string.IsNullOrWhiteSpace(selectedBatchId))"><i class="bi bi-file-earmark-pdf me-2"></i>Generar informe PDF</button></div>
+        <div class="mt-3"><label class="small me-2">Lote mensual</label><select class="form-select d-inline-block w-auto" @bind="selectedBatchId" @bind:after="LoadAsync">@foreach (var batch in batches) { <option value="@batch">@batch</option> }</select>
+        <button class="btn btn-outline-primary ms-2" @onclick="DownloadReportAsync" disabled="@(string.IsNullOrWhiteSpace(selectedBatchId))"><i class="bi bi-file-earmark-pdf me-2"></i>Generar informe PDF</button>
+        <button class="btn btn-outline-success ms-2" @onclick="DownloadCsvAsync" disabled="@(string.IsNullOrWhiteSpace(selectedBatchId))"><i class="bi bi-filetype-csv me-2"></i>Descargar CSV mensual</button></div>
     </div></div>
+
+    @if (chartMinDate.HasValue)
+    {
+        <div class="card mb-3"><div class="card-body d-flex align-items-end gap-3 flex-wrap"><div><label class="form-label mb-1">Semana representada (día de inicio)</label><input type="date" class="form-control" min="@chartMinDate.Value.ToString("yyyy-MM-dd")" max="@chartMaxDate.Value.ToString("yyyy-MM-dd")" @bind="chartStartDate" @bind:format="yyyy-MM-dd" /></div><div class="small text-muted pb-2">Se muestran todas las lecturas horarias desde las 00:00 del día elegido hasta las 23:59 del sexto día siguiente.</div></div></div>
+    }
 
     <div class="row g-3 mb-3">
         <div class="col-md-3"><div class="card"><div class="card-body"><strong>Nevera</strong><br />2 a 8 °C</div></div></div>
@@ -39,17 +45,22 @@
     </div>
 
     <table class="table table-sm"><thead><tr><th>Fecha/hora</th><th>Origen</th><th>Temperatura</th><th>Humedad</th><th>Estado</th></tr></thead><tbody>
-    @foreach (var reading in recentReadings) { <tr class="@(reading.IsOutOfRange ? "table-danger" : "")"><td>@reading.RecordedAt.ToString("dd/MM/yyyy HH:mm")</td><td>@reading.Source</td><td>@(reading.SensorNotConnected ? "NC" : reading.TemperatureCelsius?.ToString("N1"))</td><td>@reading.HumidityPercent?.ToString("N0")</td><td>@(reading.IsOutOfRange ? "Fuera de rango" : "Correcto")</td></tr> }
+    @foreach (var reading in recentReadings) { <tr class="@(reading.IsOutOfRange ? "table-danger" : reading.SensorNotConnected ? "table-warning" : "")"><td>@reading.RecordedAt.ToString("dd/MM/yyyy HH:mm")</td><td>@reading.Source</td><td>@(reading.SensorNotConnected ? "NC" : reading.TemperatureCelsius?.ToString("N1"))</td><td>@reading.HumidityPercent?.ToString("N0")</td><td>@(reading.SensorNotConnected ? "Sonda no conectada" : reading.IsOutOfRange ? "Fuera de rango" : "Correcto")</td></tr> }
     </tbody></table>
 
+    @*
     @if (recentReadings.Any(r => r.TemperatureCelsius.HasValue))
     {
         <div class="card mt-4"><div class="card-body"><h5>Tendencia de temperatura (últimas 100 lecturas)</h5>
-            <svg viewBox="0 0 900 220" class="w-100" role="img" aria-label="Tendencia de temperaturas">
-                <line x1="40" y1="10" x2="40" y2="190" stroke="#777" /><line x1="40" y1="190" x2="880" y2="190" stroke="#777" />
+            <svg viewBox="0 0 900 250" class="w-100" role="img" aria-label="Tendencia de temperaturas en grados Celsius">
+                @SvgLabel(18, 112, "Temperatura (°C)", "start", "rotate(-90 18 112)")
+                @foreach (var tick in TemperatureTicks()) { <line x1="88" y1="@tick.Y" x2="880" y2="@tick.Y" stroke="#e9ecef" />@SvgLabel(78, tick.Y + 4, $"{tick.Label} °C", "end") }
+                <line x1="88" y1="20" x2="88" y2="190" stroke="#777" /><line x1="88" y1="190" x2="880" y2="190" stroke="#777" />
                 @foreach (var point in TemperaturePoints(EnvironmentalSource.REFRIGERATOR, "#0d6efd")) { <circle cx="@point.X" cy="@point.Y" r="2" fill="@point.Color" /> }
                 @foreach (var point in TemperaturePoints(EnvironmentalSource.FREEZER, "#6f42c1")) { <circle cx="@point.X" cy="@point.Y" r="2" fill="@point.Color" /> }
                 @foreach (var point in TemperaturePoints(EnvironmentalSource.ROOM, "#198754")) { <circle cx="@point.X" cy="@point.Y" r="2" fill="@point.Color" /> }
+                @foreach (var tick in TemperatureDateTicks()) { <line x1="@tick.X" y1="190" x2="@tick.X" y2="194" stroke="#777" />@SvgLabel(tick.X, 210, tick.Label, "middle") }
+                @SvgLabel(484, 238, "Fecha / hora", "middle")
             </svg>
             <span class="badge bg-primary me-2">Nevera</span><span class="badge bg-purple me-2">Congelador</span><span class="badge bg-success">Habitación</span>
         </div></div>
@@ -57,10 +68,24 @@
     @if (recentReadings.Any(r => r.HumidityPercent.HasValue))
     {
         <div class="card mt-4"><div class="card-body"><h5>Tendencia de humedad ambiental</h5>
-            <svg viewBox="0 0 900 220" class="w-100" role="img" aria-label="Tendencia de humedad"><line x1="40" y1="10" x2="40" y2="190" stroke="#777" /><line x1="40" y1="190" x2="880" y2="190" stroke="#777" />
+            <svg viewBox="0 0 900 250" class="w-100" role="img" aria-label="Tendencia de humedad relativa">
+                @SvgLabel(18, 112, "Humedad relativa (%)", "start", "rotate(-90 18 112)")
+                @foreach (var tick in HumidityTicks()) { <line x1="88" y1="@tick.Y" x2="880" y2="@tick.Y" stroke="#e9ecef" />@SvgLabel(78, tick.Y + 4, $"{tick.Label} %", "end") }
+                <line x1="88" y1="20" x2="88" y2="190" stroke="#777" /><line x1="88" y1="190" x2="880" y2="190" stroke="#777" />
                 @foreach (var point in HumidityPoints()) { <circle cx="@point.X" cy="@point.Y" r="2" fill="#0dcaf0" /> }
+                @foreach (var tick in HumidityDateTicks()) { <line x1="@tick.X" y1="190" x2="@tick.X" y2="194" stroke="#777" />@SvgLabel(tick.X, 210, tick.Label, "middle") }
+                @SvgLabel(484, 238, "Fecha / hora", "middle")
             </svg><span class="badge bg-info text-dark">Humedad de habitación</span>
         </div></div>
+    }
+    *@
+    @if (TemperatureData.Any())
+    {
+        <div class="card mt-4"><div class="card-body"><h5>Temperaturas — semana seleccionada</h5><p class="small text-muted">Todas las lecturas horarias. Eje Y: temperatura (°C). Eje X: días de la semana.</p><canvas id="environmental-temperature-chart" class="w-100" style="height:360px" aria-label="Gráfico horario de temperaturas de la semana"></canvas></div></div>
+    }
+    @if (RoomTemperatureData.Any() || HumidityData.Any())
+    {
+        <div class="card mt-4"><div class="card-body"><h5>Habitación: temperatura y humedad — semana seleccionada</h5><p class="small text-muted">Lecturas horarias. Temperatura en naranja (eje izquierdo, °C) y humedad en azul (eje derecho, %).</p><canvas id="environmental-room-chart" class="w-100" style="height:360px" aria-label="Gráfico horario combinado de temperatura y humedad"></canvas></div></div>
     }
 </div>
 
@@ -68,6 +93,10 @@
     private string? error;
     private EnvironmentalImportSummary? summary;
     private List<EnvironmentalReading> recentReadings = new();
+    private List<EnvironmentalReading> chartReadings = new();
+    private DateTime? chartStartDate;
+    private DateTime? chartMinDate => chartReadings.Count == 0 ? null : chartReadings.Min(r => r.RecordedAt).Date;
+    private DateTime? chartMaxDate => chartReadings.Count == 0 ? null : chartReadings.Max(r => r.RecordedAt).Date;
     private List<string> batches = new();
     private string? selectedBatchId;
 
@@ -99,6 +128,10 @@
         recentReadings = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(DbContext.EnvironmentalReadings.OrderByDescending(r => r.RecordedAt).Take(100));
         batches = await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(DbContext.EnvironmentalReadings.Select(r => r.ImportBatchId).Distinct().OrderByDescending(b => b));
         selectedBatchId ??= batches.FirstOrDefault();
+        chartReadings = string.IsNullOrWhiteSpace(selectedBatchId)
+            ? new List<EnvironmentalReading>()
+            : await Microsoft.EntityFrameworkCore.EntityFrameworkQueryableExtensions.ToListAsync(DbContext.EnvironmentalReadings.Where(r => r.ImportBatchId == selectedBatchId).OrderBy(r => r.RecordedAt));
+        if (chartMinDate.HasValue && (!chartStartDate.HasValue || chartStartDate < chartMinDate || chartStartDate > chartMaxDate)) chartStartDate = chartMinDate;
     }
 
     private async Task DownloadReportAsync()
@@ -107,22 +140,128 @@
         var report = EnvironmentalMonthlyReportBuilder.Build(readings);
         var pdf = PdfReportService.Create(report, "QMSFlowDoc");
         var base64 = Convert.ToBase64String(pdf);
-        await JS.InvokeVoidAsync("open", $"data:application/pdf;base64,{base64}", "_blank");
+        await JS.InvokeVoidAsync("downloadBase64File", base64, $"Informe_ambiental_{report.PeriodStart:yyyy_MM}.pdf", "application/pdf");
     }
+
+    private async Task DownloadCsvAsync()
+    {
+        if (chartReadings.Count == 0) return;
+        var csv = new System.Text.StringBuilder("Fecha;Hora;Origen;Temperatura_C;Humedad_pct;Estado;Evento\r\n");
+        foreach (var reading in chartReadings.OrderBy(r => r.RecordedAt).ThenBy(r => r.Source))
+        {
+            var state = reading.SensorNotConnected ? "Sonda no conectada" : reading.IsOutOfRange ? "Fuera de rango" : "Correcto";
+            csv.Append(reading.RecordedAt.ToString("dd/MM/yyyy")).Append(';')
+                .Append(reading.RecordedAt.ToString("HH:mm:ss")).Append(';')
+                .Append(reading.Source).Append(';')
+                .Append(reading.SensorNotConnected ? "NC" : reading.TemperatureCelsius?.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(';')
+                .Append(reading.HumidityPercent?.ToString(System.Globalization.CultureInfo.InvariantCulture)).Append(';')
+                .Append(CsvValue(state)).Append(';').Append(CsvValue(reading.Event)).Append("\r\n");
+        }
+        var month = chartReadings.Min(r => r.RecordedAt).ToString("yyyy_MM");
+        await JS.InvokeVoidAsync("downloadFile", csv.ToString(), $"Datos_ambientales_{month}.csv", "text/csv");
+    }
+
+    private static string CsvValue(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return string.Empty;
+        const string quote = "\"";
+        return quote + value.Replace(quote, quote + quote) + quote;
+    }
+
+    private IEnumerable<EnvironmentalReading> WeekReadings => chartStartDate.HasValue ? chartReadings.Where(r => r.RecordedAt >= chartStartDate.Value.Date && r.RecordedAt < chartStartDate.Value.Date.AddDays(7)) : Enumerable.Empty<EnvironmentalReading>();
+    private List<EnvironmentalReading> TemperatureData => WeekReadings.Where(r => r.TemperatureCelsius.HasValue).OrderBy(r => r.RecordedAt).ToList();
+    private List<EnvironmentalReading> RoomTemperatureData => WeekReadings.Where(r => r.Source == EnvironmentalSource.ROOM && r.TemperatureCelsius.HasValue).OrderBy(r => r.RecordedAt).ToList();
+    private List<EnvironmentalReading> HumidityData => WeekReadings.Where(r => r.Source == EnvironmentalSource.ROOM && r.HumidityPercent.HasValue).OrderBy(r => r.RecordedAt).ToList();
 
     private IEnumerable<(double X, double Y, string Color)> TemperaturePoints(EnvironmentalSource source, string color)
     {
-        var points = recentReadings.Where(r => r.Source == source && r.TemperatureCelsius.HasValue).OrderBy(r => r.RecordedAt).ToList();
-        if (points.Count == 0) return Enumerable.Empty<(double, double, string)>();
-        var min = points.Min(r => r.TemperatureCelsius!.Value); var max = points.Max(r => r.TemperatureCelsius!.Value); var span = Math.Max(1m, max - min);
-        return points.Select((r, index) => (40d + 840d * index / Math.Max(1, points.Count - 1), 180d - (double)((r.TemperatureCelsius!.Value - min) / span) * 160d, color));
+        var all = TemperatureData;
+        var range = AxisRange(all.Select(r => r.TemperatureCelsius!.Value));
+        return all.Where(r => r.Source == source).Select(r => (TimeX(r.RecordedAt, all), ValueY(r.TemperatureCelsius!.Value, range), color));
     }
 
     private IEnumerable<(double X, double Y)> HumidityPoints()
     {
-        var points = recentReadings.Where(r => r.Source == EnvironmentalSource.ROOM && r.HumidityPercent.HasValue).OrderBy(r => r.RecordedAt).ToList();
-        if (points.Count == 0) return Enumerable.Empty<(double, double)>();
-        var min = points.Min(r => r.HumidityPercent!.Value); var max = points.Max(r => r.HumidityPercent!.Value); var span = Math.Max(1m, max - min);
-        return points.Select((r, index) => (40d + 840d * index / Math.Max(1, points.Count - 1), 180d - (double)((r.HumidityPercent!.Value - min) / span) * 160d));
+        var all = HumidityData;
+        var range = AxisRange(all.Select(r => r.HumidityPercent!.Value));
+        return all.Select(r => (TimeX(r.RecordedAt, all), ValueY(r.HumidityPercent!.Value, range)));
     }
+
+    private IEnumerable<(double Y, string Label)> TemperatureTicks() => ValueTicks(AxisRange(TemperatureData.Select(r => r.TemperatureCelsius!.Value)), "N1");
+    private IEnumerable<(double Y, string Label)> HumidityTicks() => ValueTicks(AxisRange(HumidityData.Select(r => r.HumidityPercent!.Value)), "N0");
+    private IEnumerable<(double X, string Label)> TemperatureDateTicks() => DateTicks(TemperatureData);
+    private IEnumerable<(double X, string Label)> HumidityDateTicks() => DateTicks(HumidityData);
+
+    private static (decimal Min, decimal Max) AxisRange(IEnumerable<decimal> values)
+    {
+        var list = values.ToList();
+        if (list.Count == 0) return (0m, 1m);
+        var min = list.Min(); var max = list.Max();
+        var padding = Math.Max(1m, (max - min) * 0.1m);
+        return (min - padding, max + padding);
+    }
+
+    private static double ValueY(decimal value, (decimal Min, decimal Max) range) => 190d - (double)((value - range.Min) / (range.Max - range.Min)) * 170d;
+    private static double TimeX(DateTime value, IReadOnlyList<EnvironmentalReading> data)
+    {
+        if (data.Count < 2) return 484d;
+        var span = (data[^1].RecordedAt - data[0].RecordedAt).TotalSeconds;
+        return span <= 0 ? 484d : 88d + 792d * (value - data[0].RecordedAt).TotalSeconds / span;
+    }
+
+    private static IEnumerable<(double Y, string Label)> ValueTicks((decimal Min, decimal Max) range, string format) => Enumerable.Range(0, 5).Select(index =>
+    {
+        var value = range.Min + (range.Max - range.Min) * index / 4m;
+        return (190d - index * 42.5d, value.ToString(format));
+    });
+
+    private static IEnumerable<(double X, string Label)> DateTicks(IReadOnlyList<EnvironmentalReading> data)
+    {
+        if (data.Count == 0) return Enumerable.Empty<(double, string)>();
+        var first = data[0].RecordedAt; var last = data[^1].RecordedAt;
+        return Enumerable.Range(0, 3).Select(index =>
+        {
+            var timestamp = first.AddTicks((last - first).Ticks * index / 2);
+            return (TimeX(timestamp, data), timestamp.ToString("dd/MM HH:mm"));
+        });
+    }
+
+    private static Microsoft.AspNetCore.Components.MarkupString SvgLabel(double x, double y, string label, string anchor = "start", string? transform = null)
+    {
+        var encoded = System.Net.WebUtility.HtmlEncode(label);
+        var transformAttribute = string.IsNullOrWhiteSpace(transform) ? string.Empty : $" transform=\"{transform}\"";
+        return new Microsoft.AspNetCore.Components.MarkupString($"<text x=\"{x:F1}\" y=\"{y:F1}\" text-anchor=\"{anchor}\" font-size=\"11\" fill=\"#495057\"{transformAttribute}>{encoded}</text>");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (TemperatureData.Any())
+            await JS.InvokeVoidAsync("qmsEnvironmentalCharts.draw", "environmental-temperature-chart", new
+            {
+                leftUnit = "°C", rightUnit = (string?)null,
+                series = new[]
+                {
+                    ChartSeries("Nevera", "#0d6efd", TemperatureData.Where(r => r.Source == EnvironmentalSource.REFRIGERATOR), "left", r => r.TemperatureCelsius),
+                    ChartSeries("Congelador", "#6f42c1", TemperatureData.Where(r => r.Source == EnvironmentalSource.FREEZER), "left", r => r.TemperatureCelsius),
+                    ChartSeries("Habitación", "#198754", TemperatureData.Where(r => r.Source == EnvironmentalSource.ROOM), "left", r => r.TemperatureCelsius)
+                }
+            });
+
+        if (RoomTemperatureData.Any() || HumidityData.Any())
+            await JS.InvokeVoidAsync("qmsEnvironmentalCharts.draw", "environmental-room-chart", new
+            {
+                leftUnit = "°C", rightUnit = "%",
+                series = new[]
+                {
+                    ChartSeries("Temperatura habitación", "#f97316", RoomTemperatureData, "left", r => r.TemperatureCelsius),
+                    ChartSeries("Humedad habitación", "#0ea5e9", HumidityData, "right", r => r.HumidityPercent)
+                }
+            });
+    }
+
+    private static object ChartSeries(string name, string color, IEnumerable<EnvironmentalReading> readings, string axis, Func<EnvironmentalReading, decimal?> value) => new
+    {
+        name, color, axis,
+        points = readings.Where(r => value(r).HasValue).OrderBy(r => r.RecordedAt).Select(r => new { date = r.RecordedAt.ToString("yyyy-MM-ddTHH:mm:ss"), value = value(r)!.Value })
+    };
 }
