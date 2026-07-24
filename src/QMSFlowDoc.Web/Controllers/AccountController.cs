@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using QMSFlowDoc.Domain.Identity;
 using QMSFlowDoc.Domain.Entities;
 using QMSFlowDoc.Infrastructure.Persistence;
@@ -27,6 +28,7 @@ namespace QMSFlowDoc.Web.Controllers
 
         [HttpPost("login")]
         [ValidateAntiForgeryToken]
+        [EnableRateLimiting("login")]
         public async Task<IActionResult> Login([FromForm] LoginViewModel model)
         {
             if (ModelState.IsValid)
@@ -53,7 +55,8 @@ namespace QMSFlowDoc.Web.Controllers
             return Redirect($"/login?error=Please provide username and password");
         }
 
-        [HttpGet("logout")]
+        [HttpPost("logout")]
+        [ValidateAntiForgeryToken]
         public async Task<IActionResult> Logout()
         {
             var username = User.Identity?.Name ?? "Anónimo";

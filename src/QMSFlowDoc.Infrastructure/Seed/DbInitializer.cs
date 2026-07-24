@@ -34,7 +34,7 @@ namespace QMSFlowDoc.Infrastructure.Seed
                         if (!await IsMigrationAppliedAsync(context, IsoImprovementMigrationId))
                         {
                             await context.Database.MigrateAsync(PreviousIsoImprovementMigrationId);
-                            await EnsureIsoImprovementSqliteSchemaAsync(context);
+                            await EnsureIsoImprovementSqliteSchemaAsync(context, includeAuditIntegrityVersion: false);
                             await MarkMigrationAppliedAsync(context, IsoImprovementMigrationId, EfProductVersion);
                         }
 
@@ -142,7 +142,7 @@ namespace QMSFlowDoc.Infrastructure.Seed
                     try
                     {
                         // Attach legacy database
-                        await context.Database.ExecuteSqlRawAsync($"ATTACH '{legacyDbPath}' AS legacy;");
+                        await context.Database.ExecuteSqlRawAsync("ATTACH DATABASE {0} AS legacy;", legacyDbPath);
 
                         // 3.1 Migrate Roles
                         try
@@ -402,8 +402,9 @@ namespace QMSFlowDoc.Infrastructure.Seed
             // 5. Seed default RolePermissions
             await SeedDefaultRolePermissionsAsync(context, roleManager);
 
-            // 6. Seed EQA Programs
-            await SeedEqaProgramsAsync(context);
+            // EQA programmes and rounds are quality records. They must be
+            // entered and approved by the laboratory; production databases
+            // must never be populated with demonstration programmes.
 
             // 7. Enforce Quarantine status on all existing reagent lots (ISO 15189 compliance audit requirement)
             var existingLots = await context.ReagentLots.Where(l => l.Status != LotStatus.QUARANTINE).ToListAsync();
@@ -743,10 +744,19 @@ namespace QMSFlowDoc.Infrastructure.Seed
             await context.SaveChangesAsync();
         }
 
-        private static async Task EnsureIsoImprovementSqliteSchemaAsync(QmsDbContext context)
+        private static async Task EnsureIsoImprovementSqliteSchemaAsync(
+            QmsDbContext context,
+            bool includeAuditIntegrityVersion = true)
         {
             if (!IsSqlite(context))
                 return;
+
+            // Kept here as well as in the EF migration because existing SQLite
+            // installations may have a partially recorded migration history.
+            if (includeAuditIntegrityVersion)
+            {
+                await EnsureColumnAsync(context, "AuditLogs", "IntegrityVersion", "INTEGER NOT NULL DEFAULT 1");
+            }
 
             await EnsureColumnAsync(context, "Risks", "Opportunity", "TEXT");
             await EnsureColumnAsync(context, "Risks", "ActionPlan", "TEXT");

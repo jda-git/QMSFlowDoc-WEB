@@ -854,6 +854,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(a => a.MachineName).HasMaxLength(100);
                 e.Property(a => a.Result).HasMaxLength(30);
                 e.Property(a => a.IntegrityHash).HasMaxLength(64);
+                e.Property(a => a.IntegrityVersion).HasDefaultValue(1);
                 e.HasIndex(a => a.Timestamp);
                 e.HasIndex(a => a.EntityType);
             });
@@ -1013,6 +1014,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 .Where(e => e.State == EntityState.Added)
                 .Select(e => e.Entity)
                 .OrderBy(l => l.Timestamp)
+                .ThenBy(l => l.Id)
                 .ToList();
 
             if (!newLogs.Any()) return;
@@ -1022,7 +1024,10 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
             foreach (var log in newLogs)
             {
-                var payload = AuditLog.BuildPayload(lastHash, log);
+                log.IntegrityVersion = Math.Max(2, log.IntegrityVersion);
+                var payload = log.IntegrityVersion >= 2
+                    ? AuditLog.BuildPayloadV2(lastHash, log)
+                    : AuditLog.BuildPayload(lastHash, log);
                 using (var sha256 = System.Security.Cryptography.SHA256.Create())
                 {
                     var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
@@ -1039,6 +1044,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 .Where(e => e.State == EntityState.Added)
                 .Select(e => e.Entity)
                 .OrderBy(l => l.Timestamp)
+                .ThenBy(l => l.Id)
                 .ToList();
 
             if (!newLogs.Any()) return;
@@ -1048,7 +1054,10 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
             foreach (var log in newLogs)
             {
-                var payload = AuditLog.BuildPayload(lastHash, log);
+                log.IntegrityVersion = Math.Max(2, log.IntegrityVersion);
+                var payload = log.IntegrityVersion >= 2
+                    ? AuditLog.BuildPayloadV2(lastHash, log)
+                    : AuditLog.BuildPayload(lastHash, log);
                 using (var sha256 = System.Security.Cryptography.SHA256.Create())
                 {
                     var bytes = System.Text.Encoding.UTF8.GetBytes(payload);

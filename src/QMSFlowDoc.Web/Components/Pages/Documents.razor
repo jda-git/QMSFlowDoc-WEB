@@ -184,7 +184,7 @@ else
                                         <td class="fw-semibold">@doc.Title</td>
                                         <td><span class="badge bg-light text-secondary border">@doc.TypeName</span></td>
                                         <td><span class="badge @GetStatusBadgeClass(doc.Status)">@GetStatusText(doc.Status)</span></td>
-                                        <td class="font-monospace">@(doc.CurrentVersionLabel.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? doc.CurrentVersionLabel : "v" + doc.CurrentVersionLabel)</td>
+                                        <td class="font-monospace">@((doc.CurrentVersionLabel ?? string.Empty).StartsWith("v", StringComparison.OrdinalIgnoreCase) ? doc.CurrentVersionLabel : "v" + doc.CurrentVersionLabel)</td>
                                         <td>
                                             <span class="badge @(doc.NextReviewDisplay == "VENCIDO" ? "bg-danger text-white" : "bg-light text-dark border")">
                                                 @doc.NextReviewDisplay

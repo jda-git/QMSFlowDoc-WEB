@@ -1,8 +1,11 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using System.Threading.RateLimiting;
 using QMSFlowDoc.Domain.Identity;
+using QMSFlowDoc.Infrastructure.Auditing;
 using QMSFlowDoc.Infrastructure.Persistence;
 using QMSFlowDoc.Web.Components;
 using QMSFlowDoc.Web.Services;
@@ -19,6 +22,7 @@ var connectionStringRaw = builder.Configuration.GetConnectionString("DefaultConn
 var connectionString = ResolvePortableConnectionString(connectionStringRaw);
 
 await PendingRestoreService.ApplyPendingRestoreAsync(builder.Configuration);
+await SqliteOperationalPolicy.VerifyAndConfigureAsync(connectionString);
 
 builder.Services.AddDbContext<QmsDbContext>(options =>
     options.UseSqlite(connectionString, b => b.MigrationsAssembly("QMSFlowDoc.Infrastructure")));
@@ -53,16 +57,20 @@ try
 {
     Directory.CreateDirectory(dataProtectionKeysPath);
     builder.Services.AddDataProtection()
+        .SetApplicationName("QMSFlowDoc")
         .PersistKeysToFileSystem(new DirectoryInfo(dataProtectionKeysPath));
 }
 catch (Exception ex)
 {
     Console.Error.WriteLine($"⚠ Warning: Unable to create or use DataProtection directory '{dataProtectionKeysPath}': {ex.Message}. Falling back to Ephemeral Data Protection.");
-    builder.Services.AddDataProtection();
+    throw new InvalidOperationException("No se puede iniciar QMSFlowDoc sin un almacén persistente de claves de protección de datos.", ex);
 }
 
 builder.Services.AddSingleton<QMSFlowDoc.DocumentStorage.IDocumentStorageService>(sp =>
     new QMSFlowDoc.DocumentStorage.CentralDocumentStorageService(rootPath, sp.GetRequiredService<ILogger<QMSFlowDoc.DocumentStorage.CentralDocumentStorageService>>()));
+
+builder.Services.AddSingleton<IRecoveryBackupCoordinator, RecoveryBackupCoordinator>();
+builder.Services.AddHostedService<RecoveryBackupWorker>();
 
 builder.Services.AddSingleton<QMSFlowDoc.Application.Services.Documents.IPdfWatermarkService, QMSFlowDoc.Infrastructure.Services.Documents.PdfWatermarkService>();
 builder.Services.AddScoped<QMSFlowDoc.Application.Services.Folders.IFolderService, QMSFlowDoc.Infrastructure.Services.Folders.FolderService>();
@@ -79,6 +87,24 @@ builder.Services.ConfigureApplicationCookie(options => {
     options.LoginPath = "/login";
     options.LogoutPath = "/account/logout";
     options.AccessDeniedPath = "/login";
+    options.Cookie.Name = "QMSFlowDoc.Auth";
+    options.Cookie.HttpOnly = true;
+    options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+    options.Cookie.SameSite = SameSiteMode.Strict;
+    options.ExpireTimeSpan = TimeSpan.FromHours(8);
+    options.SlidingExpiration = true;
+});
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("login", limiter =>
+    {
+        limiter.PermitLimit = 10;
+        limiter.Window = TimeSpan.FromMinutes(1);
+        limiter.QueueLimit = 0;
+        limiter.AutoReplenishment = true;
+    });
 });
 
 builder.Services.AddRazorComponents()
@@ -99,6 +125,9 @@ if (!app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseAuthentication();
+app.UseAuthorization();
+app.UseRateLimiter();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
@@ -113,6 +142,19 @@ using (var scope = app.Services.CreateScope())
     try
     {
         await QMSFlowDoc.Infrastructure.Seed.DbInitializer.SeedIdentityAsync(services);
+        var auditVerification = await AuditChainIntegrityService.VerifyAsync(services.GetRequiredService<QmsDbContext>());
+        if (!auditVerification.IsValid)
+        {
+            throw new InvalidOperationException($"La integridad de la auditoría no es válida: {auditVerification.Error}");
+        }
+
+        if (auditVerification.UnprotectedLegacyEntries > 0)
+        {
+            var logger = services.GetRequiredService<ILogger<Program>>();
+            logger.LogWarning(
+                "There are {LegacyAuditCount} audit entries created before integrity hashing was enabled.",
+                auditVerification.UnprotectedLegacyEntries);
+        }
     }
     catch (Exception ex)
     {
@@ -133,6 +175,9 @@ string ResolvePortableConnectionString(string connStr)
         if (!string.IsNullOrWhiteSpace(connBuilder.DataSource) && connBuilder.DataSource != ":memory:")
         {
             connBuilder.DataSource = ResolvePortablePath(connBuilder.DataSource);
+            connBuilder.DefaultTimeout = 10;
+            connBuilder.Pooling = true;
+            connBuilder.ForeignKeys = true;
             return connBuilder.ToString();
         }
     }
@@ -145,15 +190,6 @@ string ResolvePortableConnectionString(string connStr)
 
 string ResolvePortablePath(string configuredPath)
 {
-    if (string.IsNullOrWhiteSpace(configuredPath)) return configuredPath;
-    
-    if (configuredPath.Contains(@"C:\Users\SERVIDOR", StringComparison.OrdinalIgnoreCase))
-    {
-        var myDocuments = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-        var subPath = configuredPath.Replace(@"C:\Users\SERVIDOR\Documents\", "", StringComparison.OrdinalIgnoreCase)
-                                     .Replace(@"C:\Users\SERVIDOR\", "", StringComparison.OrdinalIgnoreCase);
-        return Path.Combine(myDocuments, "QMS", subPath);
-    }
-    return configuredPath;
+    return PortablePathResolver.Resolve(configuredPath);
 }
 #pragma warning restore CS8321

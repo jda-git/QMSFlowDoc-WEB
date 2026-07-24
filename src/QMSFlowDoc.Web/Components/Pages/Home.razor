@@ -177,31 +177,43 @@
                         <div class="mb-3">
                             <div class="d-flex justify-content-between mb-1 small fw-bold">
                                 <span>Control de Revisiones Documentales</span>
-                                <span>100%</span>
+                                <span>@GetMetricLabel(approvedDocuments, documentsUnderReviewControl)</span>
                             </div>
                             <div class="progress rounded-pill" style="height: 8px;">
-                                <div class="progress-bar bg-primary" role="progressbar" style="width: 100%"></div>
+                                <div class="progress-bar @(approvedDocuments == 0 ? "bg-secondary" : "bg-primary")" role="progressbar" style="width: @GetMetricPercentage(approvedDocuments, documentsUnderReviewControl)%"></div>
                             </div>
+                            @if (approvedDocuments == 0)
+                            {
+                                <div class="small text-muted mt-1">Pendiente de configurar documentos aprobados y su revisión.</div>
+                            }
                         </div>
 
                         <div class="mb-3">
                             <div class="d-flex justify-content-between mb-1 small fw-bold">
                                 <span>Trazabilidad de Reactivos y Lotes</span>
-                                <span>@(activeReagents > 0 ? "100%" : "0%")</span>
+                                <span>@GetMetricLabel(activeReagents, reagentsWithTraceableLot)</span>
                             </div>
                             <div class="progress rounded-pill" style="height: 8px;">
-                                <div class="progress-bar bg-success" role="progressbar" style="width: @(activeReagents > 0 ? "100%" : "0%")"></div>
+                                <div class="progress-bar @(activeReagents == 0 ? "bg-secondary" : "bg-success")" role="progressbar" style="width: @GetMetricPercentage(activeReagents, reagentsWithTraceableLot)%"></div>
                             </div>
+                            @if (activeReagents == 0)
+                            {
+                                <div class="small text-muted mt-1">Pendiente de registrar reactivos y sus lotes.</div>
+                            }
                         </div>
 
                         <div class="mb-4">
                             <div class="d-flex justify-content-between mb-1 small fw-bold">
                                 <span>Verificación de Equipos Metrológicos</span>
-                                <span>@(outOfServiceEquipment == 0 ? "100%" : "85%")</span>
+                                <span>@GetMetricLabel(totalEquipment, verifiedEquipment)</span>
                             </div>
                             <div class="progress rounded-pill" style="height: 8px;">
-                                <div class="progress-bar bg-info" role="progressbar" style="width: @(outOfServiceEquipment == 0 ? "100%" : "85%")"></div>
+                                <div class="progress-bar @(totalEquipment == 0 ? "bg-secondary" : "bg-info")" role="progressbar" style="width: @GetMetricPercentage(totalEquipment, verifiedEquipment)%"></div>
                             </div>
+                            @if (totalEquipment == 0)
+                            {
+                                <div class="small text-muted mt-1">Pendiente de registrar el inventario de equipos.</div>
+                            }
                         </div>
 
 
@@ -310,8 +322,13 @@
     private bool isLoading = true;
     private int totalDocuments = 0;
     private int activeReagents = 0;
+    private int reagentsWithTraceableLot = 0;
     private int expiredLots = 0;
     private int outOfServiceEquipment = 0;
+    private int totalEquipment = 0;
+    private int verifiedEquipment = 0;
+    private int approvedDocuments = 0;
+    private int documentsUnderReviewControl = 0;
     // Alertas y Pendientes
     private int openNCs = 0;
     private int overdueCAPAs = 0;
@@ -342,8 +359,23 @@
         try
         {
             totalDocuments = await Db.Documents.CountAsync();
+            approvedDocuments = await Db.Documents.CountAsync(d => d.Status == DocumentStatus.APPROVED);
+            documentsUnderReviewControl = await Db.Documents.CountAsync(d =>
+                d.Status == DocumentStatus.APPROVED &&
+                d.NextReviewDue.HasValue &&
+                d.NextReviewDue.Value >= DateTime.UtcNow);
             activeReagents = await Db.Reagents.CountAsync(r => r.Status == ReagentStatus.ACTIVO);
+            reagentsWithTraceableLot = await Db.Reagents.CountAsync(r =>
+                r.Status == ReagentStatus.ACTIVO &&
+                Db.ReagentLots.Any(l =>
+                    l.ReagentId == r.Id &&
+                    l.Status != LotStatus.CONSUMED &&
+                    l.AvailableQty > 0 &&
+                    !string.IsNullOrWhiteSpace(l.LotNumber) &&
+                    l.ExpiryDate >= DateTime.UtcNow));
             expiredLots = await Db.ReagentLots.CountAsync(l => l.ExpiryDate < DateTime.UtcNow && l.Status != LotStatus.CONSUMED && l.AvailableQty > 0);
+            totalEquipment = await Db.Equipments.CountAsync();
+            verifiedEquipment = await Db.Equipments.CountAsync(e => e.IsVerified && e.Status == EquipmentStatus.IN_SERVICE);
             outOfServiceEquipment = await Db.Equipments.CountAsync(e => e.Status == EquipmentStatus.OUT_OF_SERVICE);
 
             // Alertas y Pendientes
@@ -368,4 +400,10 @@
     {
         timer?.Dispose();
     }
+
+    private static int GetMetricPercentage(int total, int conforming) =>
+        total == 0 ? 0 : (int)Math.Round(conforming * 100d / total, MidpointRounding.AwayFromZero);
+
+    private static string GetMetricLabel(int total, int conforming) =>
+        total == 0 ? "Sin datos" : $"{GetMetricPercentage(total, conforming)}%";
 }

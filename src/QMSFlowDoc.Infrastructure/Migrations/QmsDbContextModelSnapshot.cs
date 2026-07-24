@@ -214,6 +214,11 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("IntegrityVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("MachineName")
                         .IsRequired()
                         .HasMaxLength(100)

@@ -19,7 +19,7 @@
 
 <PageTitle>Mejora Continua ISO - QMSFlowDoc</PageTitle>
 
-<div class="container-fluid py-4 px-4">
+<div class="container-fluid py-4 px-4 improvement-page">
     @if (!isAuthorized)
     {
         <div class="alert alert-danger rounded-4 shadow-sm p-4">
@@ -29,7 +29,7 @@
     }
     else
     {
-        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <div class="improvement-header d-flex justify-content-between align-items-center mb-4">
             <div>
                 <h2 class="fw-bold text-dark mb-1"><i class="bi bi-clipboard2-check text-primary me-2"></i>Mejora Continua ISO</h2>
                 <p class="text-muted mb-0">Riesgos, auditorías internas, revisión por dirección y evaluación de proveedores.</p>
@@ -46,7 +46,7 @@
         }
         @if (canApproveImprovement)
         {
-            <div class="row mb-3">
+            <div class="improvement-approval row mb-4">
                 <div class="col-lg-5">
                     <label class="form-label small fw-semibold text-secondary mb-1">Firma electronica para aprobaciones</label>
                     <input type="password" class="form-control" placeholder="Contraseña del usuario actual para aprobar/cerrar" @bind="approvalPassword" autocomplete="current-password" />
@@ -54,20 +54,20 @@
             </div>
         }
 
-        <ul class="nav nav-tabs custom-tabs mb-4 border-bottom-0">
-            <li class="nav-item"><button class="nav-link @(activeTab == "risks" ? "active" : "")" @onclick='() => activeTab = "risks"'>Riesgos</button></li>
-            <li class="nav-item"><button class="nav-link @(activeTab == "audits" ? "active" : "")" @onclick='() => activeTab = "audits"'>Auditorías internas</button></li>
-            <li class="nav-item"><button class="nav-link @(activeTab == "reviews" ? "active" : "")" @onclick='() => activeTab = "reviews"'>Revisión dirección</button></li>
-            <li class="nav-item"><button class="nav-link @(activeTab == "indicators" ? "active" : "")" @onclick='() => activeTab = "indicators"'>Indicadores</button></li>
-            <li class="nav-item"><button class="nav-link @(activeTab == "suppliers" ? "active" : "")" @onclick='() => activeTab = "suppliers"'>Proveedores</button></li>
-            <li class="nav-item"><button class="nav-link @(activeTab == "control" ? "active" : "")" @onclick='() => activeTab = "control"'>Control ISO</button></li>
+        <ul class="nav nav-tabs custom-tabs improvement-tabs mb-4 border-bottom-0">
+            <li class="nav-item"><button class="nav-link @(activeTab == "risks" ? "active" : "")" @onclick='() => activeTab = "risks"'><i class="bi bi-exclamation-diamond me-2"></i>Riesgos</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "audits" ? "active" : "")" @onclick='() => activeTab = "audits"'><i class="bi bi-clipboard-check me-2"></i>Auditorías internas</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "reviews" ? "active" : "")" @onclick='() => activeTab = "reviews"'><i class="bi bi-people me-2"></i>Revisión dirección</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "indicators" ? "active" : "")" @onclick='() => activeTab = "indicators"'><i class="bi bi-graph-up-arrow me-2"></i>Indicadores</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "suppliers" ? "active" : "")" @onclick='() => activeTab = "suppliers"'><i class="bi bi-truck me-2"></i>Proveedores</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "control" ? "active" : "")" @onclick='() => activeTab = "control"'><i class="bi bi-sliders me-2"></i>Control ISO</button></li>
         </ul>
 
         @if (activeTab == "risks")
         {
             <section class="row g-4">
                 <div class="col-lg-4">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Nuevo riesgo</h5>
                         <label class="form-label small fw-semibold text-secondary mb-1">Título del riesgo</label>
                         <input class="form-control mb-2" placeholder="Título" @bind="riskModel.Title" />
@@ -194,7 +194,7 @@
         {
             <section class="row g-4">
                 <div class="col-lg-4">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Planificar auditoría</h5>
                         <label class="form-label small fw-semibold text-secondary mb-1">Título de la auditoría</label>
                         <input class="form-control mb-2" placeholder="Título" @bind="auditModel.Title" />
@@ -365,7 +365,7 @@
         {
             <section class="row g-4">
                 <div class="col-lg-4">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Nueva revisión por dirección</h5>
                         <label class="form-label small fw-semibold text-secondary mb-1">Fecha de revisión</label>
                         <input type="date" class="form-control mb-2" @bind="reviewModel.ReviewDate" />
@@ -454,7 +454,7 @@
         {
             <section class="row g-4">
                 <div class="col-lg-4">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Nuevo indicador</h5>
                         <label class="form-label small fw-semibold text-secondary mb-1">Nombre del indicador</label>
                         <input class="form-control mb-2" placeholder="Nombre del indicador" @bind="indicatorModel.Name" />
@@ -550,7 +550,7 @@
         {
             <section class="row g-4">
                 <div class="col-lg-4">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Evaluar proveedor</h5>
                         <label class="form-label small fw-semibold text-secondary mb-1">Proveedor</label>
                         <select class="form-select mb-2" @bind="supplierEvalModel.SupplierId">
@@ -666,7 +666,7 @@
         {
             <section class="row g-4">
                 <div class="col-lg-5">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Matriz de riesgos configurable</h5>
                         <p class="small text-muted">El score se calcula como probabilidad x impacto. Estos umbrales definen la clasificación y pueden adaptarse al criterio del laboratorio.</p>
                         <div class="row g-2 mb-2">

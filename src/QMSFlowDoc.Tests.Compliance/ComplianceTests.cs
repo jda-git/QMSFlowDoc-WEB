@@ -278,7 +278,9 @@ namespace QMSFlowDoc.Tests.Compliance
             Assert.NotEqual(log1.IntegrityHash, log2.IntegrityHash);
 
             // Reconstruct the expected payload for the chained log2
-            var expectedPayload = AuditLog.BuildPayload(log1.IntegrityHash, log2);
+            var expectedPayload = log2.IntegrityVersion >= 2
+                ? AuditLog.BuildPayloadV2(log1.IntegrityHash, log2)
+                : AuditLog.BuildPayload(log1.IntegrityHash, log2);
             
             using (var sha256 = System.Security.Cryptography.SHA256.Create())
             {
@@ -286,6 +288,36 @@ namespace QMSFlowDoc.Tests.Compliance
                 var expectedHash = Convert.ToHexString(sha256.ComputeHash(expectedBytes)).ToLowerInvariant();
                 Assert.Equal(expectedHash, log2.IntegrityHash);
             }
+        }
+
+        [Fact]
+        public async Task AuditLogs_Version2Chain_DetectsSnapshotTampering()
+        {
+            using var context = new QmsDbContext(_options);
+
+            var log = new AuditLog
+            {
+                Action = "UPDATE",
+                EntityType = "Equipment",
+                Details = "Updated equipment status",
+                UserName = "UserA",
+                Result = "OK",
+                BeforeSnapshot = "{\"Status\":\"IN_SERVICE\"}",
+                AfterSnapshot = "{\"Status\":\"OUT_OF_SERVICE\"}"
+            };
+            context.AuditLogs.Add(log);
+            await context.SaveChangesAsync();
+
+            var beforeTampering = await QMSFlowDoc.Infrastructure.Auditing.AuditChainIntegrityService.VerifyAsync(context);
+            Assert.True(beforeTampering.IsValid, beforeTampering.Error);
+            Assert.Equal(2, log.IntegrityVersion);
+
+            log.AfterSnapshot = "{\"Status\":\"IN_SERVICE\"}";
+            await context.SaveChangesAsync();
+
+            var afterTampering = await QMSFlowDoc.Infrastructure.Auditing.AuditChainIntegrityService.VerifyAsync(context);
+            Assert.False(afterTampering.IsValid);
+            Assert.Contains("no coincide", afterTampering.Error, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]

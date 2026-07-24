@@ -18,6 +18,7 @@
 @inject IConfiguration Configuration
 @inject IHostApplicationLifetime AppLifetime
 @inject IJSRuntime JS
+@inject IRecoveryBackupCoordinator RecoveryBackupCoordinator
 
 <PageTitle>Configuración del Sistema - QMSFlowDoc</PageTitle>
 
@@ -333,9 +334,9 @@
                     <h5 class="fw-bold mb-0 text-dark">Configuración y Estado de Copias de Seguridad</h5>
                     <span class="text-muted small">Configure las políticas de retención, las rutas de almacenamiento y ejecute respaldos periódicos de base de datos y documentos (ISO 15189 §8.8).</span>
                 </div>
-                <button class="btn btn-danger text-white px-4 py-2 fw-semibold shadow-sm" @onclick="OpenRestoreModal">
-                    <i class="bi bi-arrow-counterclockwise me-2"></i>Preparar restauración
-                </button>
+                <span class="badge bg-danger-subtle text-danger border border-danger-subtle px-3 py-2">
+                    <i class="bi bi-tools me-2"></i>Restauración: QMSFlowDoc.RecoveryTool.exe
+                </span>
             </div>
 
             @if (!string.IsNullOrEmpty(backupSuccessMessage))
@@ -433,6 +434,39 @@
                 <div class="col-md-6 ps-4">
                     <h6 class="fw-bold mb-3 text-secondary"><i class="bi bi-clock-history me-2"></i>Historial de Copias de Seguridad (Manifiesto)</h6>
                     
+                    <h6 class="fw-bold mb-3 text-secondary"><i class="bi bi-shield-check me-2"></i>Conjuntos de recuperación verificables</h6>
+                    <div class="alert alert-info small py-2">
+                        <i class="bi bi-info-circle-fill me-2"></i>Cada conjunto contiene SQLite y todos los documentos asociados. Para restaurar, detenga la web y use <code>QMSFlowDoc.RecoveryTool.exe</code>.
+                    </div>
+                    @if (recoverySets.Any())
+                    {
+                        <div class="table-responsive mb-4" style="max-height: 230px; overflow-y: auto;">
+                            <table class="table table-sm table-hover align-middle small mb-0 text-dark">
+                                <thead class="bg-light text-muted text-uppercase" style="font-size: 0.75rem;">
+                                    <tr><th>Fecha / Hora</th><th>Documentos</th><th>Base de datos</th><th>Estado</th></tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var set in recoverySets)
+                                    {
+                                        <tr title="@set.Path">
+                                            <td class="fw-medium">@set.CreatedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</td>
+                                            <td>@set.DocumentCount</td>
+                                            <td>@((set.DatabaseSizeBytes / 1024.0 / 1024.0).ToString("N2")) MB</td>
+                                            <td><span class="badge bg-success bg-opacity-10 text-success border border-success border-opacity-20">Verificado</span></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="text-center py-3 border rounded-3 bg-light bg-opacity-30 mb-4">
+                            <span class="text-muted small">Aún no hay conjuntos de recuperación creados.</span>
+                        </div>
+                    }
+
+                    <h6 class="fw-bold mb-3 text-secondary"><i class="bi bi-archive me-2"></i>Copias heredadas (solo compatibilidad)</h6>
                     @if (backupEntries == null || !backupEntries.Any())
                     {
                         <div class="text-center py-5 border rounded-3 bg-light bg-opacity-30">
@@ -1032,6 +1066,7 @@
     private string? backupSuccessMessage;
     private string? backupErrorMessage;
     private List<BackupManifestEntry> backupEntries = new();
+    private List<RecoverySetListItem> recoverySets = new();
     private bool isExecutingBackup = false;
 
     // Restore Database variables
@@ -1092,6 +1127,8 @@
             }
             catch { }
 
+            recoverySets = await LoadRecoverySetsAsync(serverSettings.BackupPath);
+
             users = await UserService.GetUsersAsync();
             roles = await UserService.GetRolesAsync();
             var dtos = await PermissionService.GetRolePermissionsAsync();
@@ -1116,6 +1153,51 @@
 
             docTypesList = await DbContext.DocumentTypes.ToListAsync();
         }
+    }
+
+    private static async Task<List<RecoverySetListItem>> LoadRecoverySetsAsync(string? backupPath)
+    {
+        if (string.IsNullOrWhiteSpace(backupPath))
+        {
+            return new();
+        }
+
+        var recoveryRoot = Path.Combine(backupPath, "RecoverySets");
+        if (!Directory.Exists(recoveryRoot))
+        {
+            return new();
+        }
+
+        var sets = new List<RecoverySetListItem>();
+        foreach (var directory in Directory.EnumerateDirectories(recoveryRoot))
+        {
+            var manifestPath = Path.Combine(directory, RecoverySetService.ManifestFileName);
+            if (!File.Exists(manifestPath))
+            {
+                continue;
+            }
+
+            try
+            {
+                var manifest = JsonSerializer.Deserialize<RecoverySetManifest>(await File.ReadAllTextAsync(manifestPath));
+                if (manifest is not null && string.Equals(manifest.Status, "OK", StringComparison.OrdinalIgnoreCase))
+                {
+                    sets.Add(new RecoverySetListItem
+                    {
+                        Path = directory,
+                        CreatedAtUtc = manifest.CreatedAtUtc,
+                        DatabaseSizeBytes = manifest.DatabaseSizeBytes,
+                        DocumentCount = manifest.Documents.Count
+                    });
+                }
+            }
+            catch (JsonException)
+            {
+                // An incomplete or invalid set is intentionally not presented as restorable.
+            }
+        }
+
+        return sets.OrderByDescending(set => set.CreatedAtUtc).Take(15).ToList();
     }
 
     private async Task SetTab(string tab)
@@ -1674,6 +1756,14 @@
             // Save settings first
             serverSettings.DocumentRepositoryPath = documentRepositoryPath;
             QMSFlowDoc.Shared.Models.ServerSettingsService.Save(serverSettings);
+
+            var result = await RecoveryBackupCoordinator.CreateAsync(serverSettings);
+            backupSuccessMessage = $"Conjunto de recuperaciÃ³n completo (base de datos y documentos) creado y verificado: {result.RecoverySetPath}";
+            await LoadData();
+            if (!string.IsNullOrWhiteSpace(result.RecoverySetPath))
+            {
+                return;
+            }
             
             var timestamp = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
 
@@ -1771,7 +1861,7 @@
         var rootPath = Configuration["DocumentStorage:RootPath"];
         return string.IsNullOrWhiteSpace(rootPath)
             ? null
-            : Path.GetFullPath(rootPath);
+            : Path.GetFullPath(PortablePathResolver.Resolve(rootPath));
     }
 
     private async Task<BackupManifestEntry> BackupSqliteDatabaseAsync(string connectionString, string dbBackupDir, string timestamp)
@@ -2049,6 +2139,14 @@
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         var outputJson = JsonSerializer.Serialize(entries, new JsonSerializerOptions { WriteIndented = true });
         await File.WriteAllTextAsync(manifestPath, outputJson);
+    }
+
+    private sealed class RecoverySetListItem
+    {
+        public string Path { get; init; } = string.Empty;
+        public DateTime CreatedAtUtc { get; init; }
+        public long DatabaseSizeBytes { get; init; }
+        public int DocumentCount { get; init; }
     }
 
     public class BackupManifestEntry

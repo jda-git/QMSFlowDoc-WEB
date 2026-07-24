@@ -16,6 +16,11 @@ public class AuditLog
     public string? BeforeSnapshot { get; set; } // JSON
     public string? AfterSnapshot { get; set; } // JSON
     public string? IntegrityHash { get; set; } // SHA256 of event
+    /// <summary>
+    /// Version 1 hashes the original audit payload. Version 2 also binds the
+    /// before/after snapshots to the audit event.
+    /// </summary>
+    public int IntegrityVersion { get; set; } = 2;
     public string? Result { get; set; } // OK/FAIL
     public string MachineName { get; set; } = Environment.MachineName;
 
@@ -31,5 +36,11 @@ public class AuditLog
     {
         var timestampStr = GetNormalizedTimestampString(log.Timestamp);
         return $"{lastHash}|{log.Id}|{timestampStr}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}";
+    }
+
+    public static string BuildPayloadV2(string lastHash, AuditLog log)
+    {
+        var timestampStr = GetNormalizedTimestampString(log.Timestamp);
+        return $"v2|{lastHash}|{log.Id}|{timestampStr}|{log.UserId}|{log.UserName}|{log.Action}|{log.EntityType}|{log.EntityId}|{log.Details}|{log.Reason}|{log.Result}|{log.MachineName}|{log.BeforeSnapshot}|{log.AfterSnapshot}";
     }
 }

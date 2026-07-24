@@ -1,0 +1,80 @@
+.improvement-page {
+    max-width: 1800px;
+}
+
+.improvement-header {
+    padding: 1.5rem;
+    border: 0;
+    border-radius: 1rem;
+    background: linear-gradient(135deg, #ffffff 0%, #f5f9ff 100%);
+    box-shadow: 0 .25rem 1rem rgba(16, 24, 40, .08);
+}
+
+.improvement-header h2 {
+    letter-spacing: -.02em;
+}
+
+.improvement-approval {
+    margin-left: 0;
+    margin-right: 0;
+    padding: 1rem 1.25rem;
+    border: 1px solid #dbeafe;
+    border-radius: 1rem;
+    background: #f8fbff;
+}
+
+.improvement-tabs {
+    gap: .25rem;
+    padding: .5rem;
+    border-radius: 1rem;
+    background: #fff;
+    box-shadow: 0 .2rem .8rem rgba(16, 24, 40, .06);
+}
+
+.improvement-tabs .nav-link {
+    border: 0;
+    border-radius: .65rem;
+    color: #475569;
+    font-weight: 600;
+}
+
+.improvement-tabs .nav-link.active {
+    color: #fff;
+    background: #0d6efd;
+    box-shadow: 0 .2rem .45rem rgba(13, 110, 253, .22);
+}
+
+.improvement-form {
+    height: 100%;
+    padding: 1.5rem;
+    border: 0;
+    border-radius: 1rem;
+    background: #fff;
+    box-shadow: 0 .25rem 1rem rgba(16, 24, 40, .08);
+}
+
+.improvement-form .form-control,
+.improvement-form .form-select {
+    border-color: #d8e0eb;
+}
+
+.improvement-form .form-control:focus,
+.improvement-form .form-select:focus {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 .2rem rgba(13, 110, 253, .12);
+}
+
+@media (max-width: 767.98px) {
+    .improvement-header {
+        display: block !important;
+    }
+
+    .improvement-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+    }
+
+    .improvement-tabs .nav-item {
+        white-space: nowrap;
+    }
+}
