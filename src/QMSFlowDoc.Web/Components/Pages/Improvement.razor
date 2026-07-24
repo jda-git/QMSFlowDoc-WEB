@@ -74,7 +74,7 @@
                     <textarea class="form-control mb-2" rows="2" placeholder="Medida de mitigación" @bind="impartialityModel.Mitigation"></textarea>
                     <button class="btn btn-primary" @onclick="SaveImpartiality">Registrar declaración</button>
                 </div></div>
-                <div class="col-lg-7"><div class="improvement-card"><h5 class="fw-bold mb-3">Registro y revisión</h5><table class="table table-sm"><thead><tr><th>Fecha</th><th>Declarante</th><th>Ámbito</th><th>Estado</th></tr></thead><tbody>@foreach (var item in impartialityDeclarations) { <tr><td>@item.DeclaredAt.ToLocalTime().ToString("d")</td><td>@item.DeclarantName</td><td>@item.Scope</td><td>@item.Status</td></tr> }</tbody></table></div></div>
+                <div class="col-lg-7"><div class="improvement-card"><h5 class="fw-bold mb-3">Registro y revisión</h5><table class="table table-sm"><thead><tr><th>Fecha</th><th>Declarante</th><th>Ámbito</th><th>Estado</th><th></th></tr></thead><tbody>@foreach (var item in impartialityDeclarations) { <tr><td>@item.DeclaredAt.ToLocalTime().ToString("d")</td><td>@item.DeclarantName</td><td>@item.Scope</td><td>@item.Status</td><td>@if (item.Status == ImpartialityStatus.DECLARED) { <button class="btn btn-sm btn-outline-success" @onclick="() => ReviewImpartiality(item)">Revisar</button> }</td></tr> }</tbody></table></div></div>
             </section>
         }
 
@@ -893,6 +893,23 @@
         AddAuditLog("CREATE", "ImpartialityDeclaration", impartialityModel.Id, $"Declaración de imparcialidad registrada: {impartialityModel.Scope}");
         await SaveAndReload("Declaración de imparcialidad registrada.");
         impartialityModel = new ImpartialityDeclaration();
+    }
+
+    private async Task ReviewImpartiality(ImpartialityDeclaration declaration)
+    {
+        if (!canApproveImprovement)
+        {
+            SetError("Solo Dirección, Calidad o Administración puede revisar declaraciones de imparcialidad.");
+            return;
+        }
+
+        declaration.ReviewerName = currentUserName;
+        declaration.ReviewedAt = DateTime.UtcNow;
+        declaration.NextReviewDate = DateTime.UtcNow.AddYears(1);
+        declaration.Status = ImpartialityStatus.MITIGATED;
+        declaration.Decision = "Revisada y mitigada; revisión periódica programada.";
+        AddAuditLog("REVIEW", "ImpartialityDeclaration", declaration.Id, $"Declaración revisada por {currentUserName}; próxima revisión {declaration.NextReviewDate:yyyy-MM-dd}");
+        await SaveAndReload("Declaración de imparcialidad revisada y seguimiento programado.");
     }
 
     private async Task SaveRisk()
