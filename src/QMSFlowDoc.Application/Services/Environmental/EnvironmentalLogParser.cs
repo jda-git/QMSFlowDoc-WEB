@@ -69,5 +69,11 @@ public static class EnvironmentalLogParser
         return readings;
     }
 
-    private static decimal? ParseDecimal(string? value) => decimal.TryParse(value, NumberStyles.Number, SpanishCulture, out var parsed) ? parsed : null;
+    private static decimal? ParseDecimal(string? value)
+    {
+        if (decimal.TryParse(value, NumberStyles.Number, SpanishCulture, out var parsed) ||
+            decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out parsed))
+            return parsed;
+        return null;
+    }
 }
