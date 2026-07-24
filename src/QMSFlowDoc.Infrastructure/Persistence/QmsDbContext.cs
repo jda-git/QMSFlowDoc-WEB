@@ -80,6 +80,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
         public DbSet<IQCResult> IQCResults => Set<IQCResult>();
         public DbSet<ContingencyPlan> ContingencyPlans => Set<ContingencyPlan>();
         public DbSet<ImpartialityDeclaration> ImpartialityDeclarations => Set<ImpartialityDeclaration>();
+        public DbSet<EnvironmentalReading> EnvironmentalReadings => Set<EnvironmentalReading>();
 
         // ── EQA ──
         public DbSet<EQAProgram> EQAPrograms => Set<EQAProgram>();
@@ -637,6 +638,19 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(d => d.Status).HasConversion<int>();
                 e.HasIndex(d => new { d.Status, d.NextReviewDate });
                 e.HasOne(d => d.EvidenceDocument).WithMany().HasForeignKey(d => d.EvidenceDocumentId).OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<EnvironmentalReading>(e =>
+            {
+                e.ToTable("EnvironmentalReadings");
+                e.HasKey(r => r.Id);
+                e.Property(r => r.Source).HasConversion<int>();
+                e.Property(r => r.TemperatureCelsius).HasPrecision(8, 2);
+                e.Property(r => r.HumidityPercent).HasPrecision(8, 2);
+                e.Property(r => r.ImportedByName).HasMaxLength(200);
+                e.Property(r => r.ImportBatchId).HasMaxLength(64);
+                e.HasIndex(r => new { r.RecordedAt, r.Source });
+                e.HasIndex(r => r.ImportBatchId);
             });
 
             modelBuilder.Entity<AuditPlan>(e =>

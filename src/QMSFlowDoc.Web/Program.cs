@@ -84,6 +84,8 @@ builder.Services.AddScoped<QMSFlowDoc.Application.Services.Identity.IPermissionS
 builder.Services.AddScoped<QMSFlowDoc.Application.Services.Quality.IQualityService, QMSFlowDoc.Infrastructure.Services.Quality.QualityService>();
 builder.Services.AddScoped<QMSFlowDoc.Application.Services.Equipment.IEquipmentService, QMSFlowDoc.Infrastructure.Services.Equipment.EquipmentService>();
 builder.Services.AddScoped<QMSFlowDoc.Application.Services.EQA.IEQAService, QMSFlowDoc.Infrastructure.Services.EQA.EQAService>();
+builder.Services.AddScoped<QMSFlowDoc.Infrastructure.Services.Environmental.EnvironmentalImportService>();
+builder.Services.AddScoped<QMSFlowDoc.Web.Services.EnvironmentalPdfReportService>();
 
 builder.Services.ConfigureApplicationCookie(options => {
     options.LoginPath = "/login";

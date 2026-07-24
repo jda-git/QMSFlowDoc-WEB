@@ -61,6 +61,12 @@
                 </button>
             </li>
             <li class="nav-item">
+                <button class="nav-link @(activeTab == "environmental" ? "active text-primary fw-semibold" : "text-secondary")"
+                        @onclick='() => SetTab("environmental")'>
+                    <i class="bi bi-thermometer-half me-2"></i>Límites ambientales
+                </button>
+            </li>
+            <li class="nav-item">
                 <button class="nav-link @(activeTab == "docTypes" ? "active text-primary fw-semibold" : "text-secondary")"
                         @onclick='() => SetTab("docTypes")'>
                     <i class="bi bi-file-earmark-medical-fill me-2"></i>Tipos de Documento
@@ -71,6 +77,20 @@
 
     <!-- Main Content Card -->
     <div class="card border-0 shadow-sm rounded-4 p-4 bg-white border">
+        @if (activeTab == "environmental" && isAdmin)
+        {
+            <div class="row g-3"><div class="col-12"><h5 class="fw-bold">Límites de monitorización ambiental</h5><p class="small text-muted">Valores aplicados a importaciones futuras.</p></div>
+                <div class="col-md-3"><label class="small">Nevera mín.</label><input type="number" step="0.1" class="form-control" @bind="environmentalSettings.RefrigeratorMin" /></div>
+                <div class="col-md-3"><label class="small">Nevera máx.</label><input type="number" step="0.1" class="form-control" @bind="environmentalSettings.RefrigeratorMax" /></div>
+                <div class="col-md-3"><label class="small">Congelador mín.</label><input type="number" step="0.1" class="form-control" @bind="environmentalSettings.FreezerMin" /></div>
+                <div class="col-md-3"><label class="small">Congelador máx.</label><input type="number" step="0.1" class="form-control" @bind="environmentalSettings.FreezerMax" /></div>
+                <div class="col-md-3"><label class="small">Habitación mín.</label><input type="number" step="0.1" class="form-control" @bind="environmentalSettings.RoomTemperatureMin" /></div>
+                <div class="col-md-3"><label class="small">Habitación máx.</label><input type="number" step="0.1" class="form-control" @bind="environmentalSettings.RoomTemperatureMax" /></div>
+                <div class="col-md-3"><label class="small">Humedad mín.</label><input type="number" step="0.1" class="form-control" @bind="environmentalSettings.RoomHumidityMin" /></div>
+                <div class="col-md-3"><label class="small">Humedad máx.</label><input type="number" step="0.1" class="form-control" @bind="environmentalSettings.RoomHumidityMax" /></div>
+                <div class="col-12"><button class="btn btn-primary" @onclick="SaveEnvironmentalSettingsAsync">Guardar límites</button></div>
+            </div>
+        }
         @if (activeTab == "general")
         {
             <!-- General Settings Tab -->
@@ -1154,6 +1174,7 @@
 
             docTypesList = await DbContext.DocumentTypes.ToListAsync();
         }
+
     }
 
     private static async Task<List<RecoverySetListItem>> LoadRecoverySetsAsync(string? backupPath)
@@ -1865,6 +1886,27 @@
             : Path.GetFullPath(PortablePathResolver.Resolve(rootPath));
     }
 
+    private EnvironmentalSettingsModel environmentalSettings = new();
+
+    private async Task SaveEnvironmentalSettingsAsync()
+    {
+        if (environmentalSettings.RefrigeratorMin > environmentalSettings.RefrigeratorMax || environmentalSettings.FreezerMin > environmentalSettings.FreezerMax || environmentalSettings.RoomTemperatureMin > environmentalSettings.RoomTemperatureMax || environmentalSettings.RoomHumidityMin > environmentalSettings.RoomHumidityMax)
+        {
+            labSettingsErrorMessage = "Cada límite mínimo debe ser menor o igual que su máximo.";
+            return;
+        }
+        await UpsertSystemSettingAsync("Environmental.Refrigerator.Min", environmentalSettings.RefrigeratorMin.ToString(System.Globalization.CultureInfo.InvariantCulture), "Límite mínimo nevera");
+        await UpsertSystemSettingAsync("Environmental.Refrigerator.Max", environmentalSettings.RefrigeratorMax.ToString(System.Globalization.CultureInfo.InvariantCulture), "Límite máximo nevera");
+        await UpsertSystemSettingAsync("Environmental.Freezer.Min", environmentalSettings.FreezerMin.ToString(System.Globalization.CultureInfo.InvariantCulture), "Límite mínimo congelador");
+        await UpsertSystemSettingAsync("Environmental.Freezer.Max", environmentalSettings.FreezerMax.ToString(System.Globalization.CultureInfo.InvariantCulture), "Límite máximo congelador");
+        await UpsertSystemSettingAsync("Environmental.RoomTemperature.Min", environmentalSettings.RoomTemperatureMin.ToString(System.Globalization.CultureInfo.InvariantCulture), "Límite mínimo temperatura ambiente");
+        await UpsertSystemSettingAsync("Environmental.RoomTemperature.Max", environmentalSettings.RoomTemperatureMax.ToString(System.Globalization.CultureInfo.InvariantCulture), "Límite máximo temperatura ambiente");
+        await UpsertSystemSettingAsync("Environmental.RoomHumidity.Min", environmentalSettings.RoomHumidityMin.ToString(System.Globalization.CultureInfo.InvariantCulture), "Límite mínimo humedad ambiente");
+        await UpsertSystemSettingAsync("Environmental.RoomHumidity.Max", environmentalSettings.RoomHumidityMax.ToString(System.Globalization.CultureInfo.InvariantCulture), "Límite máximo humedad ambiente");
+        await DbContext.SaveChangesAsync();
+        labSettingsSuccessMessage = "Límites ambientales guardados.";
+    }
+
     private async Task<BackupManifestEntry> BackupSqliteDatabaseAsync(string connectionString, string dbBackupDir, string timestamp)
     {
         if (string.IsNullOrWhiteSpace(connectionString))
@@ -2302,5 +2344,17 @@
         var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
         Logger.LogError(exception, "Configuration error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
         return $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.";
+    }
+
+    private sealed class EnvironmentalSettingsModel
+    {
+        public decimal RefrigeratorMin { get; set; } = 2m;
+        public decimal RefrigeratorMax { get; set; } = 8m;
+        public decimal FreezerMin { get; set; } = -25m;
+        public decimal FreezerMax { get; set; } = -15m;
+        public decimal RoomTemperatureMin { get; set; } = 18m;
+        public decimal RoomTemperatureMax { get; set; } = 25m;
+        public decimal RoomHumidityMin { get; set; } = 40m;
+        public decimal RoomHumidityMax { get; set; } = 60m;
     }
 }
