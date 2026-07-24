@@ -113,7 +113,13 @@ builder.Services.AddRazorComponents()
 builder.Services.AddControllersWithViews();
 
 builder.Services.AddCascadingAuthenticationState();
-builder.Services.AddAuthorization();
+builder.Services.AddAuthorization(options =>
+{
+    // Authentication is required unless an endpoint explicitly opts out.
+    options.FallbackPolicy = new Microsoft.AspNetCore.Authorization.AuthorizationPolicyBuilder()
+        .RequireAuthenticatedUser()
+        .Build();
+});
 
 var app = builder.Build();
 

@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
 using QMSFlowDoc.Domain.Identity;
@@ -27,6 +28,7 @@ namespace QMSFlowDoc.Web.Controllers
         }
 
         [HttpPost("login")]
+        [AllowAnonymous]
         [ValidateAntiForgeryToken]
         [EnableRateLimiting("login")]
         public async Task<IActionResult> Login([FromForm] LoginViewModel model)
@@ -56,6 +58,7 @@ namespace QMSFlowDoc.Web.Controllers
         }
 
         [HttpPost("logout")]
+        [Authorize]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Logout()
         {
