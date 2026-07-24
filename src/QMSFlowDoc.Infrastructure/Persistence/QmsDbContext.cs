@@ -79,6 +79,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
         public DbSet<QualityIndicator> QualityIndicators => Set<QualityIndicator>();
         public DbSet<IQCResult> IQCResults => Set<IQCResult>();
         public DbSet<ContingencyPlan> ContingencyPlans => Set<ContingencyPlan>();
+        public DbSet<ImpartialityDeclaration> ImpartialityDeclarations => Set<ImpartialityDeclaration>();
 
         // ── EQA ──
         public DbSet<EQAProgram> EQAPrograms => Set<EQAProgram>();
@@ -625,6 +626,17 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Ignore(r => r.ResidualRiskScore);
                 e.HasOne(r => r.Owner).WithMany().HasForeignKey(r => r.OwnerUserId).OnDelete(DeleteBehavior.SetNull);
                 e.HasOne(r => r.EvidenceDocument).WithMany().HasForeignKey(r => r.EvidenceDocumentId).OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<ImpartialityDeclaration>(e =>
+            {
+                e.ToTable("ImpartialityDeclarations");
+                e.HasKey(d => d.Id);
+                e.Property(d => d.DeclarantName).HasMaxLength(200).IsRequired();
+                e.Property(d => d.Scope).HasMaxLength(300).IsRequired();
+                e.Property(d => d.Status).HasConversion<int>();
+                e.HasIndex(d => new { d.Status, d.NextReviewDate });
+                e.HasOne(d => d.EvidenceDocument).WithMany().HasForeignKey(d => d.EvidenceDocumentId).OnDelete(DeleteBehavior.SetNull);
             });
 
             modelBuilder.Entity<AuditPlan>(e =>

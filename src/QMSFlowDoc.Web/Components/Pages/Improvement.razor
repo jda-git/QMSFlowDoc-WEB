@@ -61,7 +61,22 @@
             <li class="nav-item"><button class="nav-link @(activeTab == "indicators" ? "active" : "")" @onclick='() => activeTab = "indicators"'><i class="bi bi-graph-up-arrow me-2"></i>Indicadores</button></li>
             <li class="nav-item"><button class="nav-link @(activeTab == "suppliers" ? "active" : "")" @onclick='() => activeTab = "suppliers"'><i class="bi bi-truck me-2"></i>Proveedores</button></li>
             <li class="nav-item"><button class="nav-link @(activeTab == "control" ? "active" : "")" @onclick='() => activeTab = "control"'><i class="bi bi-sliders me-2"></i>Control ISO</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "impartiality" ? "active" : "")" @onclick='() => activeTab = "impartiality"'><i class="bi bi-shield-check me-2"></i>Imparcialidad</button></li>
         </ul>
+
+        @if (activeTab == "impartiality")
+        {
+            <section class="row g-4">
+                <div class="col-lg-5"><div class="improvement-form"><h5 class="fw-bold mb-3">Declaración de imparcialidad</h5>
+                    <input class="form-control mb-2" placeholder="Persona que declara" @bind="impartialityModel.DeclarantName" />
+                    <input class="form-control mb-2" placeholder="Ámbito o actividad afectada" @bind="impartialityModel.Scope" />
+                    <textarea class="form-control mb-2" rows="3" placeholder="Conflicto o riesgo identificado" @bind="impartialityModel.Description"></textarea>
+                    <textarea class="form-control mb-2" rows="2" placeholder="Medida de mitigación" @bind="impartialityModel.Mitigation"></textarea>
+                    <button class="btn btn-primary" @onclick="SaveImpartiality">Registrar declaración</button>
+                </div></div>
+                <div class="col-lg-7"><div class="improvement-card"><h5 class="fw-bold mb-3">Registro y revisión</h5><table class="table table-sm"><thead><tr><th>Fecha</th><th>Declarante</th><th>Ámbito</th><th>Estado</th></tr></thead><tbody>@foreach (var item in impartialityDeclarations) { <tr><td>@item.DeclaredAt.ToLocalTime().ToString("d")</td><td>@item.DeclarantName</td><td>@item.Scope</td><td>@item.Status</td></tr> }</tbody></table></div></div>
+            </section>
+        }
 
         @if (activeTab == "risks")
         {
@@ -758,6 +773,7 @@
     private string currentUserName = "Sistema";
 
     private List<Risk> risks = new();
+    private List<ImpartialityDeclaration> impartialityDeclarations = new();
     private List<AuditPlan> audits = new();
     private List<AuditFinding> auditFindings = new();
     private List<ManagementReview> reviews = new();
@@ -790,6 +806,7 @@
     private int overdueAuditFindingCount;
 
     private Risk riskModel = NewRisk();
+    private ImpartialityDeclaration impartialityModel = new();
     private AuditPlan auditModel = NewAudit();
     private AuditFinding findingModel = NewFinding();
     private ManagementReview reviewModel = NewReview();
@@ -824,6 +841,7 @@
             .OrderByDescending(r => (int)r.Likelihood * (int)r.Impact)
             .ThenBy(r => r.Title)
             .ToListAsync();
+        impartialityDeclarations = await DbContext.ImpartialityDeclarations.OrderByDescending(d => d.DeclaredAt).ToListAsync();
         audits = await DbContext.AuditPlans.OrderByDescending(a => a.ScheduledDate).ToListAsync();
         auditFindings = await DbContext.AuditFindings.OrderBy(f => f.AuditPlanId).ThenBy(f => f.Type).ToListAsync();
         reviews = await DbContext.ManagementReviews.OrderByDescending(r => r.ReviewDate).ToListAsync();
@@ -859,6 +877,22 @@
         openReviewActionCount = reviews.Count(ReviewHasOpenAction);
         overdueReviewActionCount = reviews.Count(IsReviewActionOverdue);
         overdueAuditFindingCount = auditFindings.Count(IsAuditFindingOverdue);
+    }
+
+    private async Task SaveImpartiality()
+    {
+        if (string.IsNullOrWhiteSpace(impartialityModel.DeclarantName) || string.IsNullOrWhiteSpace(impartialityModel.Scope) || string.IsNullOrWhiteSpace(impartialityModel.Description))
+        {
+            SetError("Indique declarante, ámbito y descripción del riesgo de imparcialidad.");
+            return;
+        }
+
+        impartialityModel.Id = Guid.NewGuid();
+        impartialityModel.DeclaredAt = DateTime.UtcNow;
+        DbContext.ImpartialityDeclarations.Add(impartialityModel);
+        AddAuditLog("CREATE", "ImpartialityDeclaration", impartialityModel.Id, $"Declaración de imparcialidad registrada: {impartialityModel.Scope}");
+        await SaveAndReload("Declaración de imparcialidad registrada.");
+        impartialityModel = new ImpartialityDeclaration();
     }
 
     private async Task SaveRisk()

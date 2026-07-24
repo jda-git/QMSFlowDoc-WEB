@@ -46,6 +46,32 @@ public enum FindingType
     OPPORTUNITY_FOR_IMPROVEMENT
 }
 
+public enum ImpartialityStatus
+{
+    DECLARED,
+    MITIGATED,
+    ACCEPTED,
+    CLOSED
+}
+
+/// <summary>ISO 15189:2022 §4.1 declaration and management of impartiality risks.</summary>
+public class ImpartialityDeclaration
+{
+    public Guid Id { get; set; }
+    public DateTime DeclaredAt { get; set; } = DateTime.UtcNow;
+    public string DeclarantName { get; set; } = string.Empty;
+    public string Scope { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string? Mitigation { get; set; }
+    public string? ReviewerName { get; set; }
+    public DateTime? ReviewedAt { get; set; }
+    public DateTime? NextReviewDate { get; set; }
+    public ImpartialityStatus Status { get; set; } = ImpartialityStatus.DECLARED;
+    public string? Decision { get; set; }
+    public Guid? EvidenceDocumentId { get; set; }
+    public Document? EvidenceDocument { get; set; }
+}
+
 public class Risk
 {
     public Guid Id { get; set; }

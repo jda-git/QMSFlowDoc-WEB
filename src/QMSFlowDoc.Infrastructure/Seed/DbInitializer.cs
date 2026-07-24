@@ -841,6 +841,23 @@ namespace QMSFlowDoc.Infrastructure.Seed
             await EnsureColumnAsync(context, "QualityIndicators", "ApprovedAt", "TEXT");
             await EnsureColumnAsync(context, "QualityIndicators", "ApprovalNotes", "TEXT");
             await context.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS IX_QualityIndicators_Name_Period ON QualityIndicators (Name, Period);");
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS ImpartialityDeclarations (
+                    Id TEXT NOT NULL CONSTRAINT PK_ImpartialityDeclarations PRIMARY KEY,
+                    DeclaredAt TEXT NOT NULL,
+                    DeclarantName TEXT NOT NULL,
+                    Scope TEXT NOT NULL,
+                    Description TEXT NOT NULL,
+                    Mitigation TEXT NULL,
+                    ReviewerName TEXT NULL,
+                    ReviewedAt TEXT NULL,
+                    NextReviewDate TEXT NULL,
+                    Status INTEGER NOT NULL,
+                    Decision TEXT NULL,
+                    EvidenceDocumentId TEXT NULL
+                );
+                CREATE INDEX IF NOT EXISTS IX_ImpartialityDeclarations_Status_NextReviewDate ON ImpartialityDeclarations (Status, NextReviewDate);
+                """);
             await context.Database.ExecuteSqlRawAsync("UPDATE AuditPlans SET ProgramYear = CAST(strftime('%Y', ScheduledDate) AS INTEGER) WHERE ProgramYear = 0 AND ScheduledDate IS NOT NULL;");
         }
 
