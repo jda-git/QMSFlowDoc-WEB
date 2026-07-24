@@ -48,8 +48,9 @@
   </PropertyGroup>
 
   <PropertyGroup>
-    <PublishReadyToRun Condition="'$(Configuration)' == 'Debug'">False</PublishReadyToRun>
-    <PublishReadyToRun Condition="'$(Configuration)' != 'Debug'">True</PublishReadyToRun>
+    <!-- ReadyToRun requires a runtime-specific restore. Keep ordinary solution builds reproducible;
+         a release publishing profile can opt in after restoring for its target runtime. -->
+    <PublishReadyToRun>False</PublishReadyToRun>
     <PublishTrimmed Condition="'$(Configuration)' == 'Debug'">False</PublishTrimmed>
     <PublishTrimmed Condition="'$(Configuration)' != 'Debug'">True</PublishTrimmed>
   </PropertyGroup>
