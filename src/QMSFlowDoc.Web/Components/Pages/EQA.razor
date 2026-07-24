@@ -1674,7 +1674,7 @@
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al eliminar la inscripción: {ex.Message}");
+                await ShowSafeErrorAsync(ex, "deleting enrollment");
             }
         }
     }
@@ -1776,11 +1776,11 @@
             }
             catch (InvalidOperationException ex)
             {
-                roundErrorMessage = ex.Message;
+                roundErrorMessage = SafeError(ex, "saving round");
             }
             catch (Exception ex)
             {
-                roundErrorMessage = $"Error al guardar cambios de la ronda: {ex.Message}";
+                roundErrorMessage = SafeError(ex, "updating round");
             }
         }
     }
@@ -1875,11 +1875,11 @@
         }
         catch (InvalidOperationException ex)
         {
-            deviationErrorMessage = ex.Message;
+            deviationErrorMessage = SafeError(ex, "saving deviation");
         }
         catch (Exception ex)
         {
-            deviationErrorMessage = $"Error al guardar la desviación: {ex.Message}";
+            deviationErrorMessage = SafeError(ex, "updating deviation");
         }
     }
 
@@ -1997,6 +1997,13 @@
         var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
         Logger.LogError(exception, "EQA error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
         await JS.InvokeVoidAsync("alert", $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.");
+    }
+
+    private string SafeError(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "EQA error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        return $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.";
     }
 
     public class AlertItem
