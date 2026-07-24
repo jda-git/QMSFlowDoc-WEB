@@ -6,7 +6,7 @@ namespace QMSFlowDoc.Shared.Models;
 /// </summary>
 public sealed class RecoverySetManifest
 {
-    public const int CurrentFormatVersion = 1;
+    public const int CurrentFormatVersion = 2;
 
     public int FormatVersion { get; set; } = CurrentFormatVersion;
     public string RecoverySetId { get; set; } = Guid.NewGuid().ToString("N");
@@ -18,6 +18,8 @@ public sealed class RecoverySetManifest
     public string DocumentDirectoryName { get; set; } = "documents";
     public List<RecoverySetFileEntry> Documents { get; set; } = new();
     public string DocumentManifestSha256 { get; set; } = string.Empty;
+    public string IntegrityAlgorithm { get; set; } = "SHA-256";
+    public string? IntegrityHmac { get; set; }
     public string Status { get; set; } = "IN_PROGRESS";
 }
 

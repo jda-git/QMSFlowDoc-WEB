@@ -22,6 +22,7 @@ public static class AuditChainIntegrityService
 {
     public static async Task<AuditChainVerificationResult> VerifyAsync(
         QmsDbContext context,
+        IAuditIntegrityKeyProvider? keyProvider = null,
         CancellationToken ct = default)
     {
         ArgumentNullException.ThrowIfNull(context);
@@ -55,8 +56,11 @@ public static class AuditChainIntegrityService
             var payload = log.IntegrityVersion >= 2
                 ? AuditLog.BuildPayloadV2(previousHash, log)
                 : AuditLog.BuildPayload(previousHash, log);
-            var expectedHash = ComputeSha256(payload);
-            if (!string.Equals(expectedHash, log.IntegrityHash, StringComparison.OrdinalIgnoreCase))
+            var isValid = log.IntegrityVersion >= 3
+                ? keyProvider is not null && keyProvider.VerificationKeys.Any(key => CryptographicOperations.FixedTimeEquals(
+                    Convert.FromHexString(log.IntegrityHash), ComputeHmac(payload, key)))
+                : string.Equals(ComputeSha256(payload), log.IntegrityHash, StringComparison.OrdinalIgnoreCase);
+            if (!isValid)
             {
                 return Invalid($"La cadena de auditoría no coincide en el registro {log.Id}.", verifiedEntries, unprotectedLegacyEntries);
             }
@@ -86,4 +90,7 @@ public static class AuditChainIntegrityService
         var bytes = SHA256.HashData(Encoding.UTF8.GetBytes(payload));
         return Convert.ToHexString(bytes).ToLowerInvariant();
     }
+
+    internal static byte[] ComputeHmac(string payload, byte[] key) =>
+        HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(payload));
 }

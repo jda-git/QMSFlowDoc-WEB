@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using QMSFlowDoc.Domain.Entities;
 using QMSFlowDoc.Domain.Identity;
+using QMSFlowDoc.Infrastructure.Auditing;
 
 namespace QMSFlowDoc.Infrastructure.Persistence
 {
@@ -10,8 +11,10 @@ namespace QMSFlowDoc.Infrastructure.Persistence
     {
         public static readonly System.Threading.SemaphoreSlim AuditWriteLock = new System.Threading.SemaphoreSlim(1, 1);
 
-        public QmsDbContext(DbContextOptions<QmsDbContext> options)
-            : base(options) { }
+        private readonly IAuditIntegrityKeyProvider? _auditIntegrityKeyProvider;
+
+        public QmsDbContext(DbContextOptions<QmsDbContext> options, IAuditIntegrityKeyProvider? auditIntegrityKeyProvider = null)
+            : base(options) => _auditIntegrityKeyProvider = auditIntegrityKeyProvider;
 
         // ── Documents ──
         public DbSet<Document> Documents => Set<Document>();
@@ -1024,14 +1027,19 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
             foreach (var log in newLogs)
             {
-                log.IntegrityVersion = Math.Max(2, log.IntegrityVersion);
+                log.IntegrityVersion = _auditIntegrityKeyProvider is null ? Math.Max(2, log.IntegrityVersion) : 3;
                 var payload = log.IntegrityVersion >= 2
                     ? AuditLog.BuildPayloadV2(lastHash, log)
                     : AuditLog.BuildPayload(lastHash, log);
-                using (var sha256 = System.Security.Cryptography.SHA256.Create())
+                if (_auditIntegrityKeyProvider is not null)
                 {
                     var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
-                    var hashBytes = sha256.ComputeHash(bytes);
+                    var hashBytes = System.Security.Cryptography.HMACSHA256.HashData(_auditIntegrityKeyProvider.PrimaryKey, bytes);
+                    log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                }
+                else
+                {
+                    var hashBytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));
                     log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
                 }
                 lastHash = log.IntegrityHash;
@@ -1054,14 +1062,19 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
             foreach (var log in newLogs)
             {
-                log.IntegrityVersion = Math.Max(2, log.IntegrityVersion);
+                log.IntegrityVersion = _auditIntegrityKeyProvider is null ? Math.Max(2, log.IntegrityVersion) : 3;
                 var payload = log.IntegrityVersion >= 2
                     ? AuditLog.BuildPayloadV2(lastHash, log)
                     : AuditLog.BuildPayload(lastHash, log);
-                using (var sha256 = System.Security.Cryptography.SHA256.Create())
+                if (_auditIntegrityKeyProvider is not null)
                 {
                     var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
-                    var hashBytes = sha256.ComputeHash(bytes);
+                    var hashBytes = System.Security.Cryptography.HMACSHA256.HashData(_auditIntegrityKeyProvider.PrimaryKey, bytes);
+                    log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                }
+                else
+                {
+                    var hashBytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));
                     log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
                 }
                 lastHash = log.IntegrityHash;

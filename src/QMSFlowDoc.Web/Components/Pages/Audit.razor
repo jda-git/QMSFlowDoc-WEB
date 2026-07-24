@@ -10,6 +10,7 @@
 @using System.Text
 @inject QmsDbContext DbContext
 @inject IPermissionService PermissionService
+@inject IAuditIntegrityKeyProvider AuditIntegrityKeyProvider
 @inject IJSRuntime JS
 
 <PageTitle>Registro de Auditoría — QMSFlowDoc</PageTitle>
@@ -240,7 +241,7 @@
             .OrderByDescending(l => l.Timestamp)
             .ToListAsync();
         
-        var integrity = await AuditChainIntegrityService.VerifyAsync(DbContext);
+        var integrity = await AuditChainIntegrityService.VerifyAsync(DbContext, AuditIntegrityKeyProvider);
         isChainValid = integrity.IsValid;
         ApplyFilters();
     }

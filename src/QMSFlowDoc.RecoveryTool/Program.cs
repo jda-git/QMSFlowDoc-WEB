@@ -10,6 +10,7 @@ try
 {
     var command = args[0].ToLowerInvariant();
     var options = ParseOptions(args.Skip(1));
+    var integrityKey = LoadIntegrityKey();
     if (!options.TryGetValue("set", out var recoverySetPath))
     {
         throw new ArgumentException("Debe indicar --set <ruta-del-conjunto-de-recuperacion>.");
@@ -17,7 +18,7 @@ try
 
     if (command == "verify")
     {
-        var verification = await RecoverySetService.VerifyAsync(recoverySetPath);
+        var verification = await RecoverySetService.VerifyAsync(recoverySetPath, integrityKey);
         if (!verification.IsValid)
         {
             Console.Error.WriteLine($"CONJUNTO NO VÁLIDO: {verification.Error}");
@@ -42,7 +43,7 @@ try
         }
 
         Console.WriteLine("Antes de continuar, detenga la aplicación web para evitar ficheros bloqueados.");
-        var restore = await RecoverySetService.RestoreAsync(recoverySetPath, databasePath, documentsPath, operatorName);
+        var restore = await RecoverySetService.RestoreAsync(recoverySetPath, databasePath, documentsPath, operatorName, integrityKey);
         if (!restore.Succeeded)
         {
             Console.Error.WriteLine($"RESTAURACIÓN FALLIDA: {restore.Error}");
@@ -86,4 +87,14 @@ static void ShowUsage()
     Console.WriteLine("QMSFlowDoc.RecoveryTool");
     Console.WriteLine("  verify --set <conjunto>");
     Console.WriteLine("  restore --set <conjunto> --database <qmsflowdoc.db> --documents <repositorio-documental> --operator <nombre> --confirm RESTORE");
+}
+
+static byte[]? LoadIntegrityKey()
+{
+    var keyPath = Environment.GetEnvironmentVariable("AuditIntegrity__KeyPath");
+    if (string.IsNullOrWhiteSpace(keyPath) || !File.Exists(keyPath)) return null;
+    var encoded = File.ReadLines(keyPath)
+        .Select(line => line.Trim())
+        .FirstOrDefault(line => !string.IsNullOrWhiteSpace(line) && !line.StartsWith('#'));
+    return string.IsNullOrWhiteSpace(encoded) ? null : Convert.FromBase64String(encoded);
 }

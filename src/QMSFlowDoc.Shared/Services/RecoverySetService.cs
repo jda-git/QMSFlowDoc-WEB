@@ -34,6 +34,7 @@ public static class RecoverySetService
         string sourceConnectionString,
         string documentRepositoryPath,
         string recoveryRootPath,
+        byte[]? integrityKey = null,
         CancellationToken ct = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(sourceConnectionString);
@@ -69,11 +70,17 @@ public static class RecoverySetService
                 DatabaseIntegrityPassed = true,
                 Documents = documents,
                 DocumentManifestSha256 = ComputeDocumentManifestHash(documents),
+                IntegrityAlgorithm = integrityKey is null ? "SHA-256" : "HMAC-SHA-256",
                 Status = "OK"
             };
 
+            if (integrityKey is not null)
+            {
+                manifest.IntegrityHmac = ComputeManifestHmac(manifest, integrityKey);
+            }
+
             await WriteManifestAsync(stagingPath, manifest, ct);
-            var verification = await VerifyAsync(stagingPath, ct);
+            var verification = await VerifyAsync(stagingPath, integrityKey, ct);
             if (!verification.IsValid)
             {
                 throw new InvalidOperationException($"El conjunto de recuperación creado no supera la verificación: {verification.Error}");
@@ -89,7 +96,7 @@ public static class RecoverySetService
         }
     }
 
-    public static async Task<RecoverySetVerificationResult> VerifyAsync(string recoverySetPath, CancellationToken ct = default)
+    public static async Task<RecoverySetVerificationResult> VerifyAsync(string recoverySetPath, byte[]? integrityKey = null, CancellationToken ct = default)
     {
         try
         {
@@ -97,6 +104,15 @@ public static class RecoverySetService
             if (!string.Equals(manifest.Status, "OK", StringComparison.OrdinalIgnoreCase))
             {
                 return Invalid("El conjunto de recuperación no está marcado como correcto.", manifest);
+            }
+
+            if (string.Equals(manifest.IntegrityAlgorithm, "HMAC-SHA-256", StringComparison.OrdinalIgnoreCase))
+            {
+                if (integrityKey is null || string.IsNullOrWhiteSpace(manifest.IntegrityHmac) ||
+                    !CryptographicOperations.FixedTimeEquals(Convert.FromHexString(manifest.IntegrityHmac), Convert.FromHexString(ComputeManifestHmac(manifest, integrityKey))))
+                {
+                    return Invalid("No se puede autenticar el manifiesto de recuperación con la clave HMAC configurada.", manifest);
+                }
             }
 
             var databasePath = SafePath(recoverySetPath, manifest.DatabaseFileName);
@@ -152,10 +168,11 @@ public static class RecoverySetService
         string targetDatabasePath,
         string targetDocumentRepositoryPath,
         string operatorName,
+        byte[]? integrityKey = null,
         CancellationToken ct = default)
     {
         var result = new RecoveryRestoreResult();
-        var verification = await VerifyAsync(recoverySetPath, ct);
+        var verification = await VerifyAsync(recoverySetPath, integrityKey, ct);
         if (!verification.IsValid || verification.Manifest == null)
         {
             result.Error = verification.Error ?? "El conjunto de recuperación no es válido.";
@@ -389,6 +406,15 @@ public static class RecoverySetService
             .OrderBy(entry => entry.RelativePath, StringComparer.Ordinal)
             .Select(entry => $"{entry.RelativePath}|{entry.SizeBytes}|{entry.Sha256}"));
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
+    }
+
+    private static string ComputeManifestHmac(RecoverySetManifest manifest, byte[] key)
+    {
+        var payload = string.Join('|', manifest.FormatVersion, manifest.RecoverySetId, manifest.CreatedAtUtc.ToUniversalTime().ToString("O"),
+            manifest.DatabaseFileName, manifest.DatabaseSha256, manifest.DatabaseSizeBytes, manifest.DatabaseIntegrityPassed,
+            manifest.DocumentDirectoryName, manifest.DocumentManifestSha256, manifest.Status,
+            string.Join('\n', manifest.Documents.OrderBy(d => d.RelativePath, StringComparer.Ordinal).Select(d => $"{d.RelativePath}|{d.SizeBytes}|{d.Sha256}")));
+        return Convert.ToHexString(HMACSHA256.HashData(key, Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
     }
 
     private static string SafePath(string rootPath, string relativePath)

@@ -26,6 +26,7 @@ await SqliteOperationalPolicy.VerifyAndConfigureAsync(connectionString);
 
 builder.Services.AddDbContext<QmsDbContext>(options =>
     options.UseSqlite(connectionString, b => b.MigrationsAssembly("QMSFlowDoc.Infrastructure")));
+builder.Services.AddSingleton<IAuditIntegrityKeyProvider, AuditIntegrityKeyProvider>();
 
 // Identity Configuration
 builder.Services.AddIdentity<ApplicationUser, ApplicationRole>(options => {
@@ -148,7 +149,9 @@ using (var scope = app.Services.CreateScope())
     try
     {
         await QMSFlowDoc.Infrastructure.Seed.DbInitializer.SeedIdentityAsync(services);
-        var auditVerification = await AuditChainIntegrityService.VerifyAsync(services.GetRequiredService<QmsDbContext>());
+        var auditVerification = await AuditChainIntegrityService.VerifyAsync(
+            services.GetRequiredService<QmsDbContext>(),
+            services.GetRequiredService<IAuditIntegrityKeyProvider>());
         if (!auditVerification.IsValid)
         {
             throw new InvalidOperationException($"La integridad de la auditoría no es válida: {auditVerification.Error}");

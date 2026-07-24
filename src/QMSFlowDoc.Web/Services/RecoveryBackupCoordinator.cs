@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using QMSFlowDoc.Shared.Models;
 using QMSFlowDoc.Shared.Services;
+using QMSFlowDoc.Infrastructure.Auditing;
 
 namespace QMSFlowDoc.Web.Services;
 
@@ -25,11 +26,13 @@ public sealed class RecoveryBackupCoordinator : IRecoveryBackupCoordinator
     private static readonly SemaphoreSlim BackupLock = new(1, 1);
     private readonly IConfiguration _configuration;
     private readonly ILogger<RecoveryBackupCoordinator> _logger;
+    private readonly IAuditIntegrityKeyProvider _keyProvider;
 
-    public RecoveryBackupCoordinator(IConfiguration configuration, ILogger<RecoveryBackupCoordinator> logger)
+    public RecoveryBackupCoordinator(IConfiguration configuration, ILogger<RecoveryBackupCoordinator> logger, IAuditIntegrityKeyProvider keyProvider)
     {
         _configuration = configuration;
         _logger = logger;
+        _keyProvider = keyProvider;
     }
 
     public async Task<RecoveryBackupRunResult> CreateAsync(ServerSettings settings, CancellationToken ct = default)
@@ -70,6 +73,7 @@ public sealed class RecoveryBackupCoordinator : IRecoveryBackupCoordinator
                 sourceConnectionString,
                 documentRepositoryPath,
                 recoveryRootPath,
+                _keyProvider.PrimaryKey,
                 ct);
 
             var result = new RecoveryBackupRunResult
