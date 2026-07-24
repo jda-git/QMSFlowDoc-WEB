@@ -76,6 +76,12 @@ public sealed class RecoveryBackupCoordinator : IRecoveryBackupCoordinator
                 _keyProvider.PrimaryKey,
                 ct);
 
+            if (_configuration.GetValue("BackupEncryption:Enabled", true))
+            {
+                RecoverySetEncryptionService.EncryptWithEfs(recoverySetPath);
+                _logger.LogInformation("Recovery set encrypted with Windows EFS at {RecoverySetPath}", recoverySetPath);
+            }
+
             var result = new RecoveryBackupRunResult
             {
                 RecoverySetPath = recoverySetPath,
