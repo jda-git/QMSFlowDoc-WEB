@@ -14,11 +14,18 @@ public static class PortablePathResolver
             return configuredPath;
         }
 
+        configuredPath = Environment.ExpandEnvironmentVariables(configuredPath);
+
         if (configuredPath.Contains(@"C:\Users\SERVIDOR", StringComparison.OrdinalIgnoreCase))
         {
             var myDocuments = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
             var subPath = configuredPath.Replace(@"C:\Users\SERVIDOR\Documents\", string.Empty, StringComparison.OrdinalIgnoreCase)
                 .Replace(@"C:\Users\SERVIDOR\", string.Empty, StringComparison.OrdinalIgnoreCase);
+            if (subPath.StartsWith("QMS" + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+                subPath.StartsWith("QMS/", StringComparison.OrdinalIgnoreCase))
+            {
+                subPath = subPath[4..];
+            }
             return Path.Combine(myDocuments, "QMS", subPath);
         }
 
