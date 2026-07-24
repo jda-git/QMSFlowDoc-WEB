@@ -8,6 +8,43 @@ namespace QMSFlowDoc.Tests.Compliance;
 public class RecoverySetServiceTests
 {
     [Fact]
+    public async Task RecoverySet_HmacRejectsManifestTamperingAndWrongKey()
+    {
+        var root = CreateTempDirectory();
+        try
+        {
+            var sourceDatabase = Path.Combine(root, "source", "qms.db");
+            var sourceDocuments = Path.Combine(root, "source-documents");
+            var integrityKey = Enumerable.Range(1, 32).Select(value => (byte)value).ToArray();
+            Directory.CreateDirectory(sourceDocuments);
+            await CreateDatabaseAsync(sourceDatabase, "approved-record");
+            await File.WriteAllTextAsync(Path.Combine(sourceDocuments, "procedure.pdf"), "controlled PDF content");
+
+            var recoverySet = await RecoverySetService.CreateAsync(
+                $"Data Source={sourceDatabase}",
+                sourceDocuments,
+                Path.Combine(root, "backups"),
+                integrityKey);
+
+            Assert.True((await RecoverySetService.VerifyAsync(recoverySet, integrityKey)).IsValid);
+            Assert.False((await RecoverySetService.VerifyAsync(recoverySet, new byte[32])).IsValid);
+
+            var manifestPath = Path.Combine(recoverySet, RecoverySetService.ManifestFileName);
+            var manifest = JsonSerializer.Deserialize<RecoverySetManifest>(await File.ReadAllTextAsync(manifestPath))!;
+            manifest.DatabaseSha256 = new string('0', 64);
+            await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest));
+
+            var tampered = await RecoverySetService.VerifyAsync(recoverySet, integrityKey);
+            Assert.False(tampered.IsValid);
+            Assert.Contains("HMAC", tampered.Error, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task RecoverySet_CreatesAndRestoresDatabaseAndDocumentsTogether()
     {
         var root = CreateTempDirectory();
