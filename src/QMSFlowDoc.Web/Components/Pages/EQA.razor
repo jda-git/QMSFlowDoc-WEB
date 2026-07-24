@@ -17,6 +17,7 @@
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 @inject QMSFlowDoc.Infrastructure.Persistence.QmsDbContext DbContext
 @inject QMSFlowDoc.Application.Services.Quality.IQualityService QualityService
+@inject ILogger<EQA> Logger
 
 
 <PageTitle>Evaluación Externa de la Calidad (EQA) — QMSFlowDoc</PageTitle>
@@ -1595,7 +1596,7 @@
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al guardar la prueba: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving EQA test");
         }
     }
 
@@ -1622,7 +1623,7 @@
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al eliminar la prueba: {ex.Message}");
+                await ShowSafeErrorAsync(ex, "deleting EQA test");
             }
         }
     }
@@ -1646,7 +1647,7 @@
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al eliminar el programa: {ex.Message}");
+                await ShowSafeErrorAsync(ex, "deleting EQA program");
             }
         }
     }
@@ -1700,7 +1701,7 @@
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al eliminar la ronda: {ex.Message}");
+                await ShowSafeErrorAsync(ex, "deleting EQA round");
             }
         }
     }
@@ -1990,6 +1991,13 @@
         EQARoundStatus.INCIDENCE => "bg-danger",
         _ => "bg-light text-dark"
     };
+
+    private async Task ShowSafeErrorAsync(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "EQA error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        await JS.InvokeVoidAsync("alert", $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.");
+    }
 
     public class AlertItem
     {

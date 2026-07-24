@@ -19,6 +19,7 @@
 @inject IHostApplicationLifetime AppLifetime
 @inject IJSRuntime JS
 @inject IRecoveryBackupCoordinator RecoveryBackupCoordinator
+@inject ILogger<Config> Logger
 
 <PageTitle>Configuración del Sistema - QMSFlowDoc</PageTitle>
 
@@ -1818,7 +1819,7 @@
         }
         catch (Exception ex)
         {
-            backupErrorMessage = $"Error al ejecutar backup: {ex.Message}";
+            backupErrorMessage = SafeError(ex, "running backup");
         }
         finally
         {
@@ -2248,7 +2249,7 @@
         }
         catch (Exception ex)
         {
-            docTypeModalError = $"Error al guardar: {ex.Message}";
+            docTypeModalError = SafeError(ex, "saving document type");
         }
     }
 
@@ -2291,8 +2292,15 @@
         }
         catch (Exception ex)
         {
-            docTypesErrorMessage = $"Error al eliminar: {ex.Message}";
+            docTypesErrorMessage = SafeError(ex, "deleting document type");
             showDeleteDocTypeConfirm = false;
         }
+    }
+
+    private string SafeError(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "Configuration error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        return $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.";
     }
 }
