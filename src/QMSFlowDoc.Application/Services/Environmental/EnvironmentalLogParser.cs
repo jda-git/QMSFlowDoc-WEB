@@ -71,8 +71,8 @@ public static class EnvironmentalLogParser
 
     private static decimal? ParseDecimal(string? value)
     {
-        if (decimal.TryParse(value, NumberStyles.Number, SpanishCulture, out var parsed) ||
-            decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out parsed))
+        if (decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ||
+            decimal.TryParse(value, NumberStyles.Number, SpanishCulture, out parsed))
             return parsed;
         return null;
     }
