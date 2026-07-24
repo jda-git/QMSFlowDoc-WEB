@@ -41,6 +41,27 @@
     <table class="table table-sm"><thead><tr><th>Fecha/hora</th><th>Origen</th><th>Temperatura</th><th>Humedad</th><th>Estado</th></tr></thead><tbody>
     @foreach (var reading in recentReadings) { <tr class="@(reading.IsOutOfRange ? "table-danger" : "")"><td>@reading.RecordedAt.ToString("dd/MM/yyyy HH:mm")</td><td>@reading.Source</td><td>@(reading.SensorNotConnected ? "NC" : reading.TemperatureCelsius?.ToString("N1"))</td><td>@reading.HumidityPercent?.ToString("N0")</td><td>@(reading.IsOutOfRange ? "Fuera de rango" : "Correcto")</td></tr> }
     </tbody></table>
+
+    @if (recentReadings.Any(r => r.TemperatureCelsius.HasValue))
+    {
+        <div class="card mt-4"><div class="card-body"><h5>Tendencia de temperatura (últimas 100 lecturas)</h5>
+            <svg viewBox="0 0 900 220" class="w-100" role="img" aria-label="Tendencia de temperaturas">
+                <line x1="40" y1="10" x2="40" y2="190" stroke="#777" /><line x1="40" y1="190" x2="880" y2="190" stroke="#777" />
+                @foreach (var point in TemperaturePoints(EnvironmentalSource.REFRIGERATOR, "#0d6efd")) { <circle cx="@point.X" cy="@point.Y" r="2" fill="@point.Color" /> }
+                @foreach (var point in TemperaturePoints(EnvironmentalSource.FREEZER, "#6f42c1")) { <circle cx="@point.X" cy="@point.Y" r="2" fill="@point.Color" /> }
+                @foreach (var point in TemperaturePoints(EnvironmentalSource.ROOM, "#198754")) { <circle cx="@point.X" cy="@point.Y" r="2" fill="@point.Color" /> }
+            </svg>
+            <span class="badge bg-primary me-2">Nevera</span><span class="badge bg-purple me-2">Congelador</span><span class="badge bg-success">Habitación</span>
+        </div></div>
+    }
+    @if (recentReadings.Any(r => r.HumidityPercent.HasValue))
+    {
+        <div class="card mt-4"><div class="card-body"><h5>Tendencia de humedad ambiental</h5>
+            <svg viewBox="0 0 900 220" class="w-100" role="img" aria-label="Tendencia de humedad"><line x1="40" y1="10" x2="40" y2="190" stroke="#777" /><line x1="40" y1="190" x2="880" y2="190" stroke="#777" />
+                @foreach (var point in HumidityPoints()) { <circle cx="@point.X" cy="@point.Y" r="2" fill="#0dcaf0" /> }
+            </svg><span class="badge bg-info text-dark">Humedad de habitación</span>
+        </div></div>
+    }
 </div>
 
 @code {
@@ -87,5 +108,21 @@
         var pdf = PdfReportService.Create(report, "QMSFlowDoc");
         var base64 = Convert.ToBase64String(pdf);
         await JS.InvokeVoidAsync("open", $"data:application/pdf;base64,{base64}", "_blank");
+    }
+
+    private IEnumerable<(double X, double Y, string Color)> TemperaturePoints(EnvironmentalSource source, string color)
+    {
+        var points = recentReadings.Where(r => r.Source == source && r.TemperatureCelsius.HasValue).OrderBy(r => r.RecordedAt).ToList();
+        if (points.Count == 0) return Enumerable.Empty<(double, double, string)>();
+        var min = points.Min(r => r.TemperatureCelsius!.Value); var max = points.Max(r => r.TemperatureCelsius!.Value); var span = Math.Max(1m, max - min);
+        return points.Select((r, index) => (40d + 840d * index / Math.Max(1, points.Count - 1), 180d - (double)((r.TemperatureCelsius!.Value - min) / span) * 160d, color));
+    }
+
+    private IEnumerable<(double X, double Y)> HumidityPoints()
+    {
+        var points = recentReadings.Where(r => r.Source == EnvironmentalSource.ROOM && r.HumidityPercent.HasValue).OrderBy(r => r.RecordedAt).ToList();
+        if (points.Count == 0) return Enumerable.Empty<(double, double)>();
+        var min = points.Min(r => r.HumidityPercent!.Value); var max = points.Max(r => r.HumidityPercent!.Value); var span = Math.Max(1m, max - min);
+        return points.Select((r, index) => (40d + 840d * index / Math.Max(1, points.Count - 1), 180d - (double)((r.HumidityPercent!.Value - min) / span) * 160d));
     }
 }
