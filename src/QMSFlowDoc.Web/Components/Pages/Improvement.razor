@@ -804,6 +804,8 @@
     private int openReviewActionCount;
     private int overdueReviewActionCount;
     private int overdueAuditFindingCount;
+    private int environmentalOutOfRangeCount;
+    private int environmentalSensorNcCount;
 
     private Risk riskModel = NewRisk();
     private ImpartialityDeclaration impartialityModel = new();
@@ -877,6 +879,8 @@
         openReviewActionCount = reviews.Count(ReviewHasOpenAction);
         overdueReviewActionCount = reviews.Count(IsReviewActionOverdue);
         overdueAuditFindingCount = auditFindings.Count(IsAuditFindingOverdue);
+        environmentalOutOfRangeCount = await DbContext.EnvironmentalReadings.CountAsync(r => r.IsOutOfRange);
+        environmentalSensorNcCount = await DbContext.EnvironmentalReadings.CountAsync(r => r.SensorNotConnected);
     }
 
     private async Task SaveImpartiality()
@@ -2067,6 +2071,7 @@
             $"- EQA con revisión/acción pendiente: {eqaAttentionCount}; desviaciones EQA abiertas: {openEqaDeviationCount}.",
             $"- Auditorías planificadas/en curso: {plannedOrInProgressAuditCount}; hallazgos NC sin vincular: {pendingAuditNcFindingCount}; hallazgos vencidos: {overdueAuditFindingCount}.",
             $"- Evaluaciones de proveedores no aprobadas: {failedSupplierEvaluationCount}; proveedores con atencion actual: {supplierAttentionCount}; reevaluaciones vencidas: {overdueSupplierReevaluationCount}.",
+            $"- Monitorización ambiental: lecturas fuera de rango {environmentalOutOfRangeCount}; sondas no conectadas {environmentalSensorNcCount}.",
             "- Revisión de acciones, recursos, cambios que afectan al sistema de gestión y oportunidades de mejora.");
     }
 
