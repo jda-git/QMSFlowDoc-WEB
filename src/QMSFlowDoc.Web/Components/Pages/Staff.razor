@@ -9,6 +9,7 @@
 @inject IJSRuntime JS
 @inject IPermissionService PermissionService
 @inject QMSFlowDoc.Application.Services.Documents.IDocumentService DocumentService
+@inject ILogger<Staff> Logger
 
 <PageTitle>Personal y Formación (ISO 15189) - QMSFlowDoc</PageTitle>
 
@@ -1624,7 +1625,7 @@ else
         }
         catch (Exception ex)
         {
-            evaluationErrorMessage = ex.Message;
+            evaluationErrorMessage = SafeError(ex, "saving competency evaluation");
             StateHasChanged();
         }
     }
@@ -1692,7 +1693,7 @@ else
         }
         catch (Exception ex)
         {
-            revocationErrorMessage = ex.Message;
+            revocationErrorMessage = SafeError(ex, "revoking authorization");
         }
     }
 
@@ -1738,7 +1739,7 @@ else
         }
         catch (Exception ex)
         {
-            authorizationErrorMessage = ex.Message;
+            authorizationErrorMessage = SafeError(ex, "granting authorization");
         }
     }
 
@@ -1985,5 +1986,12 @@ else
         public bool RequiresCompetency { get; set; }
         public int? ValidityMonths { get; set; }
         public Guid? RequiredCompetencyId { get; set; }
+    }
+
+    private string SafeError(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "Staff error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        return $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.";
     }
 }
