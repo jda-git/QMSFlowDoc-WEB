@@ -29,13 +29,17 @@ public sealed class EnvironmentalImportService(QmsDbContext dbContext)
         var timestamps = parsed.Select(r => r.RecordedAt).Distinct().ToList();
         var existing = await dbContext.EnvironmentalReadings
             .Where(r => timestamps.Contains(r.RecordedAt))
-            .Select(r => new { r.RecordedAt, r.Source })
+            .Select(r => new { r.RecordedAt, r.Source, r.Event, r.TemperatureCelsius, r.HumidityPercent, r.SensorNotConnected })
             .ToListAsync(ct);
-        var known = existing.Select(r => (r.RecordedAt, r.Source)).ToHashSet();
-        var accepted = parsed.Where(r => known.Add((r.RecordedAt, r.Source))).ToList();
+        var known = existing.Select(r => ReadingKey(r.RecordedAt, r.Source, r.Event, r.TemperatureCelsius, r.HumidityPercent, r.SensorNotConnected)).ToHashSet();
+        var accepted = parsed.Where(r => known.Add(ReadingKey(r.RecordedAt, r.Source, r.Event, r.TemperatureCelsius, r.HumidityPercent, r.SensorNotConnected))).ToList();
         foreach (var reading in accepted) reading.IsOutOfRange = EnvironmentalRangeEvaluator.IsOutOfRange(reading, ranges);
         dbContext.EnvironmentalReadings.AddRange(accepted);
         await dbContext.SaveChangesAsync(ct);
         return new EnvironmentalImportSummary(batchId, parsed.Min(r => r.RecordedAt), parsed.Max(r => r.RecordedAt), accepted.Count(r => r.Source != EnvironmentalSource.CENTRAL), accepted.Count(r => r.Source == EnvironmentalSource.CENTRAL), parsed.Count - accepted.Count, accepted.Count(r => r.IsOutOfRange), accepted.Count(r => r.SensorNotConnected));
     }
+
+    private static string ReadingKey(DateTime recordedAt, EnvironmentalSource source, string? @event, decimal? temperature, decimal? humidity, bool sensorNotConnected) =>
+        string.Join('|', recordedAt.Ticks, source, @event?.Trim() ?? string.Empty, temperature?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty,
+            humidity?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty, sensorNotConnected);
 }
