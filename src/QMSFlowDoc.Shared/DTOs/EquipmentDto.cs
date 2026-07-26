@@ -536,6 +536,7 @@ public class EquipmentDashboardDto
     public int ActiveIncidentsCount { get; set; }
     public int PendingAcceptanceCount { get; set; }
     public int PendingVerificationPostRepairCount { get; set; }
+    public int CytometersCount { get; set; }
     public double CytometersAvailability { get; set; } // Availability of critical conventional/spectral analyzers
     public int CytometersDowntimeDays { get; set; }
     public List<EquipmentAlert> ActiveAlerts { get; set; } = new();

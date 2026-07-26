@@ -22,6 +22,7 @@
 @inject QmsDbContext DbContext
 @inject IJSRuntime JS
 @inject IPermissionService PermissionService
+@inject ILogger<Quality> Logger
 
 
 <PageTitle>No Conformidades y Calidad — QMSFlowDoc</PageTitle>
@@ -1197,7 +1198,7 @@ else
         }
         catch (Exception ex)
         {
-            ncErrorMessage = ex.Message;
+            ncErrorMessage = SafeError(ex, "changing nonconformity status");
         }
     }
 
@@ -1359,7 +1360,7 @@ else
         }
         catch (Exception ex)
         {
-            ncErrorMessage = ex.Message;
+            ncErrorMessage = SafeError(ex, "changing complaint status");
         }
     }
 
@@ -1463,8 +1464,15 @@ else
         }
         catch (Exception ex)
         {
-            ncErrorMessage = ex.Message;
+            ncErrorMessage = SafeError(ex, "verifying corrective action");
             showVerificationModal = false;
         }
+    }
+
+    private string SafeError(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "Quality error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        return $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.";
     }
 }

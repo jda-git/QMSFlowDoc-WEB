@@ -34,7 +34,7 @@ namespace QMSFlowDoc.Infrastructure.Seed
                         if (!await IsMigrationAppliedAsync(context, IsoImprovementMigrationId))
                         {
                             await context.Database.MigrateAsync(PreviousIsoImprovementMigrationId);
-                            await EnsureIsoImprovementSqliteSchemaAsync(context);
+                            await EnsureIsoImprovementSqliteSchemaAsync(context, includeAuditIntegrityVersion: false);
                             await MarkMigrationAppliedAsync(context, IsoImprovementMigrationId, EfProductVersion);
                         }
 
@@ -142,7 +142,7 @@ namespace QMSFlowDoc.Infrastructure.Seed
                     try
                     {
                         // Attach legacy database
-                        await context.Database.ExecuteSqlRawAsync($"ATTACH '{legacyDbPath}' AS legacy;");
+                        await context.Database.ExecuteSqlRawAsync("ATTACH DATABASE {0} AS legacy;", legacyDbPath);
 
                         // 3.1 Migrate Roles
                         try
@@ -356,6 +356,12 @@ namespace QMSFlowDoc.Infrastructure.Seed
                 Console.WriteLine("✔ Seeded default Document Types.");
             }
 
+            await EnsureDocumentTypeAsync(
+                context,
+                "VAL",
+                "Informe de validación/verificación",
+                "Informe controlado de verificación o validación de métodos de examen.");
+
             // 4. Seed Default Admin User if no users exist in database (fallback)
             const string adminUser = "admin";
             const string adminEmail = "admin@qmsflowdoc.com";
@@ -402,8 +408,9 @@ namespace QMSFlowDoc.Infrastructure.Seed
             // 5. Seed default RolePermissions
             await SeedDefaultRolePermissionsAsync(context, roleManager);
 
-            // 6. Seed EQA Programs
-            await SeedEqaProgramsAsync(context);
+            // EQA programmes and rounds are quality records. They must be
+            // entered and approved by the laboratory; production databases
+            // must never be populated with demonstration programmes.
 
             // 7. Enforce Quarantine status on all existing reagent lots (ISO 15189 compliance audit requirement)
             var existingLots = await context.ReagentLots.Where(l => l.Status != LotStatus.QUARANTINE).ToListAsync();
@@ -420,9 +427,24 @@ namespace QMSFlowDoc.Infrastructure.Seed
             }
         }
 
+        private static async Task EnsureDocumentTypeAsync(QmsDbContext context, string typeCode, string name, string description)
+        {
+            var exists = await context.DocumentTypes.AnyAsync(t => t.TypeCode == typeCode);
+            if (exists) return;
+
+            context.DocumentTypes.Add(new QMSFlowDoc.Domain.Entities.DocumentType
+            {
+                Id = Guid.NewGuid(),
+                TypeCode = typeCode,
+                Name = name,
+                Description = description
+            });
+            await context.SaveChangesAsync();
+        }
+
         private static async Task SeedDefaultRolePermissionsAsync(QmsDbContext context, RoleManager<ApplicationRole> roleManager)
         {
-            var sections = new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment", "EQA", "Audit" };
+            var sections = new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment", "EQA", "Audit", "Methods" };
             
             var roles = await roleManager.Roles.ToListAsync();
             foreach (var role in roles)
@@ -528,6 +550,18 @@ namespace QMSFlowDoc.Infrastructure.Seed
                             }
                         }
  
+                        // Métodos: técnicos y auditores consultan; facultativos y calidad gestionan
+                        // borradores; la aprobación corresponde a calidad o administración.
+                        if (section == "Methods")
+                        {
+                            rp.CanRead = true;
+                            rp.CanPrint = true;
+                            rp.CanCreate = role.Name is "Administrador" or "Responsable calidad" or "Facultativo";
+                            rp.CanEdit = role.Name is "Administrador" or "Responsable calidad" or "Facultativo";
+                            rp.CanDelete = role.Name == "Administrador";
+                            rp.CanApprove = role.Name is "Administrador" or "Responsable calidad";
+                        }
+
                         context.RolePermissions.Add(rp);
                     }
                 }
@@ -743,10 +777,19 @@ namespace QMSFlowDoc.Infrastructure.Seed
             await context.SaveChangesAsync();
         }
 
-        private static async Task EnsureIsoImprovementSqliteSchemaAsync(QmsDbContext context)
+        private static async Task EnsureIsoImprovementSqliteSchemaAsync(
+            QmsDbContext context,
+            bool includeAuditIntegrityVersion = true)
         {
             if (!IsSqlite(context))
                 return;
+
+            // Kept here as well as in the EF migration because existing SQLite
+            // installations may have a partially recorded migration history.
+            if (includeAuditIntegrityVersion)
+            {
+                await EnsureColumnAsync(context, "AuditLogs", "IntegrityVersion", "INTEGER NOT NULL DEFAULT 1");
+            }
 
             await EnsureColumnAsync(context, "Risks", "Opportunity", "TEXT");
             await EnsureColumnAsync(context, "Risks", "ActionPlan", "TEXT");
@@ -831,6 +874,23 @@ namespace QMSFlowDoc.Infrastructure.Seed
             await EnsureColumnAsync(context, "QualityIndicators", "ApprovedAt", "TEXT");
             await EnsureColumnAsync(context, "QualityIndicators", "ApprovalNotes", "TEXT");
             await context.Database.ExecuteSqlRawAsync("CREATE INDEX IF NOT EXISTS IX_QualityIndicators_Name_Period ON QualityIndicators (Name, Period);");
+            await context.Database.ExecuteSqlRawAsync("""
+                CREATE TABLE IF NOT EXISTS ImpartialityDeclarations (
+                    Id TEXT NOT NULL CONSTRAINT PK_ImpartialityDeclarations PRIMARY KEY,
+                    DeclaredAt TEXT NOT NULL,
+                    DeclarantName TEXT NOT NULL,
+                    Scope TEXT NOT NULL,
+                    Description TEXT NOT NULL,
+                    Mitigation TEXT NULL,
+                    ReviewerName TEXT NULL,
+                    ReviewedAt TEXT NULL,
+                    NextReviewDate TEXT NULL,
+                    Status INTEGER NOT NULL,
+                    Decision TEXT NULL,
+                    EvidenceDocumentId TEXT NULL
+                );
+                CREATE INDEX IF NOT EXISTS IX_ImpartialityDeclarations_Status_NextReviewDate ON ImpartialityDeclarations (Status, NextReviewDate);
+                """);
             await context.Database.ExecuteSqlRawAsync("UPDATE AuditPlans SET ProgramYear = CAST(strftime('%Y', ScheduledDate) AS INTEGER) WHERE ProgramYear = 0 AND ScheduledDate IS NOT NULL;");
         }
 

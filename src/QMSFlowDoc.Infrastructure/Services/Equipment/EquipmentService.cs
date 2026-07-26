@@ -1643,7 +1643,7 @@ public class EquipmentService : IEquipmentService
         var cytometers = list.Where(e => e.CytoType != null || e.Name.Contains("Citómetro", StringComparison.OrdinalIgnoreCase)).ToList();
         int cytoCount = cytometers.Count;
         int cytoActive = cytometers.Count(c => c.Status == DomainEntities.EquipmentStatus.IN_SERVICE || c.Status == DomainEntities.EquipmentStatus.IN_SERVICE_WITH_RESTRICTIONS);
-        double cytoAvailability = cytoCount > 0 ? (double)cytoActive / cytoCount * 100 : 100;
+        double cytoAvailability = cytoCount > 0 ? (double)cytoActive / cytoCount * 100 : 0;
 
         int cytoDowntime = 0;
         var now = DateTime.UtcNow;
@@ -1681,6 +1681,7 @@ public class EquipmentService : IEquipmentService
             ActiveIncidentsCount = incidents.Count(i => i.IncidentStatus == "Abierta" || i.IncidentStatus == "En investigación"),
             PendingAcceptanceCount = list.Count(e => e.Status == DomainEntities.EquipmentStatus.PENDING_ACCEPTANCE),
             PendingVerificationPostRepairCount = list.Count(e => e.Status == DomainEntities.EquipmentStatus.PENDING_QC_VERIFICATION),
+            CytometersCount = cytoCount,
             CytometersAvailability = cytoAvailability,
             CytometersDowntimeDays = cytoDowntime,
             ActiveAlerts = sharedAlerts

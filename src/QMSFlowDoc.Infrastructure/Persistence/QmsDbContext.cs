@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using QMSFlowDoc.Domain.Entities;
 using QMSFlowDoc.Domain.Identity;
+using QMSFlowDoc.Infrastructure.Auditing;
 
 namespace QMSFlowDoc.Infrastructure.Persistence
 {
@@ -10,8 +11,10 @@ namespace QMSFlowDoc.Infrastructure.Persistence
     {
         public static readonly System.Threading.SemaphoreSlim AuditWriteLock = new System.Threading.SemaphoreSlim(1, 1);
 
-        public QmsDbContext(DbContextOptions<QmsDbContext> options)
-            : base(options) { }
+        private readonly IAuditIntegrityKeyProvider? _auditIntegrityKeyProvider;
+
+        public QmsDbContext(DbContextOptions<QmsDbContext> options, IAuditIntegrityKeyProvider? auditIntegrityKeyProvider = null)
+            : base(options) => _auditIntegrityKeyProvider = auditIntegrityKeyProvider;
 
         // ── Documents ──
         public DbSet<Document> Documents => Set<Document>();
@@ -76,6 +79,8 @@ namespace QMSFlowDoc.Infrastructure.Persistence
         public DbSet<QualityIndicator> QualityIndicators => Set<QualityIndicator>();
         public DbSet<IQCResult> IQCResults => Set<IQCResult>();
         public DbSet<ContingencyPlan> ContingencyPlans => Set<ContingencyPlan>();
+        public DbSet<ImpartialityDeclaration> ImpartialityDeclarations => Set<ImpartialityDeclaration>();
+        public DbSet<EnvironmentalReading> EnvironmentalReadings => Set<EnvironmentalReading>();
 
         // ── EQA ──
         public DbSet<EQAProgram> EQAPrograms => Set<EQAProgram>();
@@ -624,6 +629,30 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.HasOne(r => r.EvidenceDocument).WithMany().HasForeignKey(r => r.EvidenceDocumentId).OnDelete(DeleteBehavior.SetNull);
             });
 
+            modelBuilder.Entity<ImpartialityDeclaration>(e =>
+            {
+                e.ToTable("ImpartialityDeclarations");
+                e.HasKey(d => d.Id);
+                e.Property(d => d.DeclarantName).HasMaxLength(200).IsRequired();
+                e.Property(d => d.Scope).HasMaxLength(300).IsRequired();
+                e.Property(d => d.Status).HasConversion<int>();
+                e.HasIndex(d => new { d.Status, d.NextReviewDate });
+                e.HasOne(d => d.EvidenceDocument).WithMany().HasForeignKey(d => d.EvidenceDocumentId).OnDelete(DeleteBehavior.SetNull);
+            });
+
+            modelBuilder.Entity<EnvironmentalReading>(e =>
+            {
+                e.ToTable("EnvironmentalReadings");
+                e.HasKey(r => r.Id);
+                e.Property(r => r.Source).HasConversion<int>();
+                e.Property(r => r.TemperatureCelsius).HasPrecision(8, 2);
+                e.Property(r => r.HumidityPercent).HasPrecision(8, 2);
+                e.Property(r => r.ImportedByName).HasMaxLength(200);
+                e.Property(r => r.ImportBatchId).HasMaxLength(64);
+                e.HasIndex(r => new { r.RecordedAt, r.Source });
+                e.HasIndex(r => r.ImportBatchId);
+            });
+
             modelBuilder.Entity<AuditPlan>(e =>
             {
                 e.ToTable("AuditPlans");
@@ -804,6 +833,8 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(m => m.Code).HasMaxLength(50);
                 e.Property(m => m.Name).HasMaxLength(300);
                 e.Property(m => m.Status).HasConversion<int>();
+                e.Property(m => m.RegulatoryClassification).HasConversion<int>();
+                e.Property(m => m.ResultType).HasConversion<int>();
                 e.Property(m => m.RowVersion).IsRowVersion();
                 e.HasMany(m => m.Authorizations).WithOne().HasForeignKey(a => a.MethodId).OnDelete(DeleteBehavior.Cascade);
             });
@@ -812,12 +843,17 @@ namespace QMSFlowDoc.Infrastructure.Persistence
             {
                 e.ToTable("MethodVersions");
                 e.HasKey(v => v.Id);
+                e.HasIndex(v => new { v.MethodId, v.Version }).IsUnique();
+                e.Property(v => v.Manufacturer).HasMaxLength(300);
+                e.Property(v => v.InstructionsForUseVersion).HasMaxLength(100);
             });
 
             modelBuilder.Entity<MethodValidation>(e =>
             {
                 e.ToTable("MethodValidations");
                 e.HasKey(v => v.Id);
+                e.Property(v => v.Characteristic).HasConversion<int>();
+                e.Property(v => v.AcceptanceCriteria).HasMaxLength(2000);
             });
 
             modelBuilder.Entity<MethodAuthorization>(e =>
@@ -841,6 +877,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(m => m.AnalyteName).HasMaxLength(300);
                 e.Property(m => m.Unit).HasMaxLength(50);
                 e.Property(m => m.ConfidenceLevel).HasMaxLength(30);
+                e.Property(m => m.MeasurementRange).HasMaxLength(500);
             });
 
             // ── Audit & System ──
@@ -854,6 +891,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(a => a.MachineName).HasMaxLength(100);
                 e.Property(a => a.Result).HasMaxLength(30);
                 e.Property(a => a.IntegrityHash).HasMaxLength(64);
+                e.Property(a => a.IntegrityVersion).HasDefaultValue(1);
                 e.HasIndex(a => a.Timestamp);
                 e.HasIndex(a => a.EntityType);
             });
@@ -1013,6 +1051,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 .Where(e => e.State == EntityState.Added)
                 .Select(e => e.Entity)
                 .OrderBy(l => l.Timestamp)
+                .ThenBy(l => l.Id)
                 .ToList();
 
             if (!newLogs.Any()) return;
@@ -1022,11 +1061,19 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
             foreach (var log in newLogs)
             {
-                var payload = AuditLog.BuildPayload(lastHash, log);
-                using (var sha256 = System.Security.Cryptography.SHA256.Create())
+                log.IntegrityVersion = _auditIntegrityKeyProvider is null ? Math.Max(2, log.IntegrityVersion) : 3;
+                var payload = log.IntegrityVersion >= 2
+                    ? AuditLog.BuildPayloadV2(lastHash, log)
+                    : AuditLog.BuildPayload(lastHash, log);
+                if (_auditIntegrityKeyProvider is not null)
                 {
                     var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
-                    var hashBytes = sha256.ComputeHash(bytes);
+                    var hashBytes = System.Security.Cryptography.HMACSHA256.HashData(_auditIntegrityKeyProvider.PrimaryKey, bytes);
+                    log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                }
+                else
+                {
+                    var hashBytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));
                     log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
                 }
                 lastHash = log.IntegrityHash;
@@ -1039,6 +1086,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 .Where(e => e.State == EntityState.Added)
                 .Select(e => e.Entity)
                 .OrderBy(l => l.Timestamp)
+                .ThenBy(l => l.Id)
                 .ToList();
 
             if (!newLogs.Any()) return;
@@ -1048,11 +1096,19 @@ namespace QMSFlowDoc.Infrastructure.Persistence
 
             foreach (var log in newLogs)
             {
-                var payload = AuditLog.BuildPayload(lastHash, log);
-                using (var sha256 = System.Security.Cryptography.SHA256.Create())
+                log.IntegrityVersion = _auditIntegrityKeyProvider is null ? Math.Max(2, log.IntegrityVersion) : 3;
+                var payload = log.IntegrityVersion >= 2
+                    ? AuditLog.BuildPayloadV2(lastHash, log)
+                    : AuditLog.BuildPayload(lastHash, log);
+                if (_auditIntegrityKeyProvider is not null)
                 {
                     var bytes = System.Text.Encoding.UTF8.GetBytes(payload);
-                    var hashBytes = sha256.ComputeHash(bytes);
+                    var hashBytes = System.Security.Cryptography.HMACSHA256.HashData(_auditIntegrityKeyProvider.PrimaryKey, bytes);
+                    log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
+                }
+                else
+                {
+                    var hashBytes = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(payload));
                     log.IntegrityHash = Convert.ToHexString(hashBytes).ToLowerInvariant();
                 }
                 lastHash = log.IntegrityHash;

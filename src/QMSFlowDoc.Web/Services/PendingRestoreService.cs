@@ -167,16 +167,7 @@ public static class PendingRestoreService
 
     private static string ResolvePortablePath(string configuredPath)
     {
-        if (string.IsNullOrWhiteSpace(configuredPath)) return configuredPath;
-        
-        if (configuredPath.Contains(@"C:\Users\SERVIDOR", StringComparison.OrdinalIgnoreCase))
-        {
-            var myDocuments = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
-            var subPath = configuredPath.Replace(@"C:\Users\SERVIDOR\Documents\", "", StringComparison.OrdinalIgnoreCase)
-                                         .Replace(@"C:\Users\SERVIDOR\", "", StringComparison.OrdinalIgnoreCase);
-            return Path.Combine(myDocuments, "QMS", subPath);
-        }
-        return configuredPath;
+        return PortablePathResolver.Resolve(configuredPath);
     }
 
     public static async Task VerifyPendingRestoreAsync(PendingRestoreRequest request, CancellationToken ct = default)

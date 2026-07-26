@@ -4,8 +4,6 @@ using QMSFlowDoc.Application.Services.Documents;
 using QMSFlowDoc.Application.Services.Identity;
 using QMSFlowDoc.Domain.Entities;
 using QMSFlowDoc.Infrastructure.Persistence;
-using System;
-using System.Threading.Tasks;
 
 namespace QMSFlowDoc.Web.Controllers
 {
@@ -18,17 +16,20 @@ namespace QMSFlowDoc.Web.Controllers
         private readonly IPdfWatermarkService _watermarkService;
         private readonly IPermissionService _permissionService;
         private readonly QmsDbContext _context;
+        private readonly ILogger<DocumentsController> _logger;
 
         public DocumentsController(
             IDocumentService documentService,
             IPdfWatermarkService watermarkService,
             IPermissionService permissionService,
-            QmsDbContext context)
+            QmsDbContext context,
+            ILogger<DocumentsController> logger)
         {
             _documentService = documentService;
             _watermarkService = watermarkService;
             _permissionService = permissionService;
             _context = context;
+            _logger = logger;
         }
 
         /// <summary>
@@ -51,7 +52,6 @@ namespace QMSFlowDoc.Web.Controllers
                 var fileBytes = await _documentService.GetFileContentAsync(id);
                 if (fileBytes == null) return NotFound("Archivo no encontrado en el almacenamiento.");
 
-                // Marca de agua: CONTROLADO para visualización en pantalla
                 var watermarkedBytes = await _watermarkService.PrepareForScreenViewAsync(
                     fileBytes,
                     doc.DocCode,
@@ -65,7 +65,7 @@ namespace QMSFlowDoc.Web.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error al cargar documento para visualización: {ex.Message}");
+                return InternalError(ex, "load the document for viewing");
             }
         }
 
@@ -89,7 +89,6 @@ namespace QMSFlowDoc.Web.Controllers
                 var fileBytes = await _documentService.GetFileContentAsync(id);
                 if (fileBytes == null) return NotFound("Archivo no encontrado en el almacenamiento.");
 
-                // Marca de agua: NO CONTROLADO para exportar/imprimir
                 var watermarkedBytes = await _watermarkService.PrepareForExportAsync(
                     fileBytes,
                     currentVersion.VersionLabel,
@@ -101,8 +100,16 @@ namespace QMSFlowDoc.Web.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, $"Error al exportar documento: {ex.Message}");
+                return InternalError(ex, "export the document");
             }
+        }
+
+        private ObjectResult InternalError(Exception exception, string operation)
+        {
+            var incidentId = HttpContext.TraceIdentifier;
+            _logger.LogError(exception, "Unable to {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+            return StatusCode(StatusCodes.Status500InternalServerError,
+                $"No se ha podido completar la operación. Indique el identificador de incidencia {incidentId} al soporte técnico.");
         }
 
         private async Task LogDocumentAccessAsync(string action, Guid documentId, string details)

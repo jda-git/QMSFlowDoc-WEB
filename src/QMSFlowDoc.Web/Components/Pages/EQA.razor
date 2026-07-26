@@ -17,6 +17,7 @@
 @inject Microsoft.AspNetCore.Hosting.IWebHostEnvironment Env
 @inject QMSFlowDoc.Infrastructure.Persistence.QmsDbContext DbContext
 @inject QMSFlowDoc.Application.Services.Quality.IQualityService QualityService
+@inject ILogger<EQA> Logger
 
 
 <PageTitle>Evaluación Externa de la Calidad (EQA) — QMSFlowDoc</PageTitle>
@@ -172,31 +173,34 @@
                             <div class="card-body p-4">
                                 <h5 class="fw-bold text-dark mb-3"><i class="bi bi-bookmark-star-fill text-primary me-2"></i>ISO 15189 Checklist</h5>
                                 <div class="d-flex flex-column gap-3">
+                                    @{ var criticalProgramsMetric = CriticalProgramsMetric; }
                                     <div class="p-3 bg-white rounded-3 border">
                                         <div class="d-flex justify-content-between align-items-center mb-1">
-                                            <span class="small fw-bold">Pruebas Críticas Cubiertas</span>
-                                            <span class="badge bg-success">100%</span>
+                                            <span class="small fw-bold">Programas Críticos Inscritos</span>
+                                            <span class="badge @GetMetricBadgeClass(criticalProgramsMetric, "success")">@criticalProgramsMetric.Label</span>
                                         </div>
                                         <div class="progress" style="height: 6px;">
-                                            <div class="progress-bar bg-success" style="width: 100%;"></div>
+                                            <div class="progress-bar @GetMetricBarClass(criticalProgramsMetric, "success")" style="width: @criticalProgramsMetric.Percentage%;"></div>
                                         </div>
                                     </div>
+                                    @{ var roundsOnTimeMetric = RoundsOnTimeMetric; }
                                     <div class="p-3 bg-white rounded-3 border">
                                         <div class="d-flex justify-content-between align-items-center mb-1">
                                             <span class="small fw-bold">Rondas en Plazo</span>
-                                            <span class="badge bg-primary">95.4%</span>
+                                            <span class="badge @GetMetricBadgeClass(roundsOnTimeMetric, "primary")">@roundsOnTimeMetric.Label</span>
                                         </div>
                                         <div class="progress" style="height: 6px;">
-                                            <div class="progress-bar bg-primary" style="width: 95.4%;"></div>
+                                            <div class="progress-bar @GetMetricBarClass(roundsOnTimeMetric, "primary")" style="width: @roundsOnTimeMetric.Percentage%;"></div>
                                         </div>
                                     </div>
+                                    @{ var capaEffectivenessMetric = CapaEffectivenessMetric; }
                                     <div class="p-3 bg-white rounded-3 border">
                                         <div class="d-flex justify-content-between align-items-center mb-1">
                                             <span class="small fw-bold">Eficacia CAPAs EQA</span>
-                                            <span class="badge bg-info">100%</span>
+                                            <span class="badge @GetMetricBadgeClass(capaEffectivenessMetric, "info")">@capaEffectivenessMetric.Label</span>
                                         </div>
                                         <div class="progress" style="height: 6px;">
-                                            <div class="progress-bar bg-info" style="width: 100%;"></div>
+                                            <div class="progress-bar @GetMetricBarClass(capaEffectivenessMetric, "info")" style="width: @capaEffectivenessMetric.Percentage%;"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -1281,6 +1285,64 @@
     private bool canDelete = false;
     private bool canPrint = false;
 
+    private ChecklistMetric CriticalProgramsMetric
+    {
+        get
+        {
+            var criticalEnrollments = enrollments?.Where(e => e.IsCritical).ToList() ?? new();
+            return CreateMetric(
+                criticalEnrollments.Count,
+                criticalEnrollments.Count(e => e.Status == EQAEnrollmentStatus.CONFIRMED));
+        }
+    }
+
+    private ChecklistMetric RoundsOnTimeMetric
+    {
+        get
+        {
+            var assessableRounds = rounds?
+                .Where(r => r.SubmissionDeadline.HasValue &&
+                    (r.RealSubmissionDate.HasValue || r.SubmissionDeadline.Value < DateTime.UtcNow))
+                .ToList() ?? new();
+
+            return CreateMetric(
+                assessableRounds.Count,
+                assessableRounds.Count(r =>
+                    r.RealSubmissionDate.HasValue &&
+                    r.RealSubmissionDate.Value <= r.SubmissionDeadline!.Value));
+        }
+    }
+
+    private ChecklistMetric CapaEffectivenessMetric
+    {
+        get
+        {
+            var assessedDeviations = deviations?
+                .Where(d => !string.IsNullOrWhiteSpace(d.EffectivenessOutcome))
+                .ToList() ?? new();
+
+            return CreateMetric(
+                assessedDeviations.Count,
+                assessedDeviations.Count(d => string.Equals(
+                    d.EffectivenessOutcome,
+                    "Eficaz",
+                    StringComparison.OrdinalIgnoreCase)));
+        }
+    }
+
+    private static ChecklistMetric CreateMetric(int total, int compliant) =>
+        total == 0
+            ? new ChecklistMetric(false, 0, "Sin datos")
+            : new ChecklistMetric(true, (int)Math.Round((double)compliant / total * 100), $"{(int)Math.Round((double)compliant / total * 100)}%");
+
+    private static string GetMetricBadgeClass(ChecklistMetric metric, string color) =>
+        metric.HasData ? $"bg-{color}" : "bg-secondary";
+
+    private static string GetMetricBarClass(ChecklistMetric metric, string color) =>
+        metric.HasData ? $"bg-{color}" : "bg-secondary";
+
+    private readonly record struct ChecklistMetric(bool HasData, int Percentage, string Label);
+
     protected override async Task OnInitializedAsync()
     {
         isAuthorized = false;
@@ -1373,7 +1435,12 @@
             foreach (var r in rounds.Where(x => x.Year == selectedYear))
             {
                 var prog = programs?.FirstOrDefault(p => p.Id == r.ProgramId);
-                var daysToDeadline = (r.SubmissionDeadline - DateTime.UtcNow).Value.Days;
+                if (!r.SubmissionDeadline.HasValue)
+                {
+                    continue;
+                }
+
+                var daysToDeadline = (r.SubmissionDeadline.Value - DateTime.UtcNow).Days;
                 
                 if (r.Status == EQARoundStatus.PLANNED || r.Status == EQARoundStatus.PENDING_RECEIPT)
                 {
@@ -1529,7 +1596,7 @@
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al guardar la prueba: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving EQA test");
         }
     }
 
@@ -1556,7 +1623,7 @@
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al eliminar la prueba: {ex.Message}");
+                await ShowSafeErrorAsync(ex, "deleting EQA test");
             }
         }
     }
@@ -1580,7 +1647,7 @@
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al eliminar el programa: {ex.Message}");
+                await ShowSafeErrorAsync(ex, "deleting EQA program");
             }
         }
     }
@@ -1607,7 +1674,7 @@
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al eliminar la inscripción: {ex.Message}");
+                await ShowSafeErrorAsync(ex, "deleting enrollment");
             }
         }
     }
@@ -1634,7 +1701,7 @@
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al eliminar la ronda: {ex.Message}");
+                await ShowSafeErrorAsync(ex, "deleting EQA round");
             }
         }
     }
@@ -1709,11 +1776,11 @@
             }
             catch (InvalidOperationException ex)
             {
-                roundErrorMessage = ex.Message;
+                roundErrorMessage = SafeError(ex, "saving round");
             }
             catch (Exception ex)
             {
-                roundErrorMessage = $"Error al guardar cambios de la ronda: {ex.Message}";
+                roundErrorMessage = SafeError(ex, "updating round");
             }
         }
     }
@@ -1808,11 +1875,11 @@
         }
         catch (InvalidOperationException ex)
         {
-            deviationErrorMessage = ex.Message;
+            deviationErrorMessage = SafeError(ex, "saving deviation");
         }
         catch (Exception ex)
         {
-            deviationErrorMessage = $"Error al guardar la desviación: {ex.Message}";
+            deviationErrorMessage = SafeError(ex, "updating deviation");
         }
     }
 
@@ -1924,6 +1991,20 @@
         EQARoundStatus.INCIDENCE => "bg-danger",
         _ => "bg-light text-dark"
     };
+
+    private async Task ShowSafeErrorAsync(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "EQA error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        await JS.InvokeVoidAsync("alert", $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.");
+    }
+
+    private string SafeError(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "EQA error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        return $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.";
+    }
 
     public class AlertItem
     {

@@ -17,6 +17,7 @@
 @inject IJSRuntime JS
 @inject IPermissionService PermissionService
 @inject QMSFlowDoc.Application.Services.Quality.IQualityService QualityService
+@inject ILogger<Equipment> Logger
 
 <PageTitle>Gestión de Equipamiento — QMSFlowDoc</PageTitle>
 
@@ -110,7 +111,15 @@ else
                     <div class="d-flex justify-content-between align-items-center">
                         <div>
                             <span class="text-muted small d-block text-uppercase fw-semibold">Disp. Citómetros</span>
-                            <h3 class="fw-bold mb-0 text-info">@dashboard.CytometersAvailability.ToString("0.0")%</h3>
+                            @if (dashboard.CytometersCount == 0)
+                            {
+                                <h3 class="fw-bold mb-0 text-secondary">Sin datos</h3>
+                                <span class="small text-muted">Sin citómetros registrados</span>
+                            }
+                            else
+                            {
+                                <h3 class="fw-bold mb-0 text-info">@dashboard.CytometersAvailability.ToString("0.0")%</h3>
+                            }
                         </div>
                         <div class="widget-icon bg-info-soft rounded-3 p-2 text-info">
                             <i class="bi bi-pie-chart-fill fs-4"></i>
@@ -2269,7 +2278,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al guardar equipo: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving equipment");
         }
     }
 
@@ -2317,7 +2326,7 @@ else
             }
             catch (Exception ex)
             {
-                await JS.InvokeVoidAsync("alert", $"Error al guardar aceptación: {ex.Message}");
+                await ShowSafeErrorAsync(ex, "saving equipment acceptance");
             }
         }
     }
@@ -2355,7 +2364,7 @@ else
         }
         catch (Exception ex)
         {
-            statusValidationMessage = $"Error: {ex.Message}";
+            statusValidationMessage = SafeError(ex, "validating equipment status");
         }
     }
 
@@ -2387,7 +2396,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving quality control");
         }
     }
 
@@ -2419,7 +2428,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al anular el QC: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "voiding quality control");
         }
     }
 
@@ -2492,7 +2501,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "registering maintenance");
         }
     }
 
@@ -2554,7 +2563,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving maintenance plan");
         }
     }
 
@@ -2611,7 +2620,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving calibration plan");
         }
     }
 
@@ -2686,7 +2695,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "saving calibration record");
         }
     }
 
@@ -2722,7 +2731,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "registering equipment incident");
         }
     }
 
@@ -2762,7 +2771,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "registering repair");
         }
     }
 
@@ -2800,7 +2809,7 @@ else
         }
         catch (Exception ex)
         {
-            impactErrorMessage = ex.Message;
+            impactErrorMessage = SafeError(ex, "saving impact assessment");
         }
     }
 
@@ -2834,7 +2843,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await ShowSafeErrorAsync(ex, "decommissioning equipment");
         }
     }
 
@@ -2847,4 +2856,14 @@ else
         }
         await JS.InvokeVoidAsync("window.print");
     }
+
+    private string SafeError(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "Equipment error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        return $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.";
+    }
+
+    private async Task ShowSafeErrorAsync(Exception exception, string operation) =>
+        await JS.InvokeVoidAsync("alert", SafeError(exception, operation));
 }

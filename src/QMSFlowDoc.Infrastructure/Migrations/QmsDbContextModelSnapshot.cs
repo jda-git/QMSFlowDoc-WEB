@@ -214,6 +214,11 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("TEXT");
 
+                    b.Property<int>("IntegrityVersion")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(1);
+
                     b.Property<string>("MachineName")
                         .IsRequired()
                         .HasMaxLength(100)
@@ -1502,6 +1507,60 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                     b.ToTable("EQASamples", (string)null);
                 });
 
+            modelBuilder.Entity("QMSFlowDoc.Domain.Entities.EnvironmentalReading", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Event")
+                        .HasColumnType("TEXT");
+
+                    b.Property<decimal?>("HumidityPercent")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImportBatchId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ImportedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ImportedByName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsOutOfRange")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("RawLine")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("RecordedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("SensorNotConnected")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<decimal?>("TemperatureCelsius")
+                        .HasPrecision(8, 2)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ImportBatchId");
+
+                    b.HasIndex("RecordedAt", "Source");
+
+                    b.ToTable("EnvironmentalReadings", (string)null);
+                });
+
             modelBuilder.Entity("QMSFlowDoc.Domain.Entities.Equipment", b =>
                 {
                     b.Property<string>("Id")
@@ -2595,6 +2654,59 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                     b.ToTable("IQCResults", (string)null);
                 });
 
+            modelBuilder.Entity("QMSFlowDoc.Domain.Entities.ImpartialityDeclaration", b =>
+                {
+                    b.Property<string>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Decision")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DeclarantName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("DeclaredAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EvidenceDocumentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Mitigation")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("NextReviewDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ReviewedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ReviewerName")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EvidenceDocumentId");
+
+                    b.HasIndex("Status", "NextReviewDate");
+
+                    b.ToTable("ImpartialityDeclarations", (string)null);
+                });
+
             modelBuilder.Entity("QMSFlowDoc.Domain.Entities.InventoryMovement", b =>
                 {
                     b.Property<string>("Id")
@@ -2873,6 +2985,12 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("CalculationMethod")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ClinicalUse")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("ConfidenceLevel")
                         .IsRequired()
                         .HasMaxLength(30)
@@ -2881,7 +2999,23 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                     b.Property<double>("CoverageFactor")
                         .HasColumnType("REAL");
 
+                    b.Property<DateTime?>("DataPeriodEnd")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("DataPeriodStart")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DataSources")
+                        .HasColumnType("TEXT");
+
                     b.Property<DateTime>("EstimatedDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EvidenceDocumentId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MeasurementRange")
+                        .HasMaxLength(500)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("MethodId")
@@ -2889,6 +3023,9 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Notes")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime?>("ReviewDueDate")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Unit")
@@ -2913,6 +3050,9 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                     b.Property<string>("Category")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ClinicalDecisionLimits")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Code")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -2924,10 +3064,28 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                     b.Property<string>("CurrentVersion")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("DataAnalysisProcedure")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("DocumentId")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("EffectiveDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EquipmentConfiguration")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("IntendedUse")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Limitations")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Measurands")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("MeasurementRange")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Name")
@@ -2938,9 +3096,27 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                     b.Property<string>("Notes")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("PanelDescription")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PreAnalyticalRequirements")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("RegulatoryClassification")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("ResultType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ReviewDueDate")
+                        .HasColumnType("TEXT");
+
                     b.Property<byte[]>("RowVersion")
                         .IsRequired()
                         .HasColumnType("BLOB");
+
+                    b.Property<string>("SpecimenTypes")
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Status")
                         .HasColumnType("INTEGER");
@@ -3022,6 +3198,22 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("AcceptanceCriteria")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Characteristic")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Conclusion")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DataSources")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EvidenceDocumentId")
+                        .HasColumnType("TEXT");
+
                     b.Property<int>("ExperimentCount")
                         .HasColumnType("INTEGER");
 
@@ -3043,6 +3235,12 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("SampleDescription")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("StudyDesign")
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.ToTable("MethodValidations", (string)null);
@@ -3052,6 +3250,9 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                 {
                     b.Property<string>("Id")
                         .ValueGeneratedOnAdd()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("AcceptanceCriteria")
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("ApprovedAt")
@@ -3070,7 +3271,21 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("DataSources")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("DocumentPath")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("EvaluationScope")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("InstructionsForUseVersion")
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Manufacturer")
+                        .HasMaxLength(300)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("MethodId")
@@ -3081,11 +3296,20 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("StudyDesign")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ValidationReportDocumentId")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Version")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("MethodId", "Version")
+                        .IsUnique();
 
                     b.ToTable("MethodVersions", (string)null);
                 });
@@ -4472,6 +4696,16 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .WithMany("SubFolders")
                         .HasForeignKey("ParentFolderId")
                         .OnDelete(DeleteBehavior.Restrict);
+                });
+
+            modelBuilder.Entity("QMSFlowDoc.Domain.Entities.ImpartialityDeclaration", b =>
+                {
+                    b.HasOne("QMSFlowDoc.Domain.Entities.Document", "EvidenceDocument")
+                        .WithMany()
+                        .HasForeignKey("EvidenceDocumentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("EvidenceDocument");
                 });
 
             modelBuilder.Entity("QMSFlowDoc.Domain.Entities.InventoryMovement", b =>

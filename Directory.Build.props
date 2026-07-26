@@ -1,0 +1,7 @@
+<Project>
+  <ItemGroup>
+    <!-- Force a safe SQLite native bundle across every executable and library.
+         Several projects consume SQLite transitively through Microsoft.Data.Sqlite. -->
+    <PackageReference Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.12" />
+  </ItemGroup>
+</Project>

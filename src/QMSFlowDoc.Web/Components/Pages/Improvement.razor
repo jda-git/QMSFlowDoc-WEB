@@ -19,7 +19,7 @@
 
 <PageTitle>Mejora Continua ISO - QMSFlowDoc</PageTitle>
 
-<div class="container-fluid py-4 px-4">
+<div class="container-fluid py-4 px-4 improvement-page">
     @if (!isAuthorized)
     {
         <div class="alert alert-danger rounded-4 shadow-sm p-4">
@@ -29,7 +29,7 @@
     }
     else
     {
-        <div class="d-flex justify-content-between align-items-center mb-4 pb-2 border-bottom">
+        <div class="improvement-header d-flex justify-content-between align-items-center mb-4">
             <div>
                 <h2 class="fw-bold text-dark mb-1"><i class="bi bi-clipboard2-check text-primary me-2"></i>Mejora Continua ISO</h2>
                 <p class="text-muted mb-0">Riesgos, auditorías internas, revisión por dirección y evaluación de proveedores.</p>
@@ -46,7 +46,7 @@
         }
         @if (canApproveImprovement)
         {
-            <div class="row mb-3">
+            <div class="improvement-approval row mb-4">
                 <div class="col-lg-5">
                     <label class="form-label small fw-semibold text-secondary mb-1">Firma electronica para aprobaciones</label>
                     <input type="password" class="form-control" placeholder="Contraseña del usuario actual para aprobar/cerrar" @bind="approvalPassword" autocomplete="current-password" />
@@ -54,20 +54,35 @@
             </div>
         }
 
-        <ul class="nav nav-tabs custom-tabs mb-4 border-bottom-0">
-            <li class="nav-item"><button class="nav-link @(activeTab == "risks" ? "active" : "")" @onclick='() => activeTab = "risks"'>Riesgos</button></li>
-            <li class="nav-item"><button class="nav-link @(activeTab == "audits" ? "active" : "")" @onclick='() => activeTab = "audits"'>Auditorías internas</button></li>
-            <li class="nav-item"><button class="nav-link @(activeTab == "reviews" ? "active" : "")" @onclick='() => activeTab = "reviews"'>Revisión dirección</button></li>
-            <li class="nav-item"><button class="nav-link @(activeTab == "indicators" ? "active" : "")" @onclick='() => activeTab = "indicators"'>Indicadores</button></li>
-            <li class="nav-item"><button class="nav-link @(activeTab == "suppliers" ? "active" : "")" @onclick='() => activeTab = "suppliers"'>Proveedores</button></li>
-            <li class="nav-item"><button class="nav-link @(activeTab == "control" ? "active" : "")" @onclick='() => activeTab = "control"'>Control ISO</button></li>
+        <ul class="nav nav-tabs custom-tabs improvement-tabs mb-4 border-bottom-0">
+            <li class="nav-item"><button class="nav-link @(activeTab == "risks" ? "active" : "")" @onclick='() => activeTab = "risks"'><i class="bi bi-exclamation-diamond me-2"></i>Riesgos</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "audits" ? "active" : "")" @onclick='() => activeTab = "audits"'><i class="bi bi-clipboard-check me-2"></i>Auditorías internas</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "reviews" ? "active" : "")" @onclick='() => activeTab = "reviews"'><i class="bi bi-people me-2"></i>Revisión dirección</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "indicators" ? "active" : "")" @onclick='() => activeTab = "indicators"'><i class="bi bi-graph-up-arrow me-2"></i>Indicadores</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "suppliers" ? "active" : "")" @onclick='() => activeTab = "suppliers"'><i class="bi bi-truck me-2"></i>Proveedores</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "control" ? "active" : "")" @onclick='() => activeTab = "control"'><i class="bi bi-sliders me-2"></i>Control ISO</button></li>
+            <li class="nav-item"><button class="nav-link @(activeTab == "impartiality" ? "active" : "")" @onclick='() => activeTab = "impartiality"'><i class="bi bi-shield-check me-2"></i>Imparcialidad</button></li>
         </ul>
+
+        @if (activeTab == "impartiality")
+        {
+            <section class="row g-4">
+                <div class="col-lg-5"><div class="improvement-form"><h5 class="fw-bold mb-3">Declaración de imparcialidad</h5>
+                    <input class="form-control mb-2" placeholder="Persona que declara" @bind="impartialityModel.DeclarantName" />
+                    <input class="form-control mb-2" placeholder="Ámbito o actividad afectada" @bind="impartialityModel.Scope" />
+                    <textarea class="form-control mb-2" rows="3" placeholder="Conflicto o riesgo identificado" @bind="impartialityModel.Description"></textarea>
+                    <textarea class="form-control mb-2" rows="2" placeholder="Medida de mitigación" @bind="impartialityModel.Mitigation"></textarea>
+                    <button class="btn btn-primary" @onclick="SaveImpartiality">Registrar declaración</button>
+                </div></div>
+                <div class="col-lg-7"><div class="improvement-card"><h5 class="fw-bold mb-3">Registro y revisión</h5><table class="table table-sm"><thead><tr><th>Fecha</th><th>Declarante</th><th>Ámbito</th><th>Estado</th><th></th></tr></thead><tbody>@foreach (var item in impartialityDeclarations) { <tr><td>@item.DeclaredAt.ToLocalTime().ToString("d")</td><td>@item.DeclarantName</td><td>@item.Scope</td><td>@item.Status</td><td>@if (item.Status == ImpartialityStatus.DECLARED) { <button class="btn btn-sm btn-outline-success" @onclick="() => ReviewImpartiality(item)">Revisar</button> }</td></tr> }</tbody></table></div></div>
+            </section>
+        }
 
         @if (activeTab == "risks")
         {
             <section class="row g-4">
                 <div class="col-lg-4">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Nuevo riesgo</h5>
                         <label class="form-label small fw-semibold text-secondary mb-1">Título del riesgo</label>
                         <input class="form-control mb-2" placeholder="Título" @bind="riskModel.Title" />
@@ -194,7 +209,7 @@
         {
             <section class="row g-4">
                 <div class="col-lg-4">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Planificar auditoría</h5>
                         <label class="form-label small fw-semibold text-secondary mb-1">Título de la auditoría</label>
                         <input class="form-control mb-2" placeholder="Título" @bind="auditModel.Title" />
@@ -365,7 +380,7 @@
         {
             <section class="row g-4">
                 <div class="col-lg-4">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Nueva revisión por dirección</h5>
                         <label class="form-label small fw-semibold text-secondary mb-1">Fecha de revisión</label>
                         <input type="date" class="form-control mb-2" @bind="reviewModel.ReviewDate" />
@@ -454,7 +469,7 @@
         {
             <section class="row g-4">
                 <div class="col-lg-4">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Nuevo indicador</h5>
                         <label class="form-label small fw-semibold text-secondary mb-1">Nombre del indicador</label>
                         <input class="form-control mb-2" placeholder="Nombre del indicador" @bind="indicatorModel.Name" />
@@ -550,7 +565,7 @@
         {
             <section class="row g-4">
                 <div class="col-lg-4">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Evaluar proveedor</h5>
                         <label class="form-label small fw-semibold text-secondary mb-1">Proveedor</label>
                         <select class="form-select mb-2" @bind="supplierEvalModel.SupplierId">
@@ -666,7 +681,7 @@
         {
             <section class="row g-4">
                 <div class="col-lg-5">
-                    <div class="p-3 border rounded-3 bg-light">
+                    <div class="improvement-form">
                         <h5 class="fw-bold mb-3">Matriz de riesgos configurable</h5>
                         <p class="small text-muted">El score se calcula como probabilidad x impacto. Estos umbrales definen la clasificación y pueden adaptarse al criterio del laboratorio.</p>
                         <div class="row g-2 mb-2">
@@ -758,6 +773,7 @@
     private string currentUserName = "Sistema";
 
     private List<Risk> risks = new();
+    private List<ImpartialityDeclaration> impartialityDeclarations = new();
     private List<AuditPlan> audits = new();
     private List<AuditFinding> auditFindings = new();
     private List<ManagementReview> reviews = new();
@@ -788,8 +804,11 @@
     private int openReviewActionCount;
     private int overdueReviewActionCount;
     private int overdueAuditFindingCount;
+    private int environmentalOutOfRangeCount;
+    private int environmentalSensorNcCount;
 
     private Risk riskModel = NewRisk();
+    private ImpartialityDeclaration impartialityModel = new();
     private AuditPlan auditModel = NewAudit();
     private AuditFinding findingModel = NewFinding();
     private ManagementReview reviewModel = NewReview();
@@ -824,6 +843,7 @@
             .OrderByDescending(r => (int)r.Likelihood * (int)r.Impact)
             .ThenBy(r => r.Title)
             .ToListAsync();
+        impartialityDeclarations = await DbContext.ImpartialityDeclarations.OrderByDescending(d => d.DeclaredAt).ToListAsync();
         audits = await DbContext.AuditPlans.OrderByDescending(a => a.ScheduledDate).ToListAsync();
         auditFindings = await DbContext.AuditFindings.OrderBy(f => f.AuditPlanId).ThenBy(f => f.Type).ToListAsync();
         reviews = await DbContext.ManagementReviews.OrderByDescending(r => r.ReviewDate).ToListAsync();
@@ -859,6 +879,41 @@
         openReviewActionCount = reviews.Count(ReviewHasOpenAction);
         overdueReviewActionCount = reviews.Count(IsReviewActionOverdue);
         overdueAuditFindingCount = auditFindings.Count(IsAuditFindingOverdue);
+        environmentalOutOfRangeCount = await DbContext.EnvironmentalReadings.CountAsync(r => r.IsOutOfRange);
+        environmentalSensorNcCount = await DbContext.EnvironmentalReadings.CountAsync(r => r.SensorNotConnected);
+    }
+
+    private async Task SaveImpartiality()
+    {
+        if (string.IsNullOrWhiteSpace(impartialityModel.DeclarantName) || string.IsNullOrWhiteSpace(impartialityModel.Scope) || string.IsNullOrWhiteSpace(impartialityModel.Description))
+        {
+            SetError("Indique declarante, ámbito y descripción del riesgo de imparcialidad.");
+            return;
+        }
+
+        impartialityModel.Id = Guid.NewGuid();
+        impartialityModel.DeclaredAt = DateTime.UtcNow;
+        DbContext.ImpartialityDeclarations.Add(impartialityModel);
+        AddAuditLog("CREATE", "ImpartialityDeclaration", impartialityModel.Id, $"Declaración de imparcialidad registrada: {impartialityModel.Scope}");
+        await SaveAndReload("Declaración de imparcialidad registrada.");
+        impartialityModel = new ImpartialityDeclaration();
+    }
+
+    private async Task ReviewImpartiality(ImpartialityDeclaration declaration)
+    {
+        if (!canApproveImprovement)
+        {
+            SetError("Solo Dirección, Calidad o Administración puede revisar declaraciones de imparcialidad.");
+            return;
+        }
+
+        declaration.ReviewerName = currentUserName;
+        declaration.ReviewedAt = DateTime.UtcNow;
+        declaration.NextReviewDate = DateTime.UtcNow.AddYears(1);
+        declaration.Status = ImpartialityStatus.MITIGATED;
+        declaration.Decision = "Revisada y mitigada; revisión periódica programada.";
+        AddAuditLog("REVIEW", "ImpartialityDeclaration", declaration.Id, $"Declaración revisada por {currentUserName}; próxima revisión {declaration.NextReviewDate:yyyy-MM-dd}");
+        await SaveAndReload("Declaración de imparcialidad revisada y seguimiento programado.");
     }
 
     private async Task SaveRisk()
@@ -2016,6 +2071,7 @@
             $"- EQA con revisión/acción pendiente: {eqaAttentionCount}; desviaciones EQA abiertas: {openEqaDeviationCount}.",
             $"- Auditorías planificadas/en curso: {plannedOrInProgressAuditCount}; hallazgos NC sin vincular: {pendingAuditNcFindingCount}; hallazgos vencidos: {overdueAuditFindingCount}.",
             $"- Evaluaciones de proveedores no aprobadas: {failedSupplierEvaluationCount}; proveedores con atencion actual: {supplierAttentionCount}; reevaluaciones vencidas: {overdueSupplierReevaluationCount}.",
+            $"- Monitorización ambiental: lecturas fuera de rango {environmentalOutOfRangeCount}; sondas no conectadas {environmentalSensorNcCount}.",
             "- Revisión de acciones, recursos, cambios que afectan al sistema de gestión y oportunidades de mejora.");
     }
 

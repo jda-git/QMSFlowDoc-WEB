@@ -14,6 +14,7 @@
 @inject NavigationManager Nav
 @inject IPermissionService PermissionService
 @inject IUserService UserService
+@inject ILogger<Documents> Logger
 
 <PageTitle>Gestor Documental - QMSFlowDoc</PageTitle>
 
@@ -184,7 +185,7 @@ else
                                         <td class="fw-semibold">@doc.Title</td>
                                         <td><span class="badge bg-light text-secondary border">@doc.TypeName</span></td>
                                         <td><span class="badge @GetStatusBadgeClass(doc.Status)">@GetStatusText(doc.Status)</span></td>
-                                        <td class="font-monospace">@(doc.CurrentVersionLabel.StartsWith("v", StringComparison.OrdinalIgnoreCase) ? doc.CurrentVersionLabel : "v" + doc.CurrentVersionLabel)</td>
+                                        <td class="font-monospace">@((doc.CurrentVersionLabel ?? string.Empty).StartsWith("v", StringComparison.OrdinalIgnoreCase) ? doc.CurrentVersionLabel : "v" + doc.CurrentVersionLabel)</td>
                                         <td>
                                             <span class="badge @(doc.NextReviewDisplay == "VENCIDO" ? "bg-danger text-white" : "bg-light text-dark border")">
                                                 @doc.NextReviewDisplay
@@ -1122,7 +1123,7 @@ else
         }
         catch (Exception ex)
         {
-            folderError = ex.Message;
+            folderError = SafeError(ex, "managing folders");
         }
     }
 
@@ -1146,7 +1147,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error: {ex.Message}");
+            await JS.InvokeVoidAsync("alert", SafeError(ex, "deleting folder"));
         }
     }
 
@@ -1231,7 +1232,7 @@ else
         }
         catch (Exception ex)
         {
-            addDocError = ex.Message;
+            addDocError = SafeError(ex, "adding document");
         }
         finally
         {
@@ -1302,7 +1303,7 @@ else
         }
         catch (Exception ex)
         {
-            editMetadataError = ex.Message;
+            editMetadataError = SafeError(ex, "editing document metadata");
         }
     }
 
@@ -1399,7 +1400,7 @@ else
         }
         catch (Exception ex)
         {
-            addVersionError = ex.Message;
+            addVersionError = SafeError(ex, "adding document version");
         }
         finally
         {
@@ -1458,7 +1459,7 @@ else
         }
         catch (Exception ex)
         {
-            approveError = ex.Message;
+            approveError = SafeError(ex, "approving document");
         }
     }
 
@@ -1506,7 +1507,7 @@ else
         }
         catch (Exception ex)
         {
-            transitionError = ex.Message;
+            transitionError = SafeError(ex, "changing document state");
         }
     }
 
@@ -1544,7 +1545,7 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al mover carpeta: {ex.Message}");
+            await JS.InvokeVoidAsync("alert", SafeError(ex, "moving folder up"));
         }
     }
 
@@ -1560,7 +1561,14 @@ else
         }
         catch (Exception ex)
         {
-            await JS.InvokeVoidAsync("alert", $"Error al mover carpeta: {ex.Message}");
+            await JS.InvokeVoidAsync("alert", SafeError(ex, "moving folder down"));
         }
+    }
+
+    private string SafeError(Exception exception, string operation)
+    {
+        var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+        Logger.LogError(exception, "Document error while {Operation}. IncidentId: {IncidentId}", operation, incidentId);
+        return $"No se ha podido completar la operación. Indique la incidencia {incidentId} al administrador.";
     }
 }

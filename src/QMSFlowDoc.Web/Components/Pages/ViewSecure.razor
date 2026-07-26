@@ -8,6 +8,7 @@
 @attribute [Authorize]
 @inject IDocumentService DocumentService
 @inject IJSRuntime JS
+@inject ILogger<ViewSecure> Logger
 
 <PageTitle>Visualizar Documento Seguro</PageTitle>
 
@@ -116,7 +117,9 @@
         }
         catch (Exception ex)
         {
-            errorMsg = ex.Message;
+            var incidentId = Guid.NewGuid().ToString("N")[..8].ToUpperInvariant();
+            Logger.LogError(ex, "Secure document viewer error. IncidentId: {IncidentId}", incidentId);
+            errorMsg = $"No se ha podido cargar el documento. Indique la incidencia {incidentId} al administrador.";
         }
         finally
         {

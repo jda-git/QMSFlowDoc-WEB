@@ -1,0 +1,325 @@
+@page "/methods/{MethodId:guid}"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+@using QMSFlowDoc.Application.Services.Identity
+@using QMSFlowDoc.Domain.Entities
+@using QMSFlowDoc.Infrastructure.Persistence
+@attribute [Authorize]
+@inject QmsDbContext DbContext
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPermissionService PermissionService
+@inject NavigationManager Navigation
+
+<PageTitle>Ficha de método - QMSFlowDoc</PageTitle>
+
+<div class="container py-4">
+    <a class="btn btn-sm btn-outline-secondary mb-3" href="/methods">← Volver a métodos</a>
+
+    @if (!string.IsNullOrWhiteSpace(message)) { <div class="alert @messageCss">@message</div> }
+
+    @if (!canRead)
+    {
+        <div class="alert alert-warning">No dispone de permiso de consulta para este módulo.</div>
+    }
+    else if (method is null)
+    {
+        <div class="alert alert-warning">No se ha encontrado el método solicitado.</div>
+    }
+    else
+    {
+        <div class="d-flex justify-content-between align-items-start flex-wrap gap-3 mb-4">
+            <div>
+                <div class="text-muted small">@method.Code</div>
+                <h2 class="fw-bold mb-1">@method.Name</h2>
+                <div class="d-flex gap-2 flex-wrap"><span class="badge @MethodStatusCss(method.Status)">@MethodStatusLabel(method.Status)</span><span class="badge bg-secondary">@RegulatoryLabel(method.RegulatoryClassification)</span><span class="badge bg-light text-dark border">@ResultTypeLabel(method.ResultType)</span></div>
+            </div>
+            <div class="text-end small text-muted">Versión vigente: <strong>@(method.CurrentVersion ?? "—")</strong><br />Fecha efectiva: @(method.EffectiveDate?.ToLocalTime().ToString("dd/MM/yyyy") ?? "—")</div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header fw-semibold">Datos del método y alcance clínico</div>
+            <div class="card-body">
+                <div class="row g-3">
+                    @foreach (var field in MethodDetailFields)
+                    {
+                        <div class="col-md-6"><div class="small text-muted">@field.Title</div><div>@(string.IsNullOrWhiteSpace(field.Value) ? "—" : field.Value)</div></div>
+                    }
+                    <div class="col-md-6"><div class="small text-muted">Próxima revisión</div><div>@(method.ReviewDueDate?.ToString("dd/MM/yyyy") ?? "No definida")</div></div>
+                    <div class="col-md-6"><div class="small text-muted">PNT asociado</div>@if (ProcedureDocument is not null) { <a href="/documents/view/@ProcedureDocument.Id" target="_blank">@DocumentLabel(ProcedureDocument)</a> } else { <span class="text-warning">No vinculado o no vigente</span> }</div>
+                </div>
+
+                @if (canEdit && method.Status == MethodStatus.DRAFT)
+                {
+                    <details class="mt-3 border-top pt-3">
+                        <summary class="text-primary">Editar datos del borrador y vincular PNT</summary>
+                        <div class="row g-2 mt-2">
+                            <div class="col-md-4"><input class="form-control" placeholder="Código" @bind="method.Code" /></div>
+                            <div class="col-md-8"><input class="form-control" placeholder="Nombre" @bind="method.Name" /></div>
+                            <div class="col-md-6"><textarea class="form-control" placeholder="Uso previsto" @bind="method.IntendedUse"></textarea></div>
+                            <div class="col-md-6"><textarea class="form-control" placeholder="Magnitudes" @bind="method.Measurands"></textarea></div>
+                            <div class="col-md-6"><textarea class="form-control" placeholder="Muestras admitidas" @bind="method.SpecimenTypes"></textarea></div>
+                            <div class="col-md-6"><textarea class="form-control" placeholder="Preanalítica" @bind="method.PreAnalyticalRequirements"></textarea></div>
+                            <div class="col-12"><select class="form-select" @bind="method.DocumentId"><option value="">PNT vigente del Gestor Documental</option>@foreach (var document in ProcedureDocuments) { <option value="@document.Id">@DocumentLabel(document)</option> }</select></div>
+                            <div class="col-md-6"><textarea class="form-control" placeholder="Equipo y software" @bind="method.EquipmentConfiguration"></textarea></div>
+                            <div class="col-md-6"><textarea class="form-control" placeholder="Panel y reactivos" @bind="method.PanelDescription"></textarea></div>
+                            <div class="col-md-6"><textarea class="form-control" placeholder="Adquisición y gating" @bind="method.DataAnalysisProcedure"></textarea></div>
+                            <div class="col-md-6"><textarea class="form-control" placeholder="Límites de decisión" @bind="method.ClinicalDecisionLimits"></textarea></div>
+                            <div class="col-12"><textarea class="form-control" placeholder="Motivo de la corrección (obligatorio)" @bind="methodEditReason"></textarea></div>
+                            <div class="col-12"><button class="btn btn-primary" @onclick="SaveMethodMetadata">Guardar datos del borrador</button></div>
+                        </div>
+                    </details>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header fw-semibold">Versiones, validación y aprobación</div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead><tr><th>Versión</th><th>Estado</th><th>Estudio</th><th>Informe</th><th>Acciones</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in versions)
+                            {
+                                <tr>
+                                    <td><strong>@item.Version</strong><div class="small text-muted">@item.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy") · @item.CreatedBy</div></td>
+                                    <td><span class="badge @VersionStatusCss(item.Status)">@VersionStatusLabel(item.Status)</span></td>
+                                    <td class="small">@item.EvaluationScope</td>
+                                    <td>@if (ValidationReport(item) is not null) { <a href="/documents/view/@ValidationReport(item)!.Id" target="_blank">@DocumentLabel(ValidationReport(item)!)</a> } else { <span class="text-warning small">No vinculado</span> }</td>
+                                    <td class="text-nowrap">
+                                        @if (canEdit && item.Status is "DRAFT" or "UNDER_EVALUATION") { <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => BeginVersionEdit(item)">Completar estudio</button><button class="btn btn-sm btn-outline-warning" @onclick="() => PrepareForApproval(item.Id)">Preparar aprobación</button> }
+                                        @if (canApprove && item.Status == "READY_FOR_APPROVAL" && !IsOwnVersion(item)) { <button class="btn btn-sm btn-outline-success" @onclick="() => ApproveVersion(item.Id)">Aprobar</button> }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                @if (versionDraft is not null)
+                {
+                    <div class="border rounded p-3 mt-3">
+                        <h5>Estudio de verificación/validación · v@versionDraft.Version</h5>
+                        <p class="small text-muted">El informe y el PNT deben existir como documentos vigentes antes de preparar la aprobación.</p>
+                        <div class="row g-2">
+                            <div class="col-md-6"><input class="form-control" placeholder="Fabricante / kit" @bind="versionDraft.Manufacturer" /></div>
+                            <div class="col-md-6"><input class="form-control" placeholder="Versión de IFU / documentación técnica" @bind="versionDraft.InstructionsForUseVersion" /></div>
+                            <div class="col-12"><textarea class="form-control" placeholder="Alcance de verificación/validación" @bind="versionDraft.EvaluationScope"></textarea></div>
+                            <div class="col-12"><textarea class="form-control" placeholder="Criterios de aceptación predefinidos" @bind="versionDraft.AcceptanceCriteria"></textarea></div>
+                            <div class="col-12"><textarea class="form-control" placeholder="Diseño del estudio y muestras" @bind="versionDraft.StudyDesign"></textarea></div>
+                            <div class="col-12"><textarea class="form-control" placeholder="Fuentes de datos: FCS, IQC, EQA, comparación..." @bind="versionDraft.DataSources"></textarea></div>
+                            <div class="col-12"><select class="form-select" @bind="versionDraft.ValidationReportDocumentId"><option value="">Informe vigente de validación/verificación</option>@foreach (var document in ValidationReportDocuments) { <option value="@document.Id">@DocumentLabel(document)</option> }</select></div>
+                            <div class="col-12"><button class="btn btn-primary me-2" @onclick="SaveVersionStudy">Guardar estudio</button><button class="btn btn-outline-secondary" @onclick="CancelVersionEdit">Cancelar</button></div>
+                        </div>
+                    </div>
+                }
+
+                @if (editingVersionId is Guid selectedVersionId && canEdit)
+                {
+                    <div class="border rounded p-3 mt-3">
+                        <h5>Parámetros evaluados · v@versionDraft?.Version</h5>
+                        @if (selectedValidations.Any())
+                        {
+                            <ul class="small">@foreach (var check in selectedValidations) { <li><strong>@ValidationCharacteristicLabel(check.Characteristic)</strong>: @check.Parameter — @check.Conclusion</li> }</ul>
+                        }
+                        <div class="row g-2">
+                            <div class="col-md-6"><select class="form-select" @bind="newValidation.Characteristic"><option value="@MethodValidationCharacteristic.NOT_CLASSIFIED">Característica evaluada</option>@foreach (var characteristic in ValidationCharacteristics.Where(c => c != MethodValidationCharacteristic.NOT_CLASSIFIED)) { <option value="@characteristic">@ValidationCharacteristicLabel(characteristic)</option> }</select></div>
+                            <div class="col-md-6"><input class="form-control" placeholder="Parámetro concreto" @bind="newValidation.Parameter" /></div>
+                            <div class="col-md-6"><input class="form-control" placeholder="Resultado" @bind="newValidation.Result" /></div>
+                            <div class="col-md-6"><select class="form-select" @bind="newValidation.Conclusion"><option value="">Conclusión</option><option value="CUMPLE">Cumple</option><option value="NO_CUMPLE">No cumple</option><option value="CONDICIONADO">Condicionado</option></select></div>
+                            <div class="col-12"><textarea class="form-control" placeholder="Criterio de aceptación" @bind="newValidation.AcceptanceCriteria"></textarea></div>
+                            <div class="col-md-6"><textarea class="form-control" placeholder="Diseño, operadores/días" @bind="newValidation.StudyDesign"></textarea></div>
+                            <div class="col-md-6"><textarea class="form-control" placeholder="Muestras / niveles" @bind="newValidation.SampleDescription"></textarea></div>
+                            <div class="col-12"><textarea class="form-control" placeholder="Fuentes de datos" @bind="newValidation.DataSources"></textarea></div>
+                            <div class="col-12"><select class="form-select" @bind="newValidation.EvidenceDocumentId"><option value="">Documento de evidencia vigente</option>@foreach (var document in documents) { <option value="@document.Id">@DocumentLabel(document)</option> }</select></div>
+                            <div class="col-12"><button class="btn btn-outline-success" @onclick="SaveValidation">Añadir parámetro</button></div>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        <div class="card mb-4">
+            <div class="card-header fw-semibold">Incertidumbre de medida</div>
+            <div class="card-body">
+                @if (!uncertainties.Any()) { <span class="text-muted">No hay incertidumbres registradas.</span> }
+                else { <div class="table-responsive"><table class="table"><thead><tr><th>Magnitud</th><th>U</th><th>Rango</th><th>Evidencia</th><th>Revisión</th></tr></thead><tbody>@foreach (var uncertainty in uncertainties) { <tr><td>@uncertainty.AnalyteName<br /><span class="small text-muted">@uncertainty.Unit</span></td><td>@uncertainty.Value</td><td>@uncertainty.MeasurementRange</td><td>@if (EvidenceDocument(uncertainty.EvidenceDocumentId) is not null) { <a href="/documents/view/@EvidenceDocument(uncertainty.EvidenceDocumentId)!.Id" target="_blank">@DocumentLabel(EvidenceDocument(uncertainty.EvidenceDocumentId)!)</a> }</td><td>@(uncertainty.ReviewDueDate?.ToString("dd/MM/yyyy") ?? "—")</td></tr> }</tbody></table></div> }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public Guid MethodId { get; set; }
+
+    private Method? method;
+    private List<MethodVersion> versions = new();
+    private List<MethodValidation> validations = new();
+    private List<MeasurementUncertainty> uncertainties = new();
+    private List<Document> documents = new();
+    private VersionDraft? versionDraft;
+    private Guid? editingVersionId;
+    private MethodValidation newValidation = new();
+    private string? methodEditReason;
+    private string? message;
+    private string messageCss = "alert-info";
+    private bool canRead;
+    private bool canEdit;
+    private bool canApprove;
+    private ClaimsPrincipal? currentUser;
+
+    private IEnumerable<Document> ProcedureDocuments => documents.Where(d => d.DocumentType?.TypeCode == "PRO");
+    private IEnumerable<Document> ValidationReportDocuments => documents.Where(d => d.DocumentType?.TypeCode == "VAL");
+    private Document? ProcedureDocument => EvidenceDocument(method?.DocumentId);
+    private IEnumerable<MethodValidation> selectedValidations => editingVersionId is Guid id ? validations.Where(v => v.MethodVersionId == id) : Enumerable.Empty<MethodValidation>();
+    private string UserName => currentUser?.Identity?.Name ?? "Sistema";
+    private static readonly MethodValidationCharacteristic[] ValidationCharacteristics = Enum.GetValues<MethodValidationCharacteristic>();
+    private IEnumerable<(string Title, string? Value)> MethodDetailFields => new (string, string?)[]
+    {
+        ("Uso previsto", method?.IntendedUse), ("Magnitudes, poblaciones y denominadores", method?.Measurands),
+        ("Muestras admitidas", method?.SpecimenTypes), ("Preanalítica", method?.PreAnalyticalRequirements),
+        ("Equipo y software", method?.EquipmentConfiguration), ("Panel y reactivos críticos", method?.PanelDescription),
+        ("Adquisición y análisis/gating", method?.DataAnalysisProcedure), ("Intervalo de medida", method?.MeasurementRange),
+        ("Límites de decisión", method?.ClinicalDecisionLimits), ("Limitaciones", method?.Limitations), ("Notas", method?.Notes)
+    };
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        currentUser = state.User;
+        var permissions = await PermissionService.GetPermissionsForUserAsync(currentUser, "Methods");
+        var isAdmin = currentUser.IsInRole("Administrador");
+        var isTechnician = currentUser.IsInRole("Técnico");
+        canRead = permissions.CanRead;
+        canEdit = permissions.CanEdit && (isAdmin || !isTechnician);
+        canApprove = permissions.CanApprove && (isAdmin || !isTechnician);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        method = await DbContext.Methods.SingleOrDefaultAsync(m => m.Id == MethodId);
+        versions = await DbContext.MethodVersions.Where(v => v.MethodId == MethodId).OrderByDescending(v => v.CreatedAt).ToListAsync();
+        validations = await DbContext.MethodValidations.Where(v => versions.Select(mv => mv.Id).Contains(v.MethodVersionId)).OrderBy(v => v.Characteristic).ToListAsync();
+        uncertainties = await DbContext.MeasurementUncertainties.Where(u => u.MethodId == MethodId).OrderBy(u => u.AnalyteName).ToListAsync();
+        documents = await DbContext.Documents.Include(d => d.DocumentType).Where(d => !d.IsDeleted && d.Status == DocumentStatus.APPROVED).OrderBy(d => d.DocCode).ToListAsync();
+    }
+
+    private async Task SaveMethodMetadata()
+    {
+        if (!await Ensure(canEdit && method?.Status == MethodStatus.DRAFT, "editar el borrador")) return;
+        if (method is null || string.IsNullOrWhiteSpace(method.Code) || string.IsNullOrWhiteSpace(method.Name) || string.IsNullOrWhiteSpace(method.IntendedUse) || string.IsNullOrWhiteSpace(method.Measurands) || string.IsNullOrWhiteSpace(method.SpecimenTypes) || string.IsNullOrWhiteSpace(method.PreAnalyticalRequirements) || string.IsNullOrWhiteSpace(methodEditReason))
+        { Set("Complete los campos obligatorios y el motivo de la corrección.", "alert-warning"); return; }
+        method.Code = method.Code.Trim(); method.Name = method.Name.Trim(); method.UpdatedAt = DateTime.UtcNow;
+        AddAudit("UPDATE", "Method", method.Id, $"Método actualizado. Motivo: {methodEditReason.Trim()}");
+        methodEditReason = null;
+        await Save("Datos del método actualizados.");
+    }
+
+    private void BeginVersionEdit(MethodVersion version)
+    {
+        editingVersionId = version.Id;
+        versionDraft = new VersionDraft(version);
+        newValidation = new MethodValidation();
+    }
+
+    private void CancelVersionEdit() { editingVersionId = null; versionDraft = null; newValidation = new MethodValidation(); }
+
+    private async Task SaveVersionStudy()
+    {
+        var draft = versionDraft;
+        if (!await Ensure(canEdit && editingVersionId is not null && draft is not null, "editar el estudio") || draft is null) return;
+        if (string.IsNullOrWhiteSpace(draft.EvaluationScope) || string.IsNullOrWhiteSpace(draft.AcceptanceCriteria) || string.IsNullOrWhiteSpace(draft.StudyDesign) || string.IsNullOrWhiteSpace(draft.DataSources))
+        { Set("Alcance, criterios, diseño y fuentes de datos son obligatorios.", "alert-warning"); return; }
+        if (method?.RegulatoryClassification == MethodRegulatoryClassification.CE_IVD_VERIFICATION && (string.IsNullOrWhiteSpace(draft.Manufacturer) || string.IsNullOrWhiteSpace(draft.InstructionsForUseVersion)))
+        { Set("Para CE-IVD debe indicar fabricante/kit y versión de IFU.", "alert-warning"); return; }
+        var version = await DbContext.MethodVersions.SingleOrDefaultAsync(v => v.Id == editingVersionId);
+        if (version is null || version.Status is not ("DRAFT" or "UNDER_EVALUATION")) { Set("La versión ya no es editable.", "alert-warning"); return; }
+        version.Manufacturer = draft.Manufacturer?.Trim(); version.InstructionsForUseVersion = draft.InstructionsForUseVersion?.Trim(); version.EvaluationScope = draft.EvaluationScope.Trim(); version.AcceptanceCriteria = draft.AcceptanceCriteria.Trim(); version.StudyDesign = draft.StudyDesign.Trim(); version.DataSources = draft.DataSources.Trim(); version.ValidationReportDocumentId = draft.ValidationReportDocumentId; version.Status = "UNDER_EVALUATION";
+        AddAudit("UPDATE", "MethodVersion", version.Id, $"Estudio de la versión {version.Version} actualizado y puesto en evaluación.");
+        await Save("Estudio guardado. Añada todos los parámetros antes de prepararlo para aprobación.");
+    }
+
+    private async Task SaveValidation()
+    {
+        if (!await Ensure(canEdit && editingVersionId is not null, "registrar parámetros")) return;
+        if (newValidation.Characteristic == MethodValidationCharacteristic.NOT_CLASSIFIED || string.IsNullOrWhiteSpace(newValidation.Parameter) || string.IsNullOrWhiteSpace(newValidation.Result) || string.IsNullOrWhiteSpace(newValidation.AcceptanceCriteria) || string.IsNullOrWhiteSpace(newValidation.StudyDesign) || string.IsNullOrWhiteSpace(newValidation.DataSources) || string.IsNullOrWhiteSpace(newValidation.Conclusion))
+        { Set("Complete característica, parámetro, resultado, criterio, diseño, fuentes y conclusión.", "alert-warning"); return; }
+        newValidation.Id = Guid.NewGuid(); newValidation.MethodVersionId = editingVersionId!.Value;
+        DbContext.MethodValidations.Add(newValidation);
+        AddAudit("CREATE", "MethodValidation", newValidation.Id, $"Parámetro registrado: {newValidation.Characteristic} — {newValidation.Conclusion}.");
+        await Save("Parámetro de validación registrado.");
+        newValidation = new MethodValidation();
+    }
+
+    private async Task PrepareForApproval(Guid versionId)
+    {
+        if (!await Ensure(canEdit, "preparar una versión")) return;
+        var version = await DbContext.MethodVersions.SingleOrDefaultAsync(v => v.Id == versionId && v.MethodId == MethodId);
+        if (method is null || version is null || version.Status is not ("DRAFT" or "UNDER_EVALUATION")) { Set("La versión ya no puede prepararse para aprobación.", "alert-warning"); return; }
+        var issue = ApprovalBlockingIssue(method, version);
+        if (issue is not null) { Set(issue, "alert-warning"); return; }
+        version.Status = "READY_FOR_APPROVAL";
+        AddAudit("REQUEST_APPROVAL", "MethodVersion", version.Id, $"Versión {version.Version} preparada para aprobación.");
+        await Save("Versión preparada para aprobación independiente.");
+    }
+
+    private async Task ApproveVersion(Guid versionId)
+    {
+        if (!await Ensure(canApprove, "aprobar versiones")) return;
+        var version = await DbContext.MethodVersions.SingleOrDefaultAsync(v => v.Id == versionId && v.MethodId == MethodId);
+        if (method is null || version is null || version.Status != "READY_FOR_APPROVAL") { Set("La versión no está pendiente de aprobación.", "alert-warning"); return; }
+        if (IsOwnVersion(version)) { Set("No puede aprobar una versión creada por usted mismo.", "alert-danger"); return; }
+        var issue = ApprovalBlockingIssue(method, version);
+        if (issue is not null) { Set(issue, "alert-warning"); return; }
+        var previous = await DbContext.MethodVersions.Where(v => v.MethodId == MethodId && v.Status == "APPROVED").ToListAsync();
+        foreach (var item in previous) item.Status = "OBSOLETE";
+        version.Status = "APPROVED"; version.ApprovedBy = UserName; version.ApprovedAt = DateTime.UtcNow;
+        method.Status = MethodStatus.ACTIVE; method.CurrentVersion = version.Version; method.EffectiveDate = DateTime.UtcNow; method.UpdatedAt = DateTime.UtcNow;
+        AddAudit("APPROVE", "MethodVersion", version.Id, $"Versión {version.Version} aprobada y activada.");
+        CancelVersionEdit();
+        await Save("Versión aprobada formalmente y método activado.");
+    }
+
+    private string? ApprovalBlockingIssue(Method methodToApprove, MethodVersion version)
+    {
+        if (methodToApprove.DocumentId is not Guid pntId || !ProcedureDocuments.Any(d => d.Id == pntId)) return "Debe vincular un PNT vigente de tipo Procedimiento.";
+        if (version.ValidationReportDocumentId is not Guid reportId || !ValidationReportDocuments.Any(d => d.Id == reportId)) return "Debe vincular un informe vigente de tipo 'Informe de validación/verificación'.";
+        if (string.IsNullOrWhiteSpace(version.EvaluationScope) || string.IsNullOrWhiteSpace(version.AcceptanceCriteria) || string.IsNullOrWhiteSpace(version.StudyDesign) || string.IsNullOrWhiteSpace(version.DataSources)) return "Complete el alcance, criterios, diseño y fuentes de datos del estudio.";
+        if (methodToApprove.RegulatoryClassification == MethodRegulatoryClassification.CE_IVD_VERIFICATION && (string.IsNullOrWhiteSpace(version.Manufacturer) || string.IsNullOrWhiteSpace(version.InstructionsForUseVersion))) return "Para CE-IVD se requieren fabricante/kit y versión de IFU.";
+        var checks = validations.Where(v => v.MethodVersionId == version.Id).ToList();
+        if (checks.Count == 0 || checks.Any(v => !string.Equals(v.Conclusion, "CUMPLE", StringComparison.OrdinalIgnoreCase))) return "Registre parámetros de evaluación y asegure que todos concluyan 'CUMPLE'.";
+        var required = new List<MethodValidationCharacteristic> { MethodValidationCharacteristic.PRECISION, MethodValidationCharacteristic.COMPARISON_OR_TRUENESS, MethodValidationCharacteristic.GATING_REPRODUCIBILITY, MethodValidationCharacteristic.INSTRUMENT_QC };
+        if (methodToApprove.RegulatoryClassification is MethodRegulatoryClassification.IN_HOUSE_VALIDATION or MethodRegulatoryClassification.MODIFIED_CE_IVD_VALIDATION) { required.Add(MethodValidationCharacteristic.ANALYTICAL_SENSITIVITY); required.Add(MethodValidationCharacteristic.ANALYTICAL_SPECIFICITY); }
+        if (methodToApprove.ResultType == ExaminationResultType.QUANTITATIVE) required.Add(MethodValidationCharacteristic.LINEARITY_OR_REPORTABLE_RANGE);
+        var missing = required.Where(c => !checks.Any(v => v.Characteristic == c && string.Equals(v.Conclusion, "CUMPLE", StringComparison.OrdinalIgnoreCase))).ToList();
+        return missing.Count == 0 ? null : $"Faltan características requeridas con resultado 'CUMPLE': {string.Join(", ", missing.Select(ValidationCharacteristicLabel))}.";
+    }
+
+    private bool IsOwnVersion(MethodVersion version) => string.Equals(version.CreatedBy, UserName, StringComparison.OrdinalIgnoreCase);
+    private Document? ValidationReport(MethodVersion version) => EvidenceDocument(version.ValidationReportDocumentId);
+    private Document? EvidenceDocument(Guid? id) => id is Guid value ? documents.FirstOrDefault(d => d.Id == value) : null;
+    private static string DocumentLabel(Document document) => $"{document.DocCode} — {document.Title}";
+    private static string MethodStatusLabel(MethodStatus status) => status switch { MethodStatus.DRAFT => "Borrador", MethodStatus.ACTIVE => "Activo", MethodStatus.OBSOLETE => "Obsoleto", _ => status.ToString() };
+    private static string MethodStatusCss(MethodStatus status) => status switch { MethodStatus.DRAFT => "bg-secondary", MethodStatus.ACTIVE => "bg-success", MethodStatus.OBSOLETE => "bg-dark", _ => "bg-secondary" };
+    private static string VersionStatusLabel(string status) => status switch { "DRAFT" => "Borrador", "UNDER_EVALUATION" => "En evaluación", "READY_FOR_APPROVAL" => "Pendiente de aprobación", "APPROVED" => "Aprobada", "OBSOLETE" => "Obsoleta", _ => status };
+    private static string VersionStatusCss(string status) => status switch { "DRAFT" => "bg-secondary", "UNDER_EVALUATION" => "bg-info text-dark", "READY_FOR_APPROVAL" => "bg-warning text-dark", "APPROVED" => "bg-success", "OBSOLETE" => "bg-dark", _ => "bg-secondary" };
+    private static string RegulatoryLabel(MethodRegulatoryClassification value) => value switch { MethodRegulatoryClassification.CE_IVD_VERIFICATION => "CE-IVD / verificación", MethodRegulatoryClassification.IN_HOUSE_VALIDATION => "In-house / validación", MethodRegulatoryClassification.MODIFIED_CE_IVD_VALIDATION => "CE-IVD modificado / validación", _ => "Sin clasificar" };
+    private static string ResultTypeLabel(ExaminationResultType value) => value switch { ExaminationResultType.QUANTITATIVE => "Cuantitativo", ExaminationResultType.SEMI_QUANTITATIVE => "Semicuantitativo", ExaminationResultType.QUALITATIVE => "Cualitativo", ExaminationResultType.INTERPRETATIVE => "Interpretativo", _ => "Sin clasificar" };
+    private static string ValidationCharacteristicLabel(MethodValidationCharacteristic value) => value switch { MethodValidationCharacteristic.PRECISION => "Precisión", MethodValidationCharacteristic.COMPARISON_OR_TRUENESS => "Comparación / veracidad", MethodValidationCharacteristic.ANALYTICAL_SENSITIVITY => "Sensibilidad analítica", MethodValidationCharacteristic.ANALYTICAL_SPECIFICITY => "Especificidad analítica", MethodValidationCharacteristic.LINEARITY_OR_REPORTABLE_RANGE => "Linealidad / intervalo reportable", MethodValidationCharacteristic.SAMPLE_STABILITY => "Estabilidad de muestra", MethodValidationCharacteristic.GATING_REPRODUCIBILITY => "Reproducibilidad de gating", MethodValidationCharacteristic.INSTRUMENT_QC => "Cualificación / QC del instrumento", _ => "Sin clasificar" };
+
+    private Task<bool> Ensure(bool allowed, string operation) { if (allowed) return Task.FromResult(true); Set($"No dispone de permiso para {operation}.", "alert-danger"); return Task.FromResult(false); }
+    private void Set(string value, string css) { message = value; messageCss = css; }
+    private void AddAudit(string action, string entityType, Guid entityId, string details) => DbContext.AuditLogs.Add(new AuditLog { Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, UserName = UserName, Action = action, EntityType = entityType, EntityId = entityId, Details = details, Result = "OK", MachineName = Environment.MachineName });
+    private async Task Save(string success) { try { await DbContext.SaveChangesAsync(); Set(success, "alert-success"); await Load(); } catch (DbUpdateConcurrencyException) { DbContext.ChangeTracker.Clear(); Set("Otro usuario modificó el registro. Recargue la ficha.", "alert-warning"); await Load(); } catch (DbUpdateException) { DbContext.ChangeTracker.Clear(); Set("No se ha podido guardar el cambio. Revise los datos e ինտéntelo de nuevo.", "alert-danger"); await Load(); } }
+
+    private sealed class VersionDraft
+    {
+        public VersionDraft(MethodVersion source) { Id = source.Id; Version = source.Version; Manufacturer = source.Manufacturer; InstructionsForUseVersion = source.InstructionsForUseVersion; EvaluationScope = source.EvaluationScope; AcceptanceCriteria = source.AcceptanceCriteria; StudyDesign = source.StudyDesign; DataSources = source.DataSources; ValidationReportDocumentId = source.ValidationReportDocumentId; }
+        public Guid Id { get; } public string Version { get; } public string? Manufacturer { get; set; } public string? InstructionsForUseVersion { get; set; } public string? EvaluationScope { get; set; } public string? AcceptanceCriteria { get; set; } public string? StudyDesign { get; set; } public string? DataSources { get; set; } public Guid? ValidationReportDocumentId { get; set; }
+    }
+
+}

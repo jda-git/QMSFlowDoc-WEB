@@ -7,9 +7,6 @@
     <base href="/" />
     <link rel="stylesheet" href="lib/bootstrap/css/bootstrap.min.css">
     <link rel="stylesheet" href="lib/bootstrap-icons/bootstrap-icons.min.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="app.css" />
     <link rel="stylesheet" href="QMSFlowDoc.Web.styles.css" />
     <link rel="icon" type="image/png" href="favicon.png" />
@@ -17,7 +14,19 @@
 </head>
 
 <body>
-    <Routes />
+    <ErrorBoundary>
+        <ChildContent>
+            <Routes />
+        </ChildContent>
+        <ErrorContent>
+            <main class="container py-5">
+                <div class="alert alert-danger" role="alert">
+                    <h1 class="h4">No se ha podido completar la operación</h1>
+                    <p class="mb-0">El incidente se ha registrado. Vuelva a intentarlo o contacte con el administrador del sistema.</p>
+                </div>
+            </main>
+        </ErrorContent>
+    </ErrorBoundary>
     <script src="lib/bootstrap/js/bootstrap.bundle.min.js"></script>
     <script src="_framework/blazor.web.js"></script>
     <script>
@@ -55,6 +64,43 @@
                         input.dispatchEvent(new Event('change'));
                     }
                 });
+            }
+        };
+
+        window.downloadBase64File = function (base64, filename, mimeType) {
+            var raw = atob(base64), bytes = new Uint8Array(raw.length);
+            for (var i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+            var url = URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+            var link = document.createElement('a'); link.href = url; link.download = filename;
+            document.body.appendChild(link); link.click(); link.remove();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+        };
+
+        window.qmsEnvironmentalCharts = {
+            draw: function (id, config) {
+                const canvas = document.getElementById(id); if (!canvas) return;
+                const ratio = window.devicePixelRatio || 1, width = canvas.clientWidth || 900, height = 360;
+                canvas.width = width * ratio; canvas.height = height * ratio;
+                const ctx = canvas.getContext('2d'); ctx.setTransform(ratio, 0, 0, ratio, 0, 0); ctx.clearRect(0, 0, width, height);
+                const left = 65, right = config.rightUnit ? 65 : 20, top = 38, bottom = 54, pw = width - left - right, ph = height - top - bottom;
+                const series = config.series || [], limits = config.limits || [], points = series.flatMap(s => s.points.map(p => ({ ...p, axis: s.axis })));
+                if (!points.length) return;
+                const dates = points.map(p => new Date(p.date).getTime()), minDate = Math.min(...dates), maxDate = Math.max(...dates);
+                const day = 86400000, firstDay = new Date(minDate); firstDay.setHours(0,0,0,0); const lastDay = new Date(maxDate); lastDay.setHours(0,0,0,0);
+                const domainStart = firstDay.getTime(), domainEnd = Math.max(domainStart + day, lastDay.getTime() + day), dateSpan = domainEnd - domainStart;
+                const range = axis => { const values = points.filter(p => p.axis === axis).map(p => p.value).concat(limits.filter(l => l.axis === axis).map(l => l.value)); let min = Math.min(...values), max = Math.max(...values); const pad = Math.max(1, (max - min) * .1); return [min - pad, max + pad]; };
+                const leftRange = range('left'), rightRange = config.rightUnit ? range('right') : null;
+                const x = d => left + (new Date(d).getTime() - domainStart) / dateSpan * pw;
+                const y = (v, axis) => { const r = axis === 'right' ? rightRange : leftRange; return top + (r[1] - v) / (r[1] - r[0]) * ph; };
+                ctx.font = '12px system-ui'; ctx.strokeStyle = '#e5e7eb'; ctx.fillStyle = '#4b5563'; ctx.textAlign = 'right';
+                for (let i = 0; i < 5; i++) { const yy = top + ph * i / 4, val = leftRange[1] - (leftRange[1] - leftRange[0]) * i / 4; ctx.beginPath(); ctx.moveTo(left, yy); ctx.lineTo(left + pw, yy); ctx.stroke(); ctx.fillText(val.toFixed(1) + ' ' + config.leftUnit, left - 8, yy + 4); if (rightRange) { const rv = rightRange[1] - (rightRange[1] - rightRange[0]) * i / 4; ctx.textAlign = 'left'; ctx.fillText(rv.toFixed(0) + ' ' + config.rightUnit, left + pw + 8, yy + 4); ctx.textAlign = 'right'; } }
+                ctx.strokeStyle = '#6b7280'; ctx.beginPath(); ctx.moveTo(left, top); ctx.lineTo(left, top + ph); ctx.lineTo(left + pw, top + ph); ctx.stroke();
+                limits.forEach(limit => { const yy = y(limit.value, limit.axis); if (yy < top || yy > top + ph) return; ctx.save(); ctx.strokeStyle = limit.color; ctx.fillStyle = limit.color; ctx.lineWidth = 1.4; ctx.setLineDash(limit.kind === 'min' ? [3, 3] : [8, 4]); ctx.beginPath(); ctx.moveTo(left, yy); ctx.lineTo(left + pw, yy); ctx.stroke(); ctx.setLineDash([]); ctx.font = '600 10px system-ui'; ctx.textAlign = 'left'; ctx.fillText(limit.label, left + 5, Math.max(top + 11, yy - 3)); ctx.restore(); });
+                const days = Math.max(1, Math.round((lastDay-firstDay)/day)); ctx.textAlign = 'center';
+                for (let offset = 0; offset <= days; offset++) { const t = firstDay.getTime() + offset * day, xx = x(new Date(t).toISOString()), labelledTick = days <= 8 || offset % 7 === 0 || offset === days; ctx.beginPath(); ctx.moveTo(xx, top + ph); ctx.lineTo(xx, top + ph + (labelledTick ? 7 : 4)); ctx.stroke(); if (labelledTick) ctx.fillText(new Date(t).toLocaleDateString('es-ES', { day:'2-digit', month:'2-digit' }), xx, top + ph + 22); }
+                series.forEach(s => { if (!s.points.length) return; ctx.strokeStyle = s.color; ctx.fillStyle = s.color; ctx.lineWidth = 2; ctx.beginPath(); s.points.forEach((p,i) => { const xx=x(p.date), yy=y(p.value,s.axis); i ? ctx.lineTo(xx,yy) : ctx.moveTo(xx,yy); }); ctx.stroke(); s.points.forEach(p => { ctx.beginPath(); ctx.arc(x(p.date), y(p.value,s.axis), 2.3, 0, Math.PI*2); ctx.fill(); }); });
+                ctx.font = '600 12px system-ui'; let lx = left; ctx.textAlign = 'left'; series.forEach(s => { ctx.fillStyle=s.color; ctx.fillRect(lx, 12, 12, 12); ctx.fillStyle='#374151'; ctx.fillText(s.name, lx+17, 22); lx += ctx.measureText(s.name).width + 42; });
+                ctx.fillStyle='#4b5563'; ctx.textAlign='center'; ctx.fillText('Día', left + pw / 2, height - 9);
             }
         };
     </script>

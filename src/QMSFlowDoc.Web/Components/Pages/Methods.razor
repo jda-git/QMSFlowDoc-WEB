@@ -1,0 +1,725 @@
+@page "/methods"
+@rendermode InteractiveServer
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.EntityFrameworkCore
+@using System.Security.Claims
+@using QMSFlowDoc.Application.Services.Identity
+@using QMSFlowDoc.Domain.Entities
+@using QMSFlowDoc.Infrastructure.Persistence
+@attribute [Authorize]
+@inject QmsDbContext DbContext
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IPermissionService PermissionService
+@inject NavigationManager Navigation
+
+<PageTitle>Métodos y validación - QMSFlowDoc</PageTitle>
+
+<div class="container py-4">
+    <h2 class="fw-bold">Métodos, validación e incertidumbre</h2>
+    <p class="text-muted">Registros ISO 15189 de verificación, validación de métodos e incertidumbre de medida.</p>
+
+    @if (!string.IsNullOrWhiteSpace(message))
+    {
+        <div class="alert @messageCss">@message</div>
+    }
+
+    @if (!canRead)
+    {
+        <div class="alert alert-warning">No dispone de permiso de consulta para este módulo.</div>
+    }
+    else
+    {
+        <div class="alert alert-secondary small">
+            <strong>Ciclo de vida:</strong> los métodos en borrador se pueden editar; los métodos activos se sustituyen mediante una nueva versión;
+            los métodos ya utilizados se pasan a obsoletos. La eliminación queda reservada al administrador y sólo se permite para borradores sin registros asociados.
+        </div>
+
+        <div class="row g-4">
+            <div class="col-lg-4">
+                @if (canCreate)
+                {
+                    <div class="card">
+                        <div class="card-body">
+                            <h5>Nuevo método</h5>
+                            <input class="form-control mb-2" placeholder="Código" @bind="method.Code" />
+                            <input class="form-control mb-2" placeholder="Nombre" @bind="method.Name" />
+                            <input class="form-control mb-2" placeholder="Categoría" @bind="method.Category" />
+                            <select class="form-select mb-2" @bind="method.RegulatoryClassification">
+                                <option value="@MethodRegulatoryClassification.NOT_CLASSIFIED">Clasificación regulatoria</option>
+                                <option value="@MethodRegulatoryClassification.CE_IVD_VERIFICATION">CE-IVD: verificación local</option>
+                                <option value="@MethodRegulatoryClassification.IN_HOUSE_VALIDATION">In-house: validación completa</option>
+                                <option value="@MethodRegulatoryClassification.MODIFIED_CE_IVD_VALIDATION">CE-IVD modificado: validación</option>
+                            </select>
+                            <select class="form-select mb-2" @bind="method.ResultType">
+                                <option value="@ExaminationResultType.NOT_CLASSIFIED">Tipo de resultado</option>
+                                <option value="@ExaminationResultType.QUANTITATIVE">Cuantitativo</option>
+                                <option value="@ExaminationResultType.SEMI_QUANTITATIVE">Semicuantitativo</option>
+                                <option value="@ExaminationResultType.QUALITATIVE">Cualitativo</option>
+                                <option value="@ExaminationResultType.INTERPRETATIVE">Interpretativo</option>
+                            </select>
+                            <textarea class="form-control mb-2" placeholder="Uso previsto / finalidad clínica" @bind="method.IntendedUse"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Magnitudes, poblaciones y denominadores medidos" @bind="method.Measurands"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Muestras admitidas y requisitos preanalíticos" @bind="method.SpecimenTypes"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Estabilidad, transporte y preparación preanalítica" @bind="method.PreAnalyticalRequirements"></textarea>
+                            <select class="form-select mb-2" @bind="method.DocumentId">
+                                <option value="">PNT / documento del Gestor Documental</option>
+                                @foreach (var document in ProcedureDocuments) { <option value="@document.Id">@DocumentLabel(document)</option> }
+                            </select>
+                            <details class="mb-2">
+                                <summary class="small text-primary">Configuración técnica y límites clínicos</summary>
+                                <textarea class="form-control mt-2" placeholder="Equipo, software, configuración óptica" @bind="method.EquipmentConfiguration"></textarea>
+                                <textarea class="form-control mt-2" placeholder="Panel, clones, fluorocromos y reactivos críticos" @bind="method.PanelDescription"></textarea>
+                                <textarea class="form-control mt-2" placeholder="Adquisición, compensación/unmixing y análisis/gating" @bind="method.DataAnalysisProcedure"></textarea>
+                                <textarea class="form-control mt-2" placeholder="Intervalo de medida / intervalo reportable" @bind="method.MeasurementRange"></textarea>
+                                <textarea class="form-control mt-2" placeholder="Límites de decisión clínica / intervalos de referencia" @bind="method.ClinicalDecisionLimits"></textarea>
+                                <textarea class="form-control mt-2" placeholder="Limitaciones, interferencias y criterios de revisión" @bind="method.Limitations"></textarea>
+                                <label class="form-label small mt-2">Próxima revisión</label>
+                                <InputDate class="form-control" @bind-Value="method.ReviewDueDate" />
+                            </details>
+                            <textarea class="form-control mb-2" placeholder="Notas" @bind="method.Notes"></textarea>
+                            <button class="btn btn-primary" @onclick="SaveMethod">Guardar método</button>
+                        </div>
+                    </div>
+
+                    <div class="card mt-3">
+                        <div class="card-body">
+                            <h5>Incertidumbre de medida</h5>
+                            <select class="form-select mb-2" @bind="uncertainty.MethodId">
+                                <option value="@Guid.Empty">Método</option>
+                                @foreach (var item in methods.Where(m => m.Status != MethodStatus.OBSOLETE))
+                                {
+                                    <option value="@item.Id">@item.Code - @item.Name</option>
+                                }
+                            </select>
+                            <input class="form-control mb-2" placeholder="Analito" @bind="uncertainty.AnalyteName" />
+                            <input type="number" step="0.0001" class="form-control mb-2" placeholder="Incertidumbre expandida (U)" @bind="uncertainty.Value" />
+                            <input class="form-control mb-2" placeholder="Unidad" @bind="uncertainty.Unit" />
+                            <div class="row g-2 mb-2"><div class="col"><input type="number" step="0.1" class="form-control" placeholder="Factor de cobertura k" @bind="uncertainty.CoverageFactor" /></div><div class="col"><input class="form-control" placeholder="Nivel de confianza" @bind="uncertainty.ConfidenceLevel" /></div></div>
+                            <textarea class="form-control mb-2" placeholder="Definición de la magnitud y rango aplicable" @bind="uncertainty.MeasurementRange"></textarea>
+                            <details class="mb-2">
+                                <summary class="small text-primary">Datos y cálculo de incertidumbre</summary>
+                                <textarea class="form-control mt-2" placeholder="Fuentes de datos: IQC, EQA, repetición, comparación..." @bind="uncertainty.DataSources"></textarea>
+                                <textarea class="form-control mt-2" placeholder="Método de cálculo y componentes combinados" @bind="uncertainty.CalculationMethod"></textarea>
+                                <textarea class="form-control mt-2" placeholder="Uso clínico / actuación ante límite de decisión" @bind="uncertainty.ClinicalUse"></textarea>
+                                <div class="row g-2 mt-1"><div class="col"><label class="form-label small">Inicio de datos</label><InputDate class="form-control" @bind-Value="uncertainty.DataPeriodStart" /></div><div class="col"><label class="form-label small">Fin de datos</label><InputDate class="form-control" @bind-Value="uncertainty.DataPeriodEnd" /></div></div>
+                                <select class="form-select mt-2" @bind="uncertainty.EvidenceDocumentId"><option value="">Documento de evidencia / cálculo</option>@foreach (var document in documents) { <option value="@document.Id">@DocumentLabel(document)</option> }</select>
+                                <label class="form-label small mt-2">Próxima revisión</label><InputDate class="form-control" @bind-Value="uncertainty.ReviewDueDate" />
+                            </details>
+                            <button class="btn btn-outline-primary" @onclick="SaveUncertainty">Registrar incertidumbre</button>
+                        </div>
+                    </div>
+                }
+            </div>
+
+            <div class="col-lg-8">
+                <div class="table-responsive">
+                    <table class="table align-middle">
+                        <thead><tr><th>Código</th><th>Nombre y alcance</th><th>Estado</th><th>Incertidumbres</th><th>Acciones</th></tr></thead>
+                        <tbody>
+                            @foreach (var item in methods)
+                            {
+                                <tr>
+                                    <td>@item.Code</td>
+                                    <td><div>@item.Name</div><div class="small text-muted">@RegulatoryLabel(item.RegulatoryClassification) · @ResultTypeLabel(item.ResultType)</div><div class="small text-muted">PNT: @GetDocumentCode(item.DocumentId)</div></td>
+                                    <td><span class="badge @StatusCss(item.Status)">@StatusLabel(item.Status)</span></td>
+                                    <td>@uncertainties.Count(u => u.MethodId == item.Id)</td>
+                                    <td class="text-nowrap">
+                                        <button class="btn btn-sm btn-outline-secondary me-1" @onclick="() => OpenMethodDetail(item.Id)">Ver ficha</button>
+                                        @if (CanManageDraft(item))
+                                        {
+                                            <button class="btn btn-sm btn-outline-primary me-1" @onclick="() => BeginEdit(item)">Editar</button>
+                                        }
+                                        @if (canObsolete && item.Status != MethodStatus.OBSOLETE)
+                                        {
+                                            <button class="btn btn-sm btn-outline-warning me-1" @onclick="() => BeginObsolete(item)">Obsoletar</button>
+                                        }
+                                        @if (CanDeleteDraft(item))
+                                        {
+                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => BeginDelete(item)">Eliminar</button>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+
+                @if (editingMethod is not null)
+                {
+                    <div class="card border-primary mb-3">
+                        <div class="card-body">
+                            <h5>Editar borrador: @editingMethod.OriginalCode</h5>
+                            <input class="form-control mb-2" placeholder="Código" @bind="editingMethod.Code" />
+                            <input class="form-control mb-2" placeholder="Nombre" @bind="editingMethod.Name" />
+                            <input class="form-control mb-2" placeholder="Categoría" @bind="editingMethod.Category" />
+                            <select class="form-select mb-2" @bind="editingMethod.RegulatoryClassification">
+                                <option value="@MethodRegulatoryClassification.NOT_CLASSIFIED">Clasificación regulatoria</option><option value="@MethodRegulatoryClassification.CE_IVD_VERIFICATION">CE-IVD: verificación local</option><option value="@MethodRegulatoryClassification.IN_HOUSE_VALIDATION">In-house: validación completa</option><option value="@MethodRegulatoryClassification.MODIFIED_CE_IVD_VALIDATION">CE-IVD modificado: validación</option>
+                            </select>
+                            <select class="form-select mb-2" @bind="editingMethod.ResultType"><option value="@ExaminationResultType.NOT_CLASSIFIED">Tipo de resultado</option><option value="@ExaminationResultType.QUANTITATIVE">Cuantitativo</option><option value="@ExaminationResultType.SEMI_QUANTITATIVE">Semicuantitativo</option><option value="@ExaminationResultType.QUALITATIVE">Cualitativo</option><option value="@ExaminationResultType.INTERPRETATIVE">Interpretativo</option></select>
+                            <textarea class="form-control mb-2" placeholder="Uso previsto / finalidad clínica" @bind="editingMethod.IntendedUse"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Magnitudes, poblaciones y denominadores medidos" @bind="editingMethod.Measurands"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Muestras admitidas" @bind="editingMethod.SpecimenTypes"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Estabilidad, transporte y preparación preanalítica" @bind="editingMethod.PreAnalyticalRequirements"></textarea>
+                            <select class="form-select mb-2" @bind="editingMethod.DocumentId"><option value="">PNT / documento del Gestor Documental</option>@foreach (var document in ProcedureDocuments) { <option value="@document.Id">@DocumentLabel(document)</option> }</select>
+                            <details class="mb-2"><summary class="small text-primary">Configuración técnica y límites clínicos</summary><textarea class="form-control mt-2" placeholder="Equipo, software, configuración óptica" @bind="editingMethod.EquipmentConfiguration"></textarea><textarea class="form-control mt-2" placeholder="Panel, clones, fluorocromos y reactivos críticos" @bind="editingMethod.PanelDescription"></textarea><textarea class="form-control mt-2" placeholder="Adquisición, compensación/unmixing y análisis/gating" @bind="editingMethod.DataAnalysisProcedure"></textarea><textarea class="form-control mt-2" placeholder="Intervalo de medida / intervalo reportable" @bind="editingMethod.MeasurementRange"></textarea><textarea class="form-control mt-2" placeholder="Límites de decisión clínica / intervalos de referencia" @bind="editingMethod.ClinicalDecisionLimits"></textarea><textarea class="form-control mt-2" placeholder="Limitaciones, interferencias y criterios de revisión" @bind="editingMethod.Limitations"></textarea><label class="form-label small mt-2">Próxima revisión</label><InputDate class="form-control" @bind-Value="editingMethod.ReviewDueDate" /></details>
+                            <textarea class="form-control mb-2" placeholder="Notas" @bind="editingMethod.Notes"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Motivo de la corrección (obligatorio)" @bind="editingReason"></textarea>
+                            <button class="btn btn-primary me-2" @onclick="UpdateMethod">Guardar corrección</button>
+                            <button class="btn btn-outline-secondary" @onclick="CancelLifecycleAction">Cancelar</button>
+                        </div>
+                    </div>
+                }
+
+                @if (lifecycleMethod is not null)
+                {
+                    <div class="card @(lifecycleAction == "DELETE" ? "border-danger" : "border-warning") mb-3">
+                        <div class="card-body">
+                            <h5>@(lifecycleAction == "DELETE" ? "Eliminar borrador" : "Pasar a obsoleto"): @lifecycleMethod.Code</h5>
+                            <p class="small text-muted">
+                                @(lifecycleAction == "DELETE"
+                                    ? "Esta acción está restringida al administrador y sólo será posible si el borrador no tiene versiones, incertidumbres, validaciones, autorizaciones ni reactivos asociados."
+                                    : "El método se conservará para consulta y no podrá recibir nuevos registros. Las versiones aprobadas asociadas quedarán obsoletas.")
+                            </p>
+                            <textarea class="form-control mb-2" placeholder="Motivo (obligatorio)" @bind="lifecycleReason"></textarea>
+                            <button class="btn @(lifecycleAction == "DELETE" ? "btn-danger" : "btn-warning") me-2" @onclick="ConfirmLifecycleAction">Confirmar</button>
+                            <button class="btn btn-outline-secondary" @onclick="CancelLifecycleAction">Cancelar</button>
+                        </div>
+                    </div>
+                }
+
+                @if (canCreate)
+                {
+                    <div class="card mb-3">
+                        <div class="card-body">
+                            <h5>Nueva versión</h5>
+                            <select class="form-select mb-2" @bind="version.MethodId">
+                                <option value="@Guid.Empty">Método</option>
+                                @foreach (var item in methods.Where(m => m.Status != MethodStatus.OBSOLETE))
+                                {
+                                    <option value="@item.Id">@item.Code - @item.Name</option>
+                                }
+                            </select>
+                            <input class="form-control mb-2" placeholder="Versión" @bind="version.Version" />
+                            <textarea class="form-control mb-2" placeholder="Descripción del cambio" @bind="version.ChangeDescription"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Alcance de la verificación/validación" @bind="version.EvaluationScope"></textarea>
+                            <input class="form-control mb-2" placeholder="Fabricante / kit (si aplica)" @bind="version.Manufacturer" />
+                            <input class="form-control mb-2" placeholder="Versión de IFU / documentación técnica" @bind="version.InstructionsForUseVersion" />
+                            <textarea class="form-control mb-2" placeholder="Criterios de aceptación predefinidos" @bind="version.AcceptanceCriteria"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Diseño del estudio y muestras" @bind="version.StudyDesign"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Fuentes de datos: FCS, IQC, EQA, comparación..." @bind="version.DataSources"></textarea>
+                            <select class="form-select mb-2" @bind="version.ValidationReportDocumentId"><option value="">Informe de validación/verificación en Gestor Documental</option>@foreach (var document in ValidationReportDocuments) { <option value="@document.Id">@DocumentLabel(document)</option> }</select>
+                            <button class="btn btn-outline-primary" @onclick="SaveVersion">Registrar versión</button>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <h5>Verificación / validación</h5>
+                            <p class="small text-muted">Seleccione una versión de método existente e introduzca el parámetro evaluado, resultado y número de experimentos.</p>
+                            <select class="form-select mb-2" @bind="validation.MethodVersionId">
+                                <option value="@Guid.Empty">Versión de método</option>
+                                @foreach (var v in versions)
+                                {
+                                    <option value="@v.Id">@MethodLabel(v.MethodId) · v@v.Version (@VersionStatusLabel(v.Status))</option>
+                                }
+                            </select>
+                            <select class="form-select mb-2" @bind="validation.Characteristic">
+                                <option value="@MethodValidationCharacteristic.NOT_CLASSIFIED">Característica evaluada</option>
+                                @foreach (var characteristic in ValidationCharacteristics.Where(c => c != MethodValidationCharacteristic.NOT_CLASSIFIED)) { <option value="@characteristic">@ValidationCharacteristicLabel(characteristic)</option> }
+                            </select>
+                            <input class="form-control mb-2" placeholder="Parámetro (precisión, sesgo, linealidad...)" @bind="validation.Parameter" />
+                            <input class="form-control mb-2" placeholder="Resultado / criterio de aceptación" @bind="validation.Result" />
+                            <input type="number" class="form-control mb-2" @bind="validation.ExperimentCount" />
+                            <textarea class="form-control mb-2" placeholder="Criterio de aceptación aplicable" @bind="validation.AcceptanceCriteria"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Diseño, operadores/días y descripción de muestras" @bind="validation.StudyDesign"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Descripción de las muestras / niveles" @bind="validation.SampleDescription"></textarea>
+                            <textarea class="form-control mb-2" placeholder="Fuentes de datos: FCS, IQC, EQA, comparación..." @bind="validation.DataSources"></textarea>
+                            <input class="form-control mb-2" placeholder="Conclusión: cumple / no cumple / condicionado" @bind="validation.Conclusion" />
+                            <select class="form-select mb-2" @bind="validation.EvidenceDocumentId"><option value="">Evidencia en Gestor Documental</option>@foreach (var document in documents) { <option value="@document.Id">@DocumentLabel(document)</option> }</select>
+                            <button class="btn btn-outline-success" @onclick="SaveValidation">Registrar validación</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        </div>
+
+        @if (canApprove)
+        {
+            <div class="card mt-4">
+                <div class="card-body">
+                    <h5>Versiones pendientes de aprobación</h5>
+                    @foreach (var pendingVersion in versions.Where(v => v.Status == "READY_FOR_APPROVAL"))
+                    {
+                        <div class="d-flex align-items-center gap-3 border-bottom py-2">
+                            <span>@MethodLabel(pendingVersion.MethodId) · v@pendingVersion.Version</span>
+                            <span class="text-muted">@pendingVersion.ChangeDescription</span>
+                            <span class="small">Autor: @pendingVersion.CreatedBy</span>
+                            @if (CanApproveVersion(pendingVersion))
+                            {
+                                <button class="btn btn-sm btn-outline-success" @onclick="() => ApproveVersion(pendingVersion.Id)">Aprobar versión</button>
+                            }
+                            else
+                            {
+                                <span class="small text-muted">No puede aprobar su propia versión.</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private List<Method> methods = new();
+    private List<MethodVersion> versions = new();
+    private List<MeasurementUncertainty> uncertainties = new();
+    private List<Document> documents = new();
+    private Method method = new();
+    private MethodVersion version = new();
+    private MeasurementUncertainty uncertainty = new() { EstimatedDate = DateTime.Today };
+    private MethodValidation validation = new();
+    private MethodEditModel? editingMethod;
+    private Method? lifecycleMethod;
+    private string? lifecycleAction;
+    private string? editingReason;
+    private string? lifecycleReason;
+    private string? message;
+    private string messageCss = "alert-info";
+    private bool canRead;
+    private bool canCreate;
+    private bool canEdit;
+    private bool canDelete;
+    private bool canObsolete;
+    private bool canApprove;
+    private ClaimsPrincipal? currentUser;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        currentUser = state.User;
+        var permissions = await PermissionService.GetPermissionsForUserAsync(currentUser, "Methods");
+        var isAdmin = currentUser.IsInRole("Administrador");
+        var isTechnician = currentUser.IsInRole("Técnico");
+        canRead = permissions.CanRead;
+        canCreate = permissions.CanCreate && (isAdmin || !isTechnician);
+        canEdit = permissions.CanEdit && (isAdmin || !isTechnician);
+        canDelete = isAdmin && permissions.CanDelete;
+        canObsolete = canEdit;
+        canApprove = permissions.CanApprove && (isAdmin || !isTechnician);
+        await Load();
+    }
+
+    private async Task Load()
+    {
+        methods = await DbContext.Methods.OrderBy(m => m.Code).ToListAsync();
+        versions = await DbContext.MethodVersions.OrderByDescending(v => v.CreatedAt).ToListAsync();
+        uncertainties = await DbContext.MeasurementUncertainties.ToListAsync();
+        documents = await DbContext.Documents
+            .Include(d => d.DocumentType)
+            .Where(d => !d.IsDeleted && d.Status == DocumentStatus.APPROVED)
+            .OrderBy(d => d.DocCode)
+            .ToListAsync();
+    }
+
+    private bool CanManageDraft(Method item) => canEdit && item.Status == MethodStatus.DRAFT;
+    private bool CanDeleteDraft(Method item) => canDelete && item.Status == MethodStatus.DRAFT;
+    private bool CanApproveVersion(MethodVersion item) => canApprove && !string.Equals(item.CreatedBy, UserName, StringComparison.OrdinalIgnoreCase);
+    private string UserName => currentUser?.Identity?.Name ?? "Sistema";
+
+    private Task<bool> CheckPermissionAsync(bool allowed, string operation)
+    {
+        if (allowed) return Task.FromResult(true);
+        SetMessage($"No dispone de permiso para {operation}.", "alert-danger");
+        return Task.FromResult(false);
+    }
+
+    private async Task SaveMethod()
+    {
+        if (!await CheckPermissionAsync(canCreate, "crear métodos")) return;
+        if (string.IsNullOrWhiteSpace(method.Code) || string.IsNullOrWhiteSpace(method.Name)
+            || method.RegulatoryClassification == MethodRegulatoryClassification.NOT_CLASSIFIED
+            || method.ResultType == ExaminationResultType.NOT_CLASSIFIED
+            || string.IsNullOrWhiteSpace(method.IntendedUse)
+            || string.IsNullOrWhiteSpace(method.Measurands)
+            || string.IsNullOrWhiteSpace(method.SpecimenTypes)
+            || string.IsNullOrWhiteSpace(method.PreAnalyticalRequirements))
+        {
+            SetMessage("Complete código, nombre, clasificación, tipo de resultado, uso previsto, magnitudes, muestra y requisitos preanalíticos.", "alert-warning");
+            return;
+        }
+
+        method.Id = Guid.NewGuid();
+        method.CreatedAt = DateTime.UtcNow;
+        method.Status = MethodStatus.DRAFT;
+        DbContext.Methods.Add(method);
+        var initialVersion = new MethodVersion
+        {
+            Id = Guid.NewGuid(), MethodId = method.Id, Version = "1.0", Status = "DRAFT",
+            ChangeDescription = "Versión inicial creada automáticamente junto con el método.",
+            CreatedBy = UserName, CreatedAt = DateTime.UtcNow
+        };
+        DbContext.MethodVersions.Add(initialVersion);
+        await AddAuditAsync("CREATE", "Method", method.Id, $"Método registrado en borrador: {method.Code} - {method.Name}");
+        await AddAuditAsync("CREATE", "MethodVersion", initialVersion.Id, "Versión inicial 1.0 creada automáticamente.");
+        await SaveAndReloadAsync("Método y versión inicial 1.0 registrados en borrador. Complete la ficha antes de solicitar aprobación.");
+        method = new();
+    }
+
+    private void BeginEdit(Method item)
+    {
+        if (!CanManageDraft(item)) { SetMessage("Sólo se pueden editar métodos en borrador con permiso de edición.", "alert-danger"); return; }
+        editingMethod = new MethodEditModel(item);
+        editingReason = null;
+        lifecycleMethod = null;
+    }
+
+    private async Task UpdateMethod()
+    {
+        if (!await CheckPermissionAsync(canEdit, "editar métodos") || editingMethod is null) return;
+        if (string.IsNullOrWhiteSpace(editingReason) || string.IsNullOrWhiteSpace(editingMethod.Code) || string.IsNullOrWhiteSpace(editingMethod.Name)
+            || editingMethod.RegulatoryClassification == MethodRegulatoryClassification.NOT_CLASSIFIED
+            || editingMethod.ResultType == ExaminationResultType.NOT_CLASSIFIED
+            || string.IsNullOrWhiteSpace(editingMethod.IntendedUse)
+            || string.IsNullOrWhiteSpace(editingMethod.Measurands)
+            || string.IsNullOrWhiteSpace(editingMethod.SpecimenTypes)
+            || string.IsNullOrWhiteSpace(editingMethod.PreAnalyticalRequirements))
+        {
+            SetMessage("Complete los campos obligatorios del método y el motivo de la corrección.", "alert-warning");
+            return;
+        }
+
+        var item = await DbContext.Methods.SingleOrDefaultAsync(m => m.Id == editingMethod.Id);
+        if (item is null || item.Status != MethodStatus.DRAFT)
+        {
+            SetMessage("El método ya no está disponible para edición como borrador. Recargue la página.", "alert-warning");
+            return;
+        }
+
+        var before = $"{item.Code} - {item.Name}";
+        item.Code = editingMethod.Code.Trim();
+        item.Name = editingMethod.Name.Trim();
+        item.Category = editingMethod.Category?.Trim();
+        item.RegulatoryClassification = editingMethod.RegulatoryClassification;
+        item.ResultType = editingMethod.ResultType;
+        item.IntendedUse = editingMethod.IntendedUse?.Trim();
+        item.SpecimenTypes = editingMethod.SpecimenTypes?.Trim();
+        item.Measurands = editingMethod.Measurands?.Trim();
+        item.MeasurementRange = editingMethod.MeasurementRange?.Trim();
+        item.ClinicalDecisionLimits = editingMethod.ClinicalDecisionLimits?.Trim();
+        item.PreAnalyticalRequirements = editingMethod.PreAnalyticalRequirements?.Trim();
+        item.EquipmentConfiguration = editingMethod.EquipmentConfiguration?.Trim();
+        item.PanelDescription = editingMethod.PanelDescription?.Trim();
+        item.DataAnalysisProcedure = editingMethod.DataAnalysisProcedure?.Trim();
+        item.Limitations = editingMethod.Limitations?.Trim();
+        item.DocumentId = editingMethod.DocumentId;
+        item.ReviewDueDate = editingMethod.ReviewDueDate;
+        item.Notes = editingMethod.Notes?.Trim();
+        item.UpdatedAt = DateTime.UtcNow;
+        await AddAuditAsync("UPDATE", "Method", item.Id, $"Método corregido de '{before}' a '{item.Code} - {item.Name}'. Motivo: {editingReason.Trim()}");
+        editingMethod = null;
+        editingReason = null;
+        await SaveAndReloadAsync("Corrección del borrador registrada.");
+    }
+
+    private void BeginObsolete(Method item)
+    {
+        if (!canObsolete || item.Status == MethodStatus.OBSOLETE) { SetMessage("No dispone de permiso para obsoletar este método.", "alert-danger"); return; }
+        lifecycleMethod = item;
+        lifecycleAction = "OBSOLETE";
+        lifecycleReason = null;
+        editingMethod = null;
+    }
+
+    private void BeginDelete(Method item)
+    {
+        if (!CanDeleteDraft(item)) { SetMessage("Sólo el administrador puede eliminar borradores.", "alert-danger"); return; }
+        lifecycleMethod = item;
+        lifecycleAction = "DELETE";
+        lifecycleReason = null;
+        editingMethod = null;
+    }
+
+    private async Task ConfirmLifecycleAction()
+    {
+        if (lifecycleMethod is null || string.IsNullOrWhiteSpace(lifecycleReason))
+        {
+            SetMessage("El motivo es obligatorio.", "alert-warning");
+            return;
+        }
+
+        var item = await DbContext.Methods.SingleOrDefaultAsync(m => m.Id == lifecycleMethod.Id);
+        if (item is null) { SetMessage("El método ya no existe. Recargue la página.", "alert-warning"); return; }
+
+        if (lifecycleAction == "OBSOLETE")
+        {
+            if (!await CheckPermissionAsync(canObsolete, "obsoletar métodos")) return;
+            item.Status = MethodStatus.OBSOLETE;
+            item.UpdatedAt = DateTime.UtcNow;
+            var approvedVersions = await DbContext.MethodVersions.Where(v => v.MethodId == item.Id && v.Status == "APPROVED").ToListAsync();
+            foreach (var approvedVersion in approvedVersions) approvedVersion.Status = "OBSOLETE";
+            await AddAuditAsync("OBSOLETE", "Method", item.Id, $"Método pasado a obsoleto. Motivo: {lifecycleReason.Trim()}");
+            CancelLifecycleAction();
+            await SaveAndReloadAsync("Método pasado a obsoleto; se conserva para consulta y trazabilidad.");
+            return;
+        }
+
+        if (!await CheckPermissionAsync(canDelete, "eliminar borradores")) return;
+        if (item.Status != MethodStatus.DRAFT)
+        {
+            SetMessage("Sólo se pueden eliminar métodos en borrador.", "alert-warning");
+            return;
+        }
+
+        var methodVersions = await DbContext.MethodVersions.Where(v => v.MethodId == item.Id).ToListAsync();
+        var versionIds = methodVersions.Select(v => v.Id).ToList();
+        var hasDependencies = await DbContext.MeasurementUncertainties.AnyAsync(u => u.MethodId == item.Id)
+            || await DbContext.MethodValidations.AnyAsync(v => versionIds.Contains(v.MethodVersionId))
+            || await DbContext.MethodAuthorizations.AnyAsync(a => a.MethodId == item.Id)
+            || await DbContext.MethodReagents.AnyAsync(r => r.MethodId == item.Id)
+            || methodVersions.Any(v => v.Status != "DRAFT" || !string.Equals(v.Version, "1.0", StringComparison.OrdinalIgnoreCase));
+        if (hasDependencies)
+        {
+            SetMessage("No se puede eliminar el borrador porque tiene evidencia o registros asociados. Utilice la opción 'Obsoletar'.", "alert-warning");
+            return;
+        }
+
+        var detail = $"Borrador eliminado por el administrador: {item.Code} - {item.Name}. Motivo: {lifecycleReason.Trim()}";
+        DbContext.MethodVersions.RemoveRange(methodVersions);
+        DbContext.Methods.Remove(item);
+        await AddAuditAsync("DELETE", "Method", item.Id, detail);
+        CancelLifecycleAction();
+        await SaveAndReloadAsync("Borrador eliminado. La acción y su motivo permanecen en la auditoría.");
+    }
+
+    private void CancelLifecycleAction()
+    {
+        editingMethod = null;
+        lifecycleMethod = null;
+        lifecycleAction = null;
+        editingReason = null;
+        lifecycleReason = null;
+    }
+
+    private async Task SaveUncertainty()
+    {
+        if (!await CheckPermissionAsync(canCreate, "registrar incertidumbres")) return;
+        if (uncertainty.MethodId == Guid.Empty || string.IsNullOrWhiteSpace(uncertainty.AnalyteName) || string.IsNullOrWhiteSpace(uncertainty.Unit))
+        {
+            SetMessage("Método, analito y unidad son obligatorios.", "alert-warning");
+            return;
+        }
+        if (!await DbContext.Methods.AnyAsync(m => m.Id == uncertainty.MethodId && m.Status != MethodStatus.OBSOLETE))
+        {
+            SetMessage("No se pueden añadir registros a un método obsoleto.", "alert-warning");
+            return;
+        }
+
+        uncertainty.Id = Guid.NewGuid();
+        DbContext.MeasurementUncertainties.Add(uncertainty);
+        await AddAuditAsync("CREATE", "MeasurementUncertainty", uncertainty.Id, $"Incertidumbre registrada: {uncertainty.AnalyteName} = {uncertainty.Value} {uncertainty.Unit}");
+        await SaveAndReloadAsync("Incertidumbre registrada.");
+        uncertainty = new() { EstimatedDate = DateTime.Today };
+    }
+
+    private async Task SaveVersion()
+    {
+        if (!await CheckPermissionAsync(canCreate, "registrar versiones")) return;
+        if (version.MethodId == Guid.Empty || string.IsNullOrWhiteSpace(version.Version)
+            || string.IsNullOrWhiteSpace(version.EvaluationScope)
+            || string.IsNullOrWhiteSpace(version.AcceptanceCriteria)
+            || string.IsNullOrWhiteSpace(version.StudyDesign)
+            || string.IsNullOrWhiteSpace(version.DataSources))
+        {
+            SetMessage("Método, versión, alcance, criterios de aceptación, diseño y fuentes de datos son obligatorios.", "alert-warning");
+            return;
+        }
+        if (!await DbContext.Methods.AnyAsync(m => m.Id == version.MethodId && m.Status != MethodStatus.OBSOLETE))
+        {
+            SetMessage("No se pueden registrar versiones de un método obsoleto.", "alert-warning");
+            return;
+        }
+        if (await DbContext.MethodVersions.AnyAsync(v => v.MethodId == version.MethodId && v.Version == version.Version.Trim()))
+        {
+            SetMessage("Ya existe esa versión para el método seleccionado.", "alert-warning");
+            return;
+        }
+
+        version.Id = Guid.NewGuid();
+        version.CreatedAt = DateTime.UtcNow;
+        version.CreatedBy = UserName;
+        version.Status = "DRAFT";
+        DbContext.MethodVersions.Add(version);
+        await AddAuditAsync("CREATE", "MethodVersion", version.Id, $"Versión registrada en borrador: {version.Version}");
+        await SaveAndReloadAsync("Versión registrada en borrador.");
+        version = new();
+    }
+
+    private async Task SaveValidation()
+    {
+        if (!await CheckPermissionAsync(canCreate, "registrar validaciones")) return;
+        if (validation.MethodVersionId == Guid.Empty || validation.Characteristic == MethodValidationCharacteristic.NOT_CLASSIFIED || string.IsNullOrWhiteSpace(validation.Parameter) || string.IsNullOrWhiteSpace(validation.Result)
+            || string.IsNullOrWhiteSpace(validation.AcceptanceCriteria) || string.IsNullOrWhiteSpace(validation.StudyDesign)
+            || string.IsNullOrWhiteSpace(validation.DataSources) || string.IsNullOrWhiteSpace(validation.Conclusion))
+        {
+            SetMessage("Complete versión, parámetro, resultado, criterio, diseño, fuentes de datos y conclusión.", "alert-warning");
+            return;
+        }
+
+        validation.Id = Guid.NewGuid();
+        DbContext.MethodValidations.Add(validation);
+        await AddAuditAsync("CREATE", "MethodValidation", validation.Id, $"Validación registrada: {validation.Parameter}");
+        await SaveAndReloadAsync("Validación registrada.");
+        validation = new();
+    }
+
+    private async Task ApproveVersion(Guid versionId)
+    {
+        if (!await CheckPermissionAsync(canApprove, "aprobar versiones")) return;
+        var item = await DbContext.MethodVersions.SingleOrDefaultAsync(v => v.Id == versionId);
+        if (item is null || item.Status != "READY_FOR_APPROVAL") { SetMessage("La versión debe estar preparada para aprobación antes de aprobarla.", "alert-warning"); return; }
+        if (string.Equals(item.CreatedBy, UserName, StringComparison.OrdinalIgnoreCase))
+        {
+            SetMessage("No puede aprobar una versión creada por usted mismo.", "alert-danger");
+            return;
+        }
+
+        var parentMethod = await DbContext.Methods.SingleOrDefaultAsync(m => m.Id == item.MethodId);
+        if (parentMethod is null || parentMethod.Status == MethodStatus.OBSOLETE)
+        {
+            SetMessage("No se puede aprobar una versión de un método obsoleto.", "alert-warning");
+            return;
+        }
+        var approvalIssue = await GetApprovalBlockingIssueAsync(parentMethod, item);
+        if (approvalIssue is not null)
+        {
+            SetMessage(approvalIssue, "alert-warning");
+            return;
+        }
+
+        var previous = await DbContext.MethodVersions.Where(v => v.MethodId == item.MethodId && v.Status == "APPROVED").ToListAsync();
+        foreach (var previousVersion in previous) previousVersion.Status = "OBSOLETE";
+        item.Status = "APPROVED";
+        item.ApprovedBy = UserName;
+        item.ApprovedAt = DateTime.UtcNow;
+        parentMethod.Status = MethodStatus.ACTIVE;
+        parentMethod.CurrentVersion = item.Version;
+        parentMethod.EffectiveDate = DateTime.UtcNow;
+        parentMethod.UpdatedAt = DateTime.UtcNow;
+        await AddAuditAsync("APPROVE", "MethodVersion", item.Id, $"Versión aprobada: {item.Version}. Versiones previas activas sustituidas: {previous.Count}.");
+        await SaveAndReloadAsync("Versión aprobada formalmente y método activado.");
+    }
+
+    private async Task SaveAndReloadAsync(string success)
+    {
+        try
+        {
+            await DbContext.SaveChangesAsync();
+            SetMessage(success, "alert-success");
+            await Load();
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            DbContext.ChangeTracker.Clear();
+            SetMessage("Otro usuario modificó el registro antes de guardar. Recargue los datos y vuelva a intentarlo.", "alert-warning");
+            await Load();
+        }
+        catch (DbUpdateException)
+        {
+            DbContext.ChangeTracker.Clear();
+            SetMessage("No se pudo guardar. Revise que el código del método no esté duplicado y vuelva a intentarlo.", "alert-danger");
+            await Load();
+        }
+    }
+
+    private Task AddAuditAsync(string action, string entityType, Guid entityId, string details)
+    {
+        DbContext.AuditLogs.Add(new AuditLog
+        {
+            Id = Guid.NewGuid(), Timestamp = DateTime.UtcNow, UserName = UserName,
+            Action = action, EntityType = entityType, EntityId = entityId, Details = details,
+            Result = "OK", MachineName = Environment.MachineName
+        });
+        return Task.CompletedTask;
+    }
+
+    private void SetMessage(string value, string css) { message = value; messageCss = css; }
+    private static string StatusLabel(MethodStatus status) => status switch { MethodStatus.DRAFT => "Borrador", MethodStatus.ACTIVE => "Activo", MethodStatus.OBSOLETE => "Obsoleto", _ => status.ToString() };
+    private static string StatusCss(MethodStatus status) => status switch { MethodStatus.DRAFT => "bg-secondary", MethodStatus.ACTIVE => "bg-success", MethodStatus.OBSOLETE => "bg-dark", _ => "bg-secondary" };
+    private static string RegulatoryLabel(MethodRegulatoryClassification classification) => classification switch { MethodRegulatoryClassification.CE_IVD_VERIFICATION => "CE-IVD / verificación", MethodRegulatoryClassification.IN_HOUSE_VALIDATION => "In-house / validación", MethodRegulatoryClassification.MODIFIED_CE_IVD_VALIDATION => "CE-IVD modificado / validación", _ => "Sin clasificar" };
+    private static string ResultTypeLabel(ExaminationResultType resultType) => resultType switch { ExaminationResultType.QUANTITATIVE => "Cuantitativo", ExaminationResultType.SEMI_QUANTITATIVE => "Semicuantitativo", ExaminationResultType.QUALITATIVE => "Cualitativo", ExaminationResultType.INTERPRETATIVE => "Interpretativo", _ => "Sin clasificar" };
+    private string DocumentLabel(Document document) => $"{document.DocCode} — {document.Title}";
+    private string GetDocumentCode(Guid? id) => id is Guid documentId ? documents.FirstOrDefault(d => d.Id == documentId)?.DocCode ?? "No disponible" : "No vinculado";
+    private IEnumerable<Document> ProcedureDocuments => documents.Where(d => d.DocumentType?.TypeCode == "PRO");
+    private IEnumerable<Document> ValidationReportDocuments => documents.Where(d => d.DocumentType?.TypeCode == "VAL");
+    private string MethodLabel(Guid methodId) => methods.FirstOrDefault(m => m.Id == methodId) is { } item ? $"{item.Code} — {item.Name}" : "Método no disponible";
+    private static string VersionStatusLabel(string status) => status switch { "DRAFT" => "Borrador", "UNDER_EVALUATION" => "En evaluación", "READY_FOR_APPROVAL" => "Pendiente de aprobación", "APPROVED" => "Aprobada", "OBSOLETE" => "Obsoleta", _ => status };
+    private static readonly MethodValidationCharacteristic[] ValidationCharacteristics = Enum.GetValues<MethodValidationCharacteristic>();
+
+    private void OpenMethodDetail(Guid methodId) => Navigation.NavigateTo($"/methods/{methodId}");
+    private static string ValidationCharacteristicLabel(MethodValidationCharacteristic characteristic) => characteristic switch { MethodValidationCharacteristic.PRECISION => "Precisión", MethodValidationCharacteristic.COMPARISON_OR_TRUENESS => "Comparación / veracidad", MethodValidationCharacteristic.ANALYTICAL_SENSITIVITY => "Sensibilidad analítica", MethodValidationCharacteristic.ANALYTICAL_SPECIFICITY => "Especificidad analítica", MethodValidationCharacteristic.LINEARITY_OR_REPORTABLE_RANGE => "Linealidad / intervalo reportable", MethodValidationCharacteristic.SAMPLE_STABILITY => "Estabilidad de la muestra", MethodValidationCharacteristic.GATING_REPRODUCIBILITY => "Reproducibilidad de gating", MethodValidationCharacteristic.INSTRUMENT_QC => "Cualificación / QC del instrumento", _ => "Sin clasificar" };
+
+    private async Task<string?> GetApprovalBlockingIssueAsync(Method methodToApprove, MethodVersion versionToApprove)
+    {
+        if (methodToApprove.DocumentId is not Guid procedureDocumentId
+            || !await DbContext.Documents.AnyAsync(d => d.Id == procedureDocumentId && !d.IsDeleted && d.Status == DocumentStatus.APPROVED && d.DocumentType!.TypeCode == "PRO"))
+            return "Debe vincularse un PNT vigente de tipo Procedimiento antes de aprobar la versión.";
+        if (versionToApprove.ValidationReportDocumentId is not Guid reportDocumentId
+            || !await DbContext.Documents.AnyAsync(d => d.Id == reportDocumentId && !d.IsDeleted && d.Status == DocumentStatus.APPROVED && d.DocumentType!.TypeCode == "VAL"))
+            return "Debe vincularse un informe vigente de tipo 'Informe de validación/verificación' antes de aprobar.";
+        if (string.IsNullOrWhiteSpace(versionToApprove.EvaluationScope) || string.IsNullOrWhiteSpace(versionToApprove.AcceptanceCriteria)
+            || string.IsNullOrWhiteSpace(versionToApprove.StudyDesign) || string.IsNullOrWhiteSpace(versionToApprove.DataSources))
+            return "La versión no contiene alcance, criterios, diseño y fuentes de datos completos.";
+        if (methodToApprove.RegulatoryClassification == MethodRegulatoryClassification.CE_IVD_VERIFICATION
+            && (string.IsNullOrWhiteSpace(versionToApprove.Manufacturer) || string.IsNullOrWhiteSpace(versionToApprove.InstructionsForUseVersion)))
+            return "Para un método CE-IVD deben registrarse fabricante/kit y versión de la IFU.";
+        var checks = await DbContext.MethodValidations.Where(v => v.MethodVersionId == versionToApprove.Id).ToListAsync();
+        if (checks.Count == 0) return "Debe registrar al menos un parámetro de verificación/validación antes de aprobar.";
+        if (checks.Any(v => !string.Equals(v.Conclusion, "CUMPLE", StringComparison.OrdinalIgnoreCase)))
+            return "Todos los parámetros de verificación/validación deben tener conclusión 'CUMPLE' antes de aprobar.";
+        var requiredCharacteristics = new List<MethodValidationCharacteristic>
+        {
+            MethodValidationCharacteristic.PRECISION,
+            MethodValidationCharacteristic.COMPARISON_OR_TRUENESS,
+            MethodValidationCharacteristic.GATING_REPRODUCIBILITY,
+            MethodValidationCharacteristic.INSTRUMENT_QC
+        };
+        if (methodToApprove.RegulatoryClassification is MethodRegulatoryClassification.IN_HOUSE_VALIDATION or MethodRegulatoryClassification.MODIFIED_CE_IVD_VALIDATION)
+        {
+            requiredCharacteristics.Add(MethodValidationCharacteristic.ANALYTICAL_SENSITIVITY);
+            requiredCharacteristics.Add(MethodValidationCharacteristic.ANALYTICAL_SPECIFICITY);
+        }
+        if (methodToApprove.ResultType == ExaminationResultType.QUANTITATIVE)
+            requiredCharacteristics.Add(MethodValidationCharacteristic.LINEARITY_OR_REPORTABLE_RANGE);
+        var missing = requiredCharacteristics.Where(c => !checks.Any(v => v.Characteristic == c && string.Equals(v.Conclusion, "CUMPLE", StringComparison.OrdinalIgnoreCase))).ToList();
+        if (missing.Count > 0)
+            return $"Faltan características obligatorias con resultado 'CUMPLE': {string.Join(", ", missing.Select(ValidationCharacteristicLabel))}.";
+        return null;
+    }
+
+    private sealed class MethodEditModel
+    {
+        public MethodEditModel(Method source) { Id = source.Id; OriginalCode = source.Code; Code = source.Code; Name = source.Name; Category = source.Category; RegulatoryClassification = source.RegulatoryClassification; ResultType = source.ResultType; IntendedUse = source.IntendedUse; SpecimenTypes = source.SpecimenTypes; Measurands = source.Measurands; MeasurementRange = source.MeasurementRange; ClinicalDecisionLimits = source.ClinicalDecisionLimits; PreAnalyticalRequirements = source.PreAnalyticalRequirements; EquipmentConfiguration = source.EquipmentConfiguration; PanelDescription = source.PanelDescription; DataAnalysisProcedure = source.DataAnalysisProcedure; Limitations = source.Limitations; DocumentId = source.DocumentId; ReviewDueDate = source.ReviewDueDate; Notes = source.Notes; }
+        public Guid Id { get; }
+        public string OriginalCode { get; }
+        public string Code { get; set; }
+        public string Name { get; set; }
+        public string? Category { get; set; }
+        public MethodRegulatoryClassification RegulatoryClassification { get; set; }
+        public ExaminationResultType ResultType { get; set; }
+        public string? IntendedUse { get; set; }
+        public string? SpecimenTypes { get; set; }
+        public string? Measurands { get; set; }
+        public string? MeasurementRange { get; set; }
+        public string? ClinicalDecisionLimits { get; set; }
+        public string? PreAnalyticalRequirements { get; set; }
+        public string? EquipmentConfiguration { get; set; }
+        public string? PanelDescription { get; set; }
+        public string? DataAnalysisProcedure { get; set; }
+        public string? Limitations { get; set; }
+        public Guid? DocumentId { get; set; }
+        public DateTime? ReviewDueDate { get; set; }
+        public string? Notes { get; set; }
+    }
+}

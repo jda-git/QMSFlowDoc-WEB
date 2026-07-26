@@ -95,7 +95,7 @@ namespace QMSFlowDoc.Infrastructure.Services.Identity
 
             var permissions = await (from rp in _context.RolePermissions
                                      join r in _context.Roles on rp.RoleId equals r.Id
-                                     where rp.Section == section && roleClaims.Contains(r.Name)
+                                     where rp.Section == section && r.Name != null && roleClaims.Contains(r.Name)
                                      select rp).ToListAsync();
 
             if (!permissions.Any())
