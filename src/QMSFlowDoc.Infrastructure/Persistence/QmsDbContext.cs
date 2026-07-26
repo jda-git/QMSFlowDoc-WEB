@@ -833,6 +833,8 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(m => m.Code).HasMaxLength(50);
                 e.Property(m => m.Name).HasMaxLength(300);
                 e.Property(m => m.Status).HasConversion<int>();
+                e.Property(m => m.RegulatoryClassification).HasConversion<int>();
+                e.Property(m => m.ResultType).HasConversion<int>();
                 e.Property(m => m.RowVersion).IsRowVersion();
                 e.HasMany(m => m.Authorizations).WithOne().HasForeignKey(a => a.MethodId).OnDelete(DeleteBehavior.Cascade);
             });
@@ -841,12 +843,17 @@ namespace QMSFlowDoc.Infrastructure.Persistence
             {
                 e.ToTable("MethodVersions");
                 e.HasKey(v => v.Id);
+                e.HasIndex(v => new { v.MethodId, v.Version }).IsUnique();
+                e.Property(v => v.Manufacturer).HasMaxLength(300);
+                e.Property(v => v.InstructionsForUseVersion).HasMaxLength(100);
             });
 
             modelBuilder.Entity<MethodValidation>(e =>
             {
                 e.ToTable("MethodValidations");
                 e.HasKey(v => v.Id);
+                e.Property(v => v.Characteristic).HasConversion<int>();
+                e.Property(v => v.AcceptanceCriteria).HasMaxLength(2000);
             });
 
             modelBuilder.Entity<MethodAuthorization>(e =>
@@ -870,6 +877,7 @@ namespace QMSFlowDoc.Infrastructure.Persistence
                 e.Property(m => m.AnalyteName).HasMaxLength(300);
                 e.Property(m => m.Unit).HasMaxLength(50);
                 e.Property(m => m.ConfidenceLevel).HasMaxLength(30);
+                e.Property(m => m.MeasurementRange).HasMaxLength(500);
             });
 
             // ── Audit & System ──

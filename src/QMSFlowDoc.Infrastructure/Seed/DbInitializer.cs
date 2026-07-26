@@ -356,6 +356,12 @@ namespace QMSFlowDoc.Infrastructure.Seed
                 Console.WriteLine("✔ Seeded default Document Types.");
             }
 
+            await EnsureDocumentTypeAsync(
+                context,
+                "VAL",
+                "Informe de validación/verificación",
+                "Informe controlado de verificación o validación de métodos de examen.");
+
             // 4. Seed Default Admin User if no users exist in database (fallback)
             const string adminUser = "admin";
             const string adminEmail = "admin@qmsflowdoc.com";
@@ -421,9 +427,24 @@ namespace QMSFlowDoc.Infrastructure.Seed
             }
         }
 
+        private static async Task EnsureDocumentTypeAsync(QmsDbContext context, string typeCode, string name, string description)
+        {
+            var exists = await context.DocumentTypes.AnyAsync(t => t.TypeCode == typeCode);
+            if (exists) return;
+
+            context.DocumentTypes.Add(new QMSFlowDoc.Domain.Entities.DocumentType
+            {
+                Id = Guid.NewGuid(),
+                TypeCode = typeCode,
+                Name = name,
+                Description = description
+            });
+            await context.SaveChangesAsync();
+        }
+
         private static async Task SeedDefaultRolePermissionsAsync(QmsDbContext context, RoleManager<ApplicationRole> roleManager)
         {
-            var sections = new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment", "EQA", "Audit" };
+            var sections = new[] { "Documents", "Inventory", "Staff", "Quality", "Equipment", "EQA", "Audit", "Methods" };
             
             var roles = await roleManager.Roles.ToListAsync();
             foreach (var role in roles)
@@ -529,6 +550,18 @@ namespace QMSFlowDoc.Infrastructure.Seed
                             }
                         }
  
+                        // Métodos: técnicos y auditores consultan; facultativos y calidad gestionan
+                        // borradores; la aprobación corresponde a calidad o administración.
+                        if (section == "Methods")
+                        {
+                            rp.CanRead = true;
+                            rp.CanPrint = true;
+                            rp.CanCreate = role.Name is "Administrador" or "Responsable calidad" or "Facultativo";
+                            rp.CanEdit = role.Name is "Administrador" or "Responsable calidad" or "Facultativo";
+                            rp.CanDelete = role.Name == "Administrador";
+                            rp.CanApprove = role.Name is "Administrador" or "Responsable calidad";
+                        }
+
                         context.RolePermissions.Add(rp);
                     }
                 }

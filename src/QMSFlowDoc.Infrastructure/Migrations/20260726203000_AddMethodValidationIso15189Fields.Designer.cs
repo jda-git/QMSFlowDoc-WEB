@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using QMSFlowDoc.Infrastructure.Persistence;
 
@@ -10,9 +11,11 @@ using QMSFlowDoc.Infrastructure.Persistence;
 namespace QMSFlowDoc.Infrastructure.Migrations
 {
     [DbContext(typeof(QmsDbContext))]
-    partial class QmsDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260726203000_AddMethodValidationIso15189Fields")]
+    partial class AddMethodValidationIso15189Fields
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.0");
@@ -3202,9 +3205,6 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("TEXT");
 
-                    b.Property<int>("Characteristic")
-                        .HasColumnType("INTEGER");
-
                     b.Property<string>("Conclusion")
                         .HasColumnType("TEXT");
 
@@ -3307,9 +3307,6 @@ namespace QMSFlowDoc.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
-
-                    b.HasIndex("MethodId", "Version")
-                        .IsUnique();
 
                     b.ToTable("MethodVersions", (string)null);
                 });
